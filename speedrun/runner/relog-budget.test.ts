@@ -84,3 +84,17 @@ describe('the relog budget', () => {
         expect(b.entries()).toEqual([]);
     });
 });
+
+test('amend rewrites one recorded entry in place, keeping its time; an entry not on file is refused', () => {
+    const budget = new RelogBudget(mkdtempSync(join(tmpdir(), 'relog-amend-')));
+    const first = budget.record({ kind: 'unplanned', by: 'run', step: 'S03', tick: 10, via: 'page' });
+    const adopted = budget.record({ kind: 'manual', by: 'run', step: 'S07', tick: 812, via: 'adopted', meta: { how: 'ticking' } });
+    const relog = budget.amend(adopted, { kind: 'unplanned', via: 'page', meta: { reason: 'fell out', adoptedFirst: adopted.meta } });
+    expect(relog.at).toBe(adopted.at);
+    expect(budget.entries().map(e => [e.kind, e.step, e.via])).toEqual([
+        ['unplanned', 'S03', 'page'],
+        ['unplanned', 'S07', 'page'],
+    ]);
+    expect(budget.used()).toEqual({ planned: 0, unplanned: 2 });
+    expect(() => budget.amend({ ...first, at: '1999-01-01T00:00:00.000Z' }, { via: 'launch' })).toThrow('no unplanned relog recorded at 1999');
+});

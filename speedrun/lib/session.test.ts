@@ -3,11 +3,12 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { fakeCdp } from './fake-cdp';
 import { FakeSdk, flush, runToggleServer } from './fake-sdk';
 import { IF_RUN_ON, runIsOn } from './run-mode';
-import { TickPeriod } from './wait';
+import { sleep, TickPeriod } from './wait';
 import { loginTokenProof } from '../../server/webclient/login-token';
 import {
     IF_RETALIATE_OFF,
     IF_RETALIATE_ON,
+    GATEWAY_BACK_GRACE_TICKS,
     INTERFACE_HOLD_TICKS,
     LOGOUT_BUTTON,
     LOGOUT_CONFIRM_TICKS,
@@ -25,6 +26,7 @@ import {
     openBrowserClient,
     parseBotEnv,
     relog,
+    sendLogoutClick,
     sessionGateway,
     settleScene,
     startWatchdog,
@@ -87,6 +89,20 @@ describe('watchdogDecision', () => {
         // A healthy client is left alone whatever the probe says, and exit 3 still gives up.
         expect(watchdogDecision({ ...healthy, serverDown: true })).toBe('ok');
         expect(watchdogDecision({ ...healthy, childExit: 3, serverDown: true })).toBe('give_up');
+    });
+
+    test('our own gateway down: a stale tick or a stale/dead gateway reading is the gateway outage, a wait, never a logout (rs/659)', () => {
+        const down = { ...healthy, gatewayDown: true };
+        expect(watchdogDecision({ ...down, msSinceAdvance: 60_000, gateway: null })).toBe('gateway_down');
+        expect(watchdogDecision({ ...down, msSinceAdvance: 60_000, gateway: 'stale' })).toBe('gateway_down');
+        // Before the server probe and the relaunch fallback: no click and no launch can be seen through it.
+        expect(watchdogDecision({ ...down, msSinceAdvance: 60_000, serverDown: true })).toBe('gateway_down');
+        expect(watchdogDecision({ ...down, msSinceAdvance: 60_000, logoutFailed: true })).toBe('gateway_down');
+        // A lite child that exited is still evidence of its own; a healthy tick is still healthy.
+        expect(watchdogDecision({ ...down, childExit: 1 })).toBe('relaunch');
+        expect(watchdogDecision(down)).toBe('ok');
+        // A reachable gateway keeps today's verdict.
+        expect(watchdogDecision({ ...healthy, msSinceAdvance: 60_000, gateway: 'stale', gatewayDown: false })).toBe('logout');
     });
 
     test('never relaunches an outdated client (exit 3)', () => {
@@ -616,6 +632,201 @@ test('a gateway reading cached while the session was out is dropped on resume: n
     rec.calls.length = 0;
     await wd.check();
     expect(rec.calls).toEqual([]);
+});
+
+describe('a gateway outage is not a wedged client (rs/659)', () => {
+    let prevTick: string | undefined;
+    beforeEach(() => {
+        prevTick = process.env.SPEEDRUN_TICK_MS;
+        process.env.SPEEDRUN_TICK_MS = '30';
+    });
+    afterEach(() => {
+        if (prevTick === undefined) delete process.env.SPEEDRUN_TICK_MS;
+        else process.env.SPEEDRUN_TICK_MS = prevTick;
+    });
+
+    test('the SDK reconnecting: no logout, said once; back with no tick yet: still waiting for the grace; past it a stale tick is the client again', async () => {
+        const { session, sdk } = fakeSession({ lastAdvanceAt: Date.now() - 10_000 });
+        sdk.connection = 'reconnecting';
+        sdk.checkBotStatus = async () => ({ status: 'stale', inGame: true });
+        const rec = recorder(true);
+        const events: WatchdogEvent[] = [];
+        const wd = startWatchdog(session, { timer: false, actions: rec.actions, onEvent: e => events.push(e) });
+        await wd.check();
+        await wd.check();
+        expect(rec.calls).toEqual([]);
+        expect(events.map(e => e.verdict)).toEqual(['gateway_down']);
+        expect(events[0]!.reason).toMatch(/^our gateway is unreachable/);
+        // Back: the SDK reconnected, the gateway still holds the page's last state (stale).
+        sdk.connection = 'connected';
+        await wd.check();
+        expect(rec.calls).toEqual([]);
+        expect(events.map(e => e.verdict)).toEqual(['gateway_down', 'gateway_down']);
+        expect(events[1]!.reason).toMatch(/^our gateway is back; waiting for the page/);
+        await sleep(GATEWAY_BACK_GRACE_TICKS * 30 + 100);
+        await wd.check();
+        expect(rec.calls).toEqual(['logout', 'login']);
+    });
+
+    test('back and the page publishing again: nothing done', async () => {
+        const { session, sdk } = fakeSession({ lastAdvanceAt: Date.now() - 10_000 });
+        sdk.connection = 'reconnecting';
+        const rec = recorder(true);
+        const wd = startWatchdog(session, { timer: false, actions: rec.actions });
+        await wd.check();
+        sdk.connection = 'connected';
+        await wd.check();
+        track(session, { ...sdk.getState()!, tick: 101, inGame: true });
+        await sleep(GATEWAY_BACK_GRACE_TICKS * 30 + 100);
+        track(session, { ...sdk.getState()!, tick: 102, inGame: true });
+        await wd.check();
+        expect(rec.calls).toEqual([]);
+    });
+
+    test('the gateway status not answering (connection refused) reads as down too', async () => {
+        const { session, sdk } = fakeSession({ lastAdvanceAt: Date.now() - 10_000 });
+        sdk.checkBotStatus = async () => {
+            throw new Error('ECONNREFUSED');
+        };
+        const rec = recorder(true);
+        const events: WatchdogEvent[] = [];
+        await startWatchdog(session, { timer: false, actions: rec.actions, onEvent: e => events.push(e) }).check();
+        expect(rec.calls).toEqual([]);
+        expect(events.map(e => e.verdict)).toEqual(['gateway_down']);
+    });
+
+    test('a logout issued during the outage, then an adopt: nothing is sent, before the adopt or after it', async () => {
+        const { session, sdk } = fakeSession({ lastInWorldTick: 200 });
+        sdk.state = { ...sdk.state!, tick: 200 };
+        sdk.connection = 'reconnecting';
+        const out = logoutClean(session, { timeoutMs: 5_000 });
+        await sleep(150);
+        expect(sdk.sent).toEqual([]);
+        expect(session.expectInWorld).toBe(false);
+        // The gateway is back and run.ts adopts the restored session in the same breath.
+        sdk.connection = 'connected';
+        adoptSession(session, 200);
+        const r = await out;
+        expect(r).toMatchObject({ ok: false, superseded: true, sends: 0 });
+        expect(r.reason).toMatch(/^superseded: session 2 began while the logout of session 1 waited/);
+        for (let i = 0; i < 2 * LOGOUT_CONFIRM_TICKS; i++) {
+            sdk.tick();
+            await sleep(30);
+        }
+        expect(sdk.sent).toEqual([]);
+        expect(session.expectInWorld).toBe(true);
+    });
+
+    test('a logout already clicking when an adopt lands sends nothing more after it', async () => {
+        const { session, sdk } = fakeSession({ lastInWorldTick: 200 });
+        sdk.state = { ...sdk.state!, tick: 200 };
+        const timer = setInterval(() => sdk.tick(), 30);
+        try {
+            const out = logoutClean(session, { timeoutMs: 5_000 });
+            await sleep(20);
+            expect(sdk.sent.length).toBe(1);
+            adoptSession(session);
+            const at = sdk.sent.length;
+            expect((await out).superseded).toBe(true);
+            await sleep(30 * 3 * LOGOUT_CONFIRM_TICKS);
+            expect(sdk.sent.length).toBe(at);
+        } finally {
+            clearInterval(timer);
+        }
+    });
+
+    test('the watchdog takes a superseded logout as no failure: no relaunch follows', async () => {
+        const { session } = fakeSession({ lastAdvanceAt: Date.now() - 10_000 });
+        const rec = recorder(true);
+        const wd = startWatchdog(session, {
+            timer: false,
+            actions: {
+                ...rec.actions,
+                logout: async s => {
+                    rec.calls.push('logout');
+                    adoptSession(s);
+                    return { ...loggedOut, ok: false, superseded: true, sends: 1, reason: 'superseded' };
+                },
+            },
+        });
+        await wd.check();
+        session.lastAdvanceAt = Date.now() - 10_000;
+        await wd.check();
+        expect(rec.calls).toEqual(['logout', 'logout']);
+        expect(wd.relaunches).toBe(0);
+    });
+});
+
+describe("BotSDK's reconnect queue and the logout click (rs/659)", () => {
+    /** A gateway on one port that can go down and come back, recording the actions it receives. */
+    function gateway() {
+        const actions: unknown[] = [];
+        const serve = (port = 0) =>
+            Bun.serve({
+                port,
+                fetch(req, srv) {
+                    if (srv.upgrade(req)) return;
+                    return new Response('no', { status: 400 });
+                },
+                websocket: {
+                    message(ws, raw) {
+                        const msg = JSON.parse(String(raw));
+                        if (msg.type === 'sdk_connect') ws.send(JSON.stringify({ type: 'sdk_connected', success: true }));
+                        if (msg.type === 'sdk_action') actions.push(msg.action);
+                    },
+                },
+            });
+        let server = serve();
+        const port = server.port;
+        return {
+            url: `ws://localhost:${port}`,
+            actions,
+            down: () => server.stop(true),
+            up: () => void (server = serve(port)),
+            stop: () => server.stop(true),
+        };
+    }
+
+    async function until(pred: () => boolean, ms = 3_000) {
+        const end = Date.now() + ms;
+        while (!pred()) {
+            if (Date.now() > end) throw new Error('timed out');
+            await sleep(10);
+        }
+    }
+
+    test('an action sent while the SDK reconnects is queued and replayed once the gateway is back; sendLogoutClick never queues one', async () => {
+        const gw = gateway();
+        const { BotSDK } = await import('../../sdk/index');
+        const sdk = new BotSDK({
+            botUsername: 'srtest', password: 'x', gatewayUrl: gw.url, readyTimeout: 0, autoReconnect: true,
+            reconnectBaseDelay: 20, reconnectMaxDelay: 50, autoLaunchBrowser: false, actionTimeout: 500, showChat: false,
+        });
+        try {
+            await sdk.connect();
+            gw.down();
+            await until(() => sdk.getConnectionState() === 'reconnecting');
+            const session = { ...fakeSession().session, sdk, sessionId: 7 } as unknown as Session;
+            // The hazard: a raw click is held through the outage and delivered after it.
+            void sdk.sendClickComponent(4242).catch(() => {});
+            expect(sendLogoutClick(session)).toBe(false);
+            // The session moves on (an adopt) while the gateway is still down.
+            adoptSession(session);
+            gw.up();
+            await until(() => sdk.getConnectionState() === 'connected');
+            await until(() => gw.actions.length > 0);
+            await sleep(100);
+            expect(gw.actions).toEqual([{ type: 'clickComponent', componentId: 4242, reason: 'SDK' }]);
+            // Connected again, the current session's logout goes; an older generation's does not.
+            expect(sendLogoutClick(session, 7)).toBe(false);
+            expect(sendLogoutClick(session)).toBe(true);
+            await until(() => gw.actions.length === 2);
+            expect(gw.actions[1]).toMatchObject({ type: 'clickComponent', componentId: LOGOUT_BUTTON });
+        } finally {
+            await sdk.disconnect();
+            gw.stop();
+        }
+    });
 });
 
 test("adoptSession begins a login made outside this process: a new session id, the page's tick base, back in the world", () => {
