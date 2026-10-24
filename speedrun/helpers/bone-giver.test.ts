@@ -730,18 +730,15 @@ describe("the S07 cue names SCORED's site (rs/635): the givers go there and wait
         const r = rig();
         const write = scored(r.dir);
         r.g.onCue(write(WILLOW.receiver));
-        const phases: string[] = [];
         r.priv.travel = async s => {
             r.walks.push(s);
             r.sdk.push({ player: player(s.giver) });
             // SCORED moved on while we walked: the cue now names the oaks.
             if (r.walks.length === 1) r.g.onCue(write(OAK.receiver));
         };
-        const watch = setInterval(() => phases.push(r.priv.phase), 0);
         await ticks(r.sdk, r.priv.cycle(), 3);
         expect(r.status()).toMatchObject({ phase: 'travel', detail: 'site 1' });
         await ticks(r.sdk, r.priv.cycle(), 3);
-        clearInterval(watch);
         expect(r.walks).toEqual([WILLOW, OAK]);
         expect(r.status()).toMatchObject({ phase: 'waiting', detail: 'site 0', tile: { x: OAK.giver.x, z: OAK.giver.z } });
     });
