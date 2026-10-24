@@ -2161,40 +2161,77 @@ async function demonFight(ctx: Ctx, note: (line: string) => void, bow: number): 
  */
 async function toZooknock(ctx: Ctx, topUpFrom?: TopUp): Promise<void> {
     const { sdk } = ctx;
-    await upkeep(sdk, async () => {
-        await jailSafe(sdk, async () => {
-            if (inArea(sdk, AREAS.westWarehouse) && pos(sdk).level === 0) {
-                // The roofs cross the temple's first floor among its religious guards: the zone prayer per step.
-                for (const r of ROOFS) {
-                    await legPrayer(sdk, r);
-                    if (r.climb) await climb(sdk, r);
-                    else await go(ctx, r);
-                }
+    await upkeep(sdk, () => zooknockWay(sdk, {
+        async roofs() {
+            // The roofs cross the temple's first floor among its religious guards: the zone prayer per step.
+            for (const r of ROOFS) {
+                await legPrayer(sdk, r);
+                if (r.climb) await climb(sdk, r);
+                else await go(ctx, r);
             }
-            if (inArea(sdk, AREAS.atoll) && !outsideTown(sdk)) {
-                if (pos(sdk).level === 0) {
-                    // The zone prayer stays on up the ladder; the jump's leg below keeps or switches it standing.
-                    await townGo(ctx, { x: BRIDGE_LADDER.x, z: BRIDGE_LADDER.z + 1 }, 0, [], { keep: true });
-                    await climb(sdk, BRIDGE_LADDER);
-                }
-                // The jump off the bridge's end: 1 HP, refused while a monkey (quest_mm.rs2:1036-1043).
-                await topUp(sdk);
-                await legPrayer(sdk, JUMP_SQUARE);
-                const r = await opLoc(sdk, { ...JUMP_SQUARE, op: /jump/i, radius: 15 }, /jump/i, s => outsideTown(s), { resendEvery: 5, maxTicks: 40 });
-                if (!r.ok) throw new Error(`the bridge jump did not land (at ${where(sdk)})`);
-                if (topUpFrom?.p) await h12oLeg(sdk, topUpFrom, 'P');
+        },
+        async jump() {
+            if (pos(sdk).level === 0) {
+                // The zone prayer stays on up the ladder; the jump's leg below keeps or switches it standing.
+                await townGo(ctx, { x: BRIDGE_LADDER.x, z: BRIDGE_LADDER.z + 1 }, 0, [], { keep: true });
+                await climb(sdk, BRIDGE_LADDER);
             }
-            if (outsideTown(sdk)) {
-                const foot = { x: DUNGEON_LADDER.x, z: DUNGEON_LADDER.z + 1 };
-                await legPrayer(sdk, foot);
-                await go(ctx, foot, 1);
-                await immune(sdk, 'the dungeon (ladder)');
-                // A climb click lost under a hit is re-sent by lib/act's rules (rs/411, rs/481).
-                await climb(sdk, DUNGEON_LADDER);
+            // The jump off the bridge's end: 1 HP, refused while a monkey (quest_mm.rs2:1036-1043).
+            await topUp(sdk);
+            await legPrayer(sdk, JUMP_SQUARE);
+            const r = await opLoc(sdk, { ...JUMP_SQUARE, op: /jump/i, radius: 15 }, /jump/i, s => outsideTown(s), { resendEvery: 5, maxTicks: 40 });
+            if (!r.ok) throw new Error(`the bridge jump did not land (at ${where(sdk)})`);
+        },
+        ...(topUpFrom?.p ? { pLeg: () => h12oLeg(sdk, topUpFrom, 'P') } : {}),
+        async ladder() {
+            const foot = { x: DUNGEON_LADDER.x, z: DUNGEON_LADDER.z + 1 };
+            await legPrayer(sdk, foot);
+            await go(ctx, foot, 1);
+            await immune(sdk, 'the dungeon (ladder)');
+            // A climb click lost under a hit is re-sent by lib/act's rules (rs/411, rs/481).
+            await climb(sdk, DUNGEON_LADDER);
+        },
+        walk: () => praying(sdk, 'protect_from_melee', () => logStalls(sdk, 'dungeon walk', () => go(ctx, ZOOKNOCK, 2))),
+    }));
+}
+
+/** toZooknock's legs, each from where the one before left the player (zooknockWay runs them). */
+export interface ZooknockLegs {
+    /** Over the roofs, from the western warehouse's ground floor. */
+    roofs: () => Promise<void>;
+    /** From anywhere in the town (the cell included) up the bridge and off its end, outside the town. */
+    jump: () => Promise<void>;
+    /** H12o-P's leg at the jump's landing, when P has a top-up. */
+    pLeg?: () => Promise<unknown>;
+    /** From outside the town down the dungeon ladder. */
+    ladder: () => Promise<void>;
+    /** The dungeon walk to Zooknock. */
+    walk: () => Promise<void>;
+}
+
+/**
+ * The way to Zooknock: everything above ground under jailSafe, then the dungeon walk. A knockout during H12o-P's leg
+ * (the archers reach the landing) does not make the leg throw: it moves on without the top-up with SCORED in the cell.
+ * So the jailSafe errand ends only in the dungeon, and throws otherwise, which retries it from the cell. The leg runs
+ * at most once: on a retry its helper may already have had P's final stop, and the cue writer won't reopen a final
+ * session, so the retry walks on without the top-up.
+ */
+export async function zooknockWay(sdk: Sdk, legs: ZooknockLegs): Promise<void> {
+    let pTried = false;
+    await jailSafe(sdk, async () => {
+        if (inArea(sdk, AREAS.westWarehouse) && pos(sdk).level === 0) await legs.roofs();
+        if (inArea(sdk, AREAS.atoll) && !outsideTown(sdk)) {
+            await legs.jump();
+            if (legs.pLeg && pTried) stepNote(`S15:P top-up: not tried again after a knockout (at ${where(sdk)}); on to the dungeon without it`);
+            else if (legs.pLeg) {
+                pTried = true;
+                await legs.pLeg();
             }
-        });
-        await praying(sdk, 'protect_from_melee', () => logStalls(sdk, 'dungeon walk', () => go(ctx, ZOOKNOCK, 2)));
+        }
+        if (outsideTown(sdk)) await legs.ladder();
+        if (!inArea(sdk, AREAS.dungeon)) throw new Error(`not in the dungeon for the walk to Zooknock (at ${where(sdk)})`);
     });
+    await legs.walk();
 }
 
 /** Ticks without a step before a walk counts as held (a zombie in the dungeon's corridors, K and P). */
