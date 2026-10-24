@@ -578,7 +578,7 @@ async function hopTeleport(sdk: TravelSdk, trip: Trip, spell: Spell): Promise<Ho
 
 // ------------------------------------------------------------------ the chained run
 
-const CLOSED_DOOR = (l: NearbyLoc) => /door|gate/i.test(l.name) && opIndex(l, /^open$/i) !== undefined;
+export const CLOSED_DOOR = (l: NearbyLoc) => /door|gate/i.test(l.name) && opIndex(l, /^open$/i) !== undefined;
 const OPEN_DOOR = (l: NearbyLoc) => /door|gate/i.test(l.name) && opIndex(l, /^close$/i) !== undefined;
 const WEB = (l: NearbyLoc) => /^web$/i.test(l.name) && opIndex(l, /^slash$/i) !== undefined;
 const DOORISH = (l: NearbyLoc) => /door|gate/i.test(l.name);
