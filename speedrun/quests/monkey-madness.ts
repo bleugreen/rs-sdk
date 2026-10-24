@@ -1771,6 +1771,23 @@ export async function gtSwap(ctx: Pick<Ctx, 'sdk'>, o: Pick<Resolved, 'bow' | 'k
     }
 }
 
+/** Narnode's menu option for a spare seal, offered once the quest is started and no seal is held (mm_narnode.rs2:152, :174). */
+export const LOST_SEAL = /^I've lost my copy of the Royal Seal/;
+/** The menu's way out, re-offered after the spare is given (mm_narnode.rs2:169-171, :175). */
+const BACK_LATER = /^I'll be back later/;
+
+/**
+ * A's talk with Narnode for the royal seal: the quest's start ('Yes'); with the quest started and the seal lost, the
+ * spare from his menu (`inv_add` with no room check, so a full pack is a named refusal), then out of the menu; nothing
+ * with the seal held. The menu holds only before Caranock is asked (mm_narnode.rs2:145): later, A is past re-running.
+ */
+export function narnodeTalk(s: BotWorldState): { choices: RegExp[]; start: boolean } | null | string {
+    if ((questStatus(s, 'mm') ?? 'not_started') === 'not_started') return { choices: [/^Yes$/], start: true };
+    if (holds(s, MM_OBJ.royalSeal)) return null;
+    if (freeSlots(s) < 1) return `S15:A needs 1 free slot for Narnode's spare seal (${freeSlots(s)} free)`;
+    return { choices: [LOST_SEAL, BACK_LATER], start: false };
+}
+
 /** Glide from the pilot in reach (Ta Quir Priw on the tree's top floor, or Gandius) to `to` (travel.ts glide). */
 async function glideTo(sdk: Sdk, to: 'gandius' | 'ta_quir_priw'): Promise<void> {
     const r = await glide(sdk, to);
@@ -2839,23 +2856,32 @@ const BODIES: Partial<Record<string, Body>> = {
         pre: o => all(
             s => questStatus(s, 'tree') === 'complete' || 'Tree Gnome Village is not complete',
             s => questStatus(s, 'grandtree') === 'complete' || 'The Grand Tree is not complete',
-            s => (questStatus(s, 'mm') ?? 'not_started') === 'not_started' || holds(s, MM_OBJ.royalSeal) || 'Monkey Madness is already started',
             s => {
                 const short = kitMissing(s, o.bow, { served: o.kitServed?.() });
                 return !short.length || (!!o.kitFrom && !o.kitServed?.()) || `H12 kit short and ${o.kitFrom ? 'served this attempt' : 'no kitFrom'}: ${kitText(short)}`;
             },
+            // The seal's room is judged here only when no swap will change the pack; otherwise run judges it after the swap.
+            s => kitMissing(s, o.bow, { served: o.kitServed?.() }).length > 0 || typeof narnodeTalk(s) !== 'string' || (narnodeTalk(s) as string),
             s => (inGrandTree(s) && pos(s).level === 0) || chebyshev(pos(s), TREE_DOOR_OUTSIDE) <= 10 || `not at the Grand Tree (at ${JSON.stringify(pos(s))})`,
         ),
         async run(ctx, o) {
             const { sdk } = ctx;
             await gtSwap(ctx, o);
             await preDose(sdk);
+            const talk = narnodeTalk(sdk.getState()!);
+            if (typeof talk === 'string') throw new Error(talk);
             await intoTree(ctx, 0);
-            // "Start Monkey Madness?" Yes (mm_narnode.rs2:124-140): the story, the seal and its objbox, the chapter card.
-            const r = await talkTo(sdk, NARNODE_NPC, [/^Yes$/], { maxTicks: 200, idle: 4, near: NARNODE, closeModals: true, until: s => holds(s, MM_OBJ.royalSeal), ...shaped(MM_SHAPES.narnodeStart) });
-            noteShape('A Narnode', r);
-            if (!holds(sdk.getState()!, MM_OBJ.royalSeal)) throw new Error(`no royal seal from Narnode: ${r.reason ?? r.transcript.slice(-2).join(' / ')}`);
-            await dismiss(sdk);
+            if (talk?.start) {
+                // "Start Monkey Madness?" Yes (mm_narnode.rs2:124-140): the story, the seal and its objbox, the chapter card.
+                const r = await talkTo(sdk, NARNODE_NPC, talk.choices, { maxTicks: 200, idle: 4, near: NARNODE, closeModals: true, until: s => holds(s, MM_OBJ.royalSeal), ...shaped(MM_SHAPES.narnodeStart) });
+                noteShape('A Narnode', r);
+                if (!holds(sdk.getState()!, MM_OBJ.royalSeal)) throw new Error(`no royal seal from Narnode: ${r.reason ?? r.transcript.slice(-2).join(' / ')}`);
+                await dismiss(sdk);
+            } else if (talk) {
+                const r = await talkTo(sdk, NARNODE_NPC, talk.choices, { maxTicks: 120, idle: 4, near: NARNODE, closeModals: true });
+                stepNote(`S15:A Narnode's spare seal: ${holds(sdk.getState()!, MM_OBJ.royalSeal) ? 'held' : 'NOT held'} after ${r.ticks} ticks, ${r.pages} pages`);
+                if (!holds(sdk.getState()!, MM_OBJ.royalSeal)) throw new Error(`no spare royal seal from Narnode: ${r.reason ?? r.transcript.slice(-2).join(' / ')}`);
+            }
         },
         postconditions: holding(MM_OBJ.royalSeal),
     },
