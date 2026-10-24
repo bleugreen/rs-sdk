@@ -750,7 +750,9 @@ describe('a gateway outage is not a wedged client (rs/659)', () => {
             },
         });
         await wd.check();
+        // Wedged again past the adopt's launch grace: had the superseded logout counted as failed, this would relaunch.
         session.lastAdvanceAt = Date.now() - 10_000;
+        session.launchedAt = Date.now() - 60_000;
         await wd.check();
         expect(rec.calls).toEqual(['logout', 'logout']);
         expect(wd.relaunches).toBe(0);
