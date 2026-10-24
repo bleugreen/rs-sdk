@@ -5,6 +5,8 @@
  * A plan names accounts, so the plan file lives outside the checkout like the accounts list; the committed
  * example (`plan.example.json`) uses placeholder names.
  */
+import { LOW_SITES } from '../methods/hp-train.ts';
+import { defaultCaps, type HpSiteCaps } from './hp-sites.ts';
 
 /** Methods the runner can bring a fresh account to and run (docs/markets/phase2.md 'Per-login rates'). */
 export const METHODS = ['knights', 'heroes', 'guards', 'iron', 'shilo'] as const;
@@ -105,6 +107,8 @@ export interface Plan {
     /** Wall ms between two login starts from this address. */
     loginSpacingMs: number;
     hp: number;
+    /** Accounts each low Hitpoints site takes at once (hp-sites.ts); 0 closes a site. */
+    hpSites: HpSiteCaps;
     sharks: SharkPlan;
     ramp: RampPlan | null;
     /** Where an account goes when the sharks run out: plan B's lower-food methods. */
@@ -154,7 +158,7 @@ const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 
 export function parsePlan(raw: unknown): Plan {
     const problems: string[] = [];
     if (!isObj(raw)) throw new PlanError(['the plan must be a JSON object']);
-    const known = ['accounts', 'maxSessions', 'loginSpacingMs', 'hp', 'sharks', 'ramp', 'foodFallbackMix', 'ledger', 'sell', 'options'];
+    const known = ['accounts', 'maxSessions', 'loginSpacingMs', 'hp', 'hpSites', 'sharks', 'ramp', 'foodFallbackMix', 'ledger', 'sell', 'options'];
     for (const k of Object.keys(raw)) if (!known.includes(k)) problems.push(`unknown key '${k}'`);
 
     const num = (where: string, v: unknown, def: number, o: { min?: number; max?: number; integer?: boolean } = {}): number => {
@@ -289,6 +293,19 @@ export function parsePlan(raw: unknown): Plan {
         if (away.length) problems.push(`sell.enabled: ${away.join(', ')} accounts cannot reach the Exchange (no return trip from Ardougne or Shilo exists yet); enable sales in a plan without them`);
     }
 
+    let hpSites = defaultCaps();
+    if (raw.hpSites !== undefined) {
+        if (!isObj(raw.hpSites)) problems.push('hpSites must map Hitpoints sites to the accounts each takes at once');
+        else {
+            hpSites = {};
+            for (const [k, v] of Object.entries(raw.hpSites)) {
+                if (!(LOW_SITES as string[]).includes(k)) problems.push(`hpSites.${k}: not a low Hitpoints site (${LOW_SITES.join(', ')})`);
+                else hpSites[k as keyof HpSiteCaps] = num(`hpSites.${k}`, v, 0, { min: 0, max: MAX_LOGINS, integer: true });
+            }
+            if (!Object.values(hpSites).some(n => (n ?? 0) > 0) && accounts.some(a => NEEDS[a.method].hp)) problems.push('hpSites closes every site, so no account could train Hitpoints');
+        }
+    }
+
     const options: Plan['options'] = {};
     if (raw.options !== undefined) {
         if (!isObj(raw.options)) problems.push('options must map methods to role options');
@@ -306,6 +323,7 @@ export function parsePlan(raw: unknown): Plan {
         maxSessions,
         loginSpacingMs: num('loginSpacingMs', raw.loginSpacingMs, DEFAULTS.loginSpacingMs, { min: 0 }),
         hp: num('hp', raw.hp, DEFAULTS.hp, { min: 10, max: 99, integer: true }),
+        hpSites,
         sharks,
         ramp,
         foodFallbackMix,
