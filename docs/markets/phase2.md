@@ -393,9 +393,9 @@ other load, so `lab.ts`'s 1.2 GB floor stopped both runs early: run a 20-account
 processes' memory every 30 s.
 
 **Found, not fixed here:** a lab knight with no sharks goes to the food fallback's iron, and the iron sequence
-assumes the tutorial's bronze pickaxe is still carried; a knight that died while thieving at HP 10 (in the queue, or
-on the men) had lost it, so its `mining` stage failed three times and the account was given up (one account in each
-run). Iron needs a pickaxe stage (buy or bank) before `mining`.
+assumes the tutorial's bronze pickaxe is still carried. One account in each run had none, so its `mining` stage failed
+three times and the account was given up; run 3's had died thieving the Lumbridge men at HP 10 while it queued for
+a site (run 4's was not traced). Iron needs a pickaxe stage (buy or bank) before `mining`.
 
 ```sh
 # block M17 on fedora, inside the build slot (dependencies untracked), all fresh
