@@ -4,9 +4,10 @@ import { drive, FakeSdk, baseState, runeNeedProblems } from '../lib/fake-sdk';
 import { TickLog } from '../lib/ticks';
 import type { Observed, StepContext } from '../runner/step';
 import {
-    AIR_RUNES, ARRIVAL, barredReason, entryRefusal, exitClean, exitDropItems, exitMagic, FALLBACK_RUNES, fightKolodion, formPicker, KEEP_SHARKS, kit, LETTERS, newTally, prayerBudget, quest,
+    AIR_RUNES, ARRIVAL, barredReason, entryRefusal, exitClean, exitDropItems, exitMagic, FALLBACK_RUNES, fightKolodion, formPicker, KEEP_SHARKS, kit, LETTERS, newTally, quest,
     FIRE_WAVE_MAX_CASTS, RUNE_NEED, RUNE_USE, SPELL_RUNES, SPELLS, spellReady, stepId, steps, type Options,
 } from './mage-arena';
+import { prayerReserve } from './segments';
 
 // Config ids from server/content/pack/obj.pack: entryRefusal reads the categories by id.
 const ID = {
@@ -106,8 +107,8 @@ describe('spells and kit (H13)', () => {
         expect(spellReady('fire_blast')(without(arrival({}, { magic: 60 }), /magic potion/i), undefined)).toBe(true);
     });
     test('prayer budget counts each dose at its restore (7 + level/4)', () => {
-        expect(prayerBudget(arrival())).toBe(40 + 16 * (7 + 23));
-        expect(prayerBudget(without(arrival({}, { points: 20 }), /prayer potion/i))).toBe(20);
+        expect(prayerReserve(arrival())).toBe(40 + 16 * (7 + 23));
+        expect(prayerReserve(without(arrival({}, { points: 20 }), /prayer potion/i))).toBe(20);
     });
 });
 
@@ -412,12 +413,28 @@ describe('exit drops (the ledger T16-18 row, done in F)', () => {
         expect(done(dropped)).toBe(false);
     });
 
-    /** SCORED in the chamber; the fake server drops whatever was clicked a tick later, the god staff onto the tile. */
+    /**
+     * SCORED in the chamber; the fake server drops whatever was clicked a tick later, the god staff onto the
+     * tile, and a Prayer potion drunk restores 7 + level/4 a tick later, one dose down (a vial after the last).
+     */
     function chamberSdk(s: BotWorldState) {
         const sdk = new FakeSdk(s);
         let drops: number[] = [];
-        sdk.onSend = a => { if (a.method === 'sendDropItem') drops.push(a.args[0] as number); };
+        let drinks: number[] = [];
+        sdk.onSend = a => {
+            if (a.method === 'sendDropItem') drops.push(a.args[0] as number);
+            if (a.method === 'sendUseItem') drinks.push(a.args[0] as number);
+        };
         const each = (st: BotWorldState): Partial<BotWorldState> => {
+            if (drinks.length) {
+                const slot = drinks.shift()!;
+                const pot = st.inventory.find(i => i.slot === slot && /^prayer potion\((\d)\)$/i.test(i.name));
+                if (!pot) return {};
+                const left = Number(/\((\d)\)/.exec(pot.name)![1]) - 1;
+                const next = left ? { ...pot, name: `Prayer potion(${left})` } : { ...pot, name: 'Vial', optionsWithIndex: [] };
+                const p = st.prayers;
+                return { inventory: st.inventory.map(i => (i === pot ? next : i)), prayers: { ...p, prayerPoints: Math.min(p.prayerLevel, p.prayerPoints + 7 + Math.floor(p.prayerLevel / 4)) } };
+            }
             if (!drops.length) return {};
             const gone = st.inventory.filter(i => drops.includes(i.slot));
             drops = [];
@@ -439,6 +456,32 @@ describe('exit drops (the ledger T16-18 row, done in F)', () => {
         expect(end.inventory.filter(i => i.name === 'Shark').length).toBe(KEEP_SHARKS);
         expect(F.postconditions(end, {})).toBe(true);
         expect(F.done!(obs(end), {})).toBe(true);
+    });
+
+    test('F drinks the held prayer doses toward full before the exit drops, for Elvarg (rs/687 R3)', async () => {
+        const s = withInv(at(without(arrival({}, { points: 40 }), /greegree/i), CHAMBER_AT), item('Cape of saradomin', ID.saradominCape), item('Staff of saradomin', ID.saradominStaff));
+        const { sdk, each, ctx } = chamberSdk(s);
+        const F = seg('F');
+        await drive(sdk, F.run(ctx) as Promise<unknown>, 30, each);
+        const end = sdk.getState()!;
+        // 40 + 30 + 30 reaches the level, 94: two doses, the rest left for H14 to take back.
+        expect(end.prayers.prayerPoints).toBe(94);
+        expect(sdk.sent.filter(a => a.method === 'sendUseItem').length).toBe(2);
+        expect(end.inventory.filter(i => /^prayer potion/i.test(i.name)).map(i => i.name).sort()).toEqual(['Prayer potion(2)', 'Prayer potion(4)', 'Prayer potion(4)', 'Prayer potion(4)']);
+        expect(F.postconditions(end, {})).toBe(true);
+    });
+
+    test('the last dose drunk leaves a vial, which goes with the exit drops', async () => {
+        const base = without(without(arrival({}, { points: 60 }), /greegree/i), /prayer potion/i);
+        const s = withInv(at(base, CHAMBER_AT), item('Prayer potion(1)', ID.prayerPotion, 1, ['Drink']), item('Cape of saradomin', ID.saradominCape), item('Staff of saradomin', ID.saradominStaff));
+        const { sdk, each, ctx } = chamberSdk(s);
+        const F = seg('F');
+        await drive(sdk, F.run(ctx) as Promise<unknown>, 30, each);
+        const end = sdk.getState()!;
+        expect(end.prayers.prayerPoints).toBe(90);
+        expect(end.inventory.some(i => /^vial$/i.test(i.name) || /^prayer potion/i.test(i.name))).toBe(false);
+        expect(F.postconditions(end, {})).toBe(true);
+        expect(exitClean()(withInv(end, item('Vial', 229)), undefined)).toMatch(/still holding .*vial/i);
     });
 
     test('a second F attempt of the same steps() does not pass on the first one\'s staff: with none seen it goes to the guardian', async () => {
