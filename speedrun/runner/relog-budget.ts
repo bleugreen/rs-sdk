@@ -142,6 +142,20 @@ export class RelogBudget {
         return closed;
     }
 
+    /**
+     * Rewrite the recorded `entry` (matched on its time, kind, maker, step and tick) with `patch`; its
+     * time stays. One login counted once: an adopted session that fell out again and was relogged is
+     * the adopt's entry, now the relog's.
+     */
+    amend(entry: RelogEntry, patch: Partial<Omit<RelogEntry, 'at'>>): RelogEntry {
+        const all = this.entries();
+        const i = all.findIndex(e => e.at === entry.at && e.kind === entry.kind && e.by === entry.by && e.step === entry.step && e.tick === entry.tick);
+        if (i < 0) throw new Error(`no ${entry.kind} relog recorded at ${entry.at} to amend`);
+        const next: RelogEntry = { ...all[i]!, ...patch, at: all[i]!.at };
+        this.write([...all.slice(0, i), next, ...all.slice(i + 1)]);
+        return next;
+    }
+
     /** true when one more relog of `kind` is within the budget, else why not. */
     check(kind: RelogKind): true | string {
         const u = this.used();
