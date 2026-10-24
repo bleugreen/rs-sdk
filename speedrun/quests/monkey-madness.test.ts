@@ -1552,6 +1552,46 @@ describe('S15:A cures a poison carried in from S14 (rs/755)', () => {
         expect(sdk.sent).toEqual([{ method: 'sendUseItem', args: [3, 1] }]);
         expect(sdk.state!.inventory.map(i => i.name)).toEqual(['Superantipoison(3)']);
     });
+
+    // rs/786: a fresh client session (a relog or resume into A, the tick restarted) shows a carried poison only at its
+    // first hit, 30 ticks in, after the trade has opened. The lab's old-code run: the trade opened 8 ticks in, H7's
+    // Antipoison(3) went back undrunk, and the hit came at 30.
+    test("a fresh session with H7's Antipoison(1) and no hit seen: one dose before the swap, its vial dropped, the pack the kit's 27", async () => {
+        const kit = Array.from({ length: 27 }, (_, i): InventoryItem => ({ slot: i, id: 1000 + i, name: `Kit item ${i}`, count: 1, optionsWithIndex: [] }));
+        const sdk = new FakeSdk(baseState({ tick: 5, inventory: [...kit, potion(27, 'Antipoison(1)')] }));
+        potionServer(sdk);
+        await drive(sdk, cureBeforeSwap(sdk as never), 20);
+        expect(sdk.sent).toEqual([{ method: 'sendUseItem', args: [27, 1] }, { method: 'sendDropItem', args: [27] }]);
+        expect(sdk.state!.inventory).toHaveLength(27);
+        expect(sdk.state!.inventory.some(i => /vial|antipoison/i.test(i.name))).toBe(false);
+    });
+
+    test('a fresh session holding Antipoison(3) and the Superantipoison(4): the plain one before the swap, and nothing more after it', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 5, inventory: [potion(3, 'Superantipoison(4)', MM_OBJ.superAntipoison4), potion(8, 'Antipoison(3)')] }));
+        potionServer(sdk);
+        await drive(sdk, cureBeforeSwap(sdk as never), 10);
+        await drive(sdk, preDose(sdk as never), 5);
+        expect(sdk.sent).toEqual([{ method: 'sendUseItem', args: [8, 1] }]);
+        expect(sdk.state!.inventory.map(i => i.name)).toEqual(['Superantipoison(4)', 'Antipoison(2)']);
+    });
+
+    test("a fresh served resume (no swap) with only H12's Superantipoison(4): preDose drinks one super dose before Narnode", async () => {
+        const sdk = new FakeSdk(baseState({ tick: 7, inventory: [potion(3, 'Superantipoison(4)', MM_OBJ.superAntipoison4)] }));
+        potionServer(sdk);
+        await drive(sdk, preDose(sdk as never), 10);
+        expect(sdk.sent).toEqual([{ method: 'sendUseItem', args: [3, 1] }]);
+        expect(sdk.state!.inventory.map(i => i.name)).toEqual(['Superantipoison(3)']);
+    });
+
+    test('a fresh session with no antipoison held: nothing drunk and nothing thrown; not fresh and no hit: nothing drunk', async () => {
+        const none = new FakeSdk(baseState({ tick: 5 }));
+        await drive(none, cureBeforeSwap(none as never), 5);
+        await drive(none, preDose(none as never), 5);
+        expect(none.sent).toEqual([]);
+        const old = new FakeSdk(baseState({ tick: 40, inventory: [potion(8, 'Antipoison(3)')] }));
+        await drive(old, cureBeforeSwap(old as never), 5);
+        expect(old.sent).toEqual([]);
+    });
 });
 
 describe("the Grand Tree swap leaves the kit complete, however low SCORED arrives (attempt 4: 3 held, 12 asked, one eaten in A's first ticks, 14 at the check)", () => {
@@ -1711,6 +1751,17 @@ describe("the Grand Tree swap leaves the kit complete, however low SCORED arrive
             expect(a().preconditions(withSeal, {} as MmContext)).toBe(true);
             const pastB = { ...sealed, inventory: [...sealed.inventory, { slot: 27, id: MM_OBJ.orders, name: 'Orders', count: 1, optionsWithIndex: [] }] };
             expect(a().preconditions(pastB, {} as MmContext)).toBe('S15 is past B: Narnode no longer re-issues the royal seal');
+        });
+
+        test("a full pack is refused before the start talk too (the seal is given the same way); a held seal needs no slot", () => {
+            expect(28 - atDoor(15).inventory.length).toBe(0);
+            expect(narnodeTalk(atDoor(15))).toBe("S15:A needs 1 free slot for Narnode's seal (0 free)");
+            expect(a().preconditions(atDoor(15), {} as MmContext)).toBe("S15:A needs 1 free slot for Narnode's seal (0 free)");
+            expect(narnodeTalk(atDoor(14))).toEqual({ choices: [/^Yes$/], start: true });
+            const sealed = started(atDoor(14));
+            const full = { ...sealed, inventory: [...sealed.inventory, { slot: 27, id: MM_OBJ.royalSeal, name: 'Royal seal', count: 1, optionsWithIndex: [] }] };
+            expect(28 - full.inventory.length).toBe(0);
+            expect(narnodeTalk(full)).toBeNull();
         });
     });
 
