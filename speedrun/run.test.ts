@@ -6,7 +6,7 @@ import { inCombatWindow } from './lib/world';
 import { deathGate, deathKey, DEATH_STEP, EXIT_DIED, ackRow } from './runner/death';
 import type { ReservationWatch } from './lib/host-reservation';
 import type { BotWorldState, InventoryItem, PlayerState } from '../sdk/types';
-import { TickPeriod } from './lib/wait';
+import { TickPeriod, waitUntil } from './lib/wait';
 import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
@@ -977,5 +977,90 @@ describe('a planned stop after the willow band, then --from (rs/753)', () => {
         expect(await closeTabAfterStop({ client: 'browser', expectInWorld: true }, deps([false]))).toBe('tab reset: SCORED is not confirmed out, so its tab is left open');
         expect(await closeTabAfterStop({ client: 'lite', expectInWorld: false }, deps([false]))).toBe('tab reset: not a browser session, nothing to close');
         expect(closes).toBe(1);
+    });
+});
+
+describe('a death inside a quest step: runSteps watches every step in the world (rs/762, attempt 4 died at S15:A)', () => {
+    /**
+     * A quest step at the Grand Tree door that waits 40 ticks (the H12 wait's shape), on runChainOnSession
+     * as run.ts drives it. `script` moves the world one tick; the logout click ends the session.
+     */
+    function questRun(script: (s: BotWorldState, started: number | null) => Partial<BotWorldState>) {
+        const p0 = { name: 'lab', worldX: 2465, worldZ: 3489, x: 2465, z: 3489, level: 0, hp: 6, maxHp: 40, isDead: false, lifeId: 1, respawnCount: 0, lastDeathTick: null, combat: { inCombat: false, targetIndex: -1, targetType: 'none', lastDamageTick: -1 } } as unknown as PlayerState;
+        const sdk = Object.assign(new FakeSdk(baseState({ tick: 300, player: p0 })), { checkBotStatus: async () => ({ status: 'active', inGame: true }) });
+        let exit!: (code: number) => void;
+        const child = { exited: new Promise<number>(r => (exit = r)), kill: () => exit(137) };
+        const now = Date.now();
+        const session = {
+            name: 'lab', client: 'lite', env: { BOT_USERNAME: 'lab', PASSWORD: 'x' }, sdk, bot: {}, sessionId: 1, launchId: 1, tickBase: 0, expectInWorld: true,
+            child, childExit: null, lastInWorldTick: 300, lastAdvanceAt: now, period: new TickPeriod(), launchedAt: now - 60_000, ticksSinceProgress: 0, watchdog: null, logPath: '/dev/null',
+        } as unknown as Session;
+        void child.exited.then(c => { session.childExit = c; });
+        let clicked = false;
+        sdk.onSend = a => {
+            if (a.method !== 'sendClickComponent' || a.args[0] !== LOGOUT_BUTTON) return;
+            clicked = true;
+            exit(0);
+        };
+        let started: number | null = null;
+        let finished = false;
+        const timer = setInterval(() => { if (!clicked) sdk.tick(s => script(s, started)); }, 5);
+        const log = TickLog.memory('quest-death');
+        const quest: ChainStep = {
+            id: 'S15', kind: 'step', name: 'S15:A-narnode', preconditions: () => true, postconditions: () => true, logoutSafe: true,
+            run: async ctx => {
+                started = ctx.sdk.getState()!.tick;
+                await waitUntil(ctx.sdk, s => s.tick >= started! + 40, { maxTicks: 60 });
+                finished = true;
+            },
+        };
+        const handlers = { on: () => {}, off: () => {}, exit: () => {}, log: () => {} };
+        const run = async () => {
+            try {
+                return await runChainOnSession(session, { log, chain: [quest], reservation: { boundary: () => null, path: '' } as unknown as ReservationWatch, from: 0, signals: handlers });
+            } finally {
+                clearInterval(timer);
+            }
+        };
+        return { session, log, run, finished: () => finished };
+    }
+
+    test("poison takes the last hitpoints mid-step: the step ends at once, the (death) row, DIED, exit 6, and the next start is refused until --r8-recovered", async () => {
+        let deadAt: number | null = null;
+        const w = questRun((s, started) => {
+            const t = s.tick + 1;
+            const p = s.player!;
+            if (started === null || p.worldX === 3222) return {};
+            if (deadAt === null && t >= started + 5) deadAt = t;
+            if (deadAt === null) return {};
+            if (t < deadAt + 4) return { player: { ...p, hp: 0, isDead: true } };
+            return {
+                player: { ...p, worldX: 3222, worldZ: 3218, x: 3222, z: 3218, hp: 40, isDead: false, lifeId: 2, respawnCount: 1 } as PlayerState,
+                gameMessages: [...s.gameMessages, { type: 0, text: 'Oh dear you are dead!', sender: '', tick: t, fromSelf: false }],
+            };
+        });
+        const ran = await w.run();
+        expect(ran.result.code).toBe(EXIT_DIED);
+        expect(ran.result.outcome).toMatch(/^DIED: SCORED died in S15:A-narnode: \(2465,3489,0\) on tick \d+ to \(2465,3489,0\) on tick \d+ \(dead; hp 6 at the start, lowest 0, 0 after\) \(the chain had ended: FAILED: step "S15:A-narnode" run failed: SCORED died in S15:A-narnode/);
+        // The step was ended by the death, not by its own 40-tick wait.
+        expect(w.finished()).toBe(false);
+        expect(w.session.died).toMatchObject({ signs: ['dead'], hpMin: 0 });
+        const deaths = w.log.rows.filter(r => r.step === DEATH_STEP);
+        expect(deaths).toHaveLength(1);
+        expect(deaths[0]).toMatchObject({ ok: false, meta: { from: { x: 2465, z: 3489, level: 0 }, signs: ['dead'] } });
+        expect(deathGate(w.log.rows)).toMatchObject({ refusal: expect.stringContaining(`--r8-recovered=${deathKey(deaths[0]!)}`) });
+    });
+
+    test('a teleport inside the quest step onto the respawn square, hitpoints as they were, is no death: the step completes', async () => {
+        const w = questRun((s, started) => {
+            const p = s.player!;
+            if (started === null || s.tick + 1 !== started + 5) return {};
+            return { player: { ...p, worldX: 3221, worldZ: 3218, x: 3221, z: 3218 } as PlayerState };
+        });
+        const ran = await w.run();
+        expect(ran.result.code).not.toBe(EXIT_DIED);
+        expect(w.finished()).toBe(true);
+        expect(w.session.died).toBeUndefined();
+        expect(w.log.rows.filter(r => r.step === DEATH_STEP)).toEqual([]);
     });
 });

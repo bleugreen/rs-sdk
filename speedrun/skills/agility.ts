@@ -364,6 +364,19 @@ async function leave(ctx: StepContext<unknown>, o: AgilityOptions): Promise<void
     if (!r.ok) console.warn(`[agility] logout click on tick ${r.clickTick} not confirmed: ${r.reason}`);
 }
 
+/**
+ * The survival floor for the Wilderness band (main, 19:0xZ, rs/762): it starts only with at least this
+ * much food held, so SCORED never stands on the course with nothing to eat. A named refusal at the
+ * boundary, not an exact count: the band itself eats at its eat line and logs out when the food runs out.
+ */
+export const WILDERNESS_FOOD_FLOOR = 2;
+
+/** Food items held, by the band's `food` list (DEFAULT_FOOD unless given). */
+export function foodHeld(s: BotWorldState, food: string | undefined): number {
+    const re = new RegExp(food ?? DEFAULT_FOOD, 'i');
+    return s.inventory.filter(i => re.test(i.name)).reduce((n, i) => n + i.count, 0);
+}
+
 function foodSlot(s: BotWorldState, food: string | undefined): { slot: number; op: number } | null {
     const re = new RegExp(food ?? DEFAULT_FOOD, 'i');
     const it = s.inventory.find(i => re.test(i.name));
@@ -566,7 +579,13 @@ function bandStep(band: Band, o: AgilityOptions, last: boolean): Step {
         });
     return {
         name,
-        preconditions: s => (agilityLevel(s) >= band.to || atCourse(band.course, s) ? true : `not at the ${band.course} course`),
+        preconditions: s => {
+            if (agilityLevel(s) >= band.to) return true;
+            if (!atCourse(band.course, s)) return `not at the ${band.course} course`;
+            const food = foodHeld(s, o.food);
+            if (band.course === 'wilderness' && food < WILDERNESS_FOOD_FLOOR) return `${name}: ${food} food held, at least ${WILDERNESS_FOOD_FLOOR} needed on the Wilderness course`;
+            return true;
+        },
         run,
         postconditions: s => {
             if (loggedOut || finished(s)) return true;
