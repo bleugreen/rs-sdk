@@ -243,11 +243,20 @@ in the market respawns in Lumbridge without the ship's coins, so the account ear
 | knights | tutorial, HP 40 (`hp-train.ts`), Thieving 55 (`coins.ts` auto: men, warriors, guards), admission (the ramp; Varrock guards meanwhile), [buy sharks], 100 coins, ship to Ardougne (`thieving.ts`'s leg), `pickpocket.ts` on the knights |
 | heroes | as knights to Thieving 80, no ramp |
 | guards | tutorial, HP 40, `coins.ts` auto from Thieving 1 |
-| iron | tutorial, 100 coins (Lumbridge men), Mining 15 (`mining.ts`'s copper steps), wield the pickaxe, ship to Ardougne, `mine.ts` at the zoo cluster |
+| iron | tutorial, a pickaxe (`pickaxe.ts`), 100 coins (Lumbridge men; 220 when the plan sells), Mining 15 (`mining.ts`'s copper steps, after sailing back to the mainland if the account starts on the Ardougne side), wield the pickaxe, ship to Ardougne, `mine.ts` at the zoo cluster |
 | shilo | staged by hand (no quest bot exists): the method only |
 
 A stage that fails three times in a row, or three sessions that end in an error within two minutes of login, give
 the account up; the rest carry on.
+
+**The pickaxe stage** (`pickaxe.ts`, rs/732) gives iron a pickaxe usable at its Mining level before anything needs
+one: from the bank when the runner last saw one there, else a bronze pickaxe (1 coin) from Bob in Lumbridge or Aemad
+in East Ardougne, whichever side of the sea the account is on. On the mainland an empty pack earns the coin on the
+Lumbridge men beside Bob; on the Ardougne side it comes from the bank. A bank not seen this run counts as holding no
+pickaxe, since a fresh account's holds only the tutorial's 25 coins. The stage runs before the coins and, in practice,
+again after them: `coins.ts` lets an HP-10 account die to the men (cheaper than banking, with the respawn two tiles
+away), and a death drops the pickaxe. Three of the four lab accounts in each run lost one there; the same death
+cost rs/632 its given-up account.
 
 **Stalls** (`stall.ts`). An account in its method stage whose coins (carried plus banked, from its ledger lines) have
 not moved for `--stall-minutes` (default 10; 0 turns it off) gets a `stalled` event and its method is aborted, so its
@@ -340,9 +349,22 @@ start without the names file (`lib/accounts.ts`) or, on real accounts, with any 
 **Sales into the bids** (`sell`, off by default): `errands.ts` reads the book, refuses below the item's floor,
 withdraws at most the cap (500, never above 5,000) as notes, reads again, offers at the floor (each unit fills at
 its bid's own price, best first), waits `fillMinutes`, cancels the rest and banks the proceeds. An offer whose
-placement outcome is unknown is never retried. The Exchange is at the Varrock west bank and nothing yet brings an
-account back from Ardougne or Shilo, so a plan may enable sales only when every account it can move works within
-walking distance (`SALE_ROUTE`: guards); iron ore and gems wait for that return trip.
+placement outcome is unknown is never retried. The Exchange is at the Varrock west bank, so a plan may enable sales
+only when every account it can move has a way there (`SALE_ROUTE`): the guards walk, and iron sails
+(`errands.ts` `sellByShip`). An iron sale settles the miner's bank visit it interrupted, makes sure the pack holds the
+round trip's four fares (120 coins, topped up from the Ardougne south bank, where the miner banks its coins with its
+ore), takes the Brimhaven ship, crosses Karamja to Musa Point, sails to Port Sarim, walks to the Exchange, sells, and
+comes back the same way to where it stood; short of the fares, it refuses without moving. The sale's ledger record
+carries the trip by leg (`trip`). A selling iron account earns 220 coins before its first voyage, so its first trip is
+paid for. The knights and heroes have no sale route (they earn coins, and their banks hold the sharks they eat), and
+Shilo has none until something takes an account out through the Shilo gate.
+
+**The sea route** (`markets/lib/sea-route.ts`) plans a trip between any two tiles on the mainland, Karamja and the
+Ardougne side from the two ends alone (the voyages `speedrun/lib/ships.ts` chooses, then the walk), so its fares are
+known before it moves, and runs it with `ships.ts`'s `sail` and the toll-gate-aware `travelTo`. Its Karamja leg, the
+crossing between any Karamja tile and Port Sarim through Musa Point, is what a Shilo account would take from outside
+the gate with nothing else. The mining stage uses the same route to bring a knight sent to iron from the market back
+to the Rimmington copper.
 
 **Stopping:** SIGINT or SIGTERM stops every account at its next safe point and logs it out (`logoutDirect`
 re-clicks through the post-combat window); a second signal exits at once. `--minutes N` stops the same way. The
@@ -582,10 +604,10 @@ the runner held 0.8-1.0 GB and the engine ~0.6 GB, and the host's available memo
 other load, so `lab.ts`'s 1.2 GB floor stopped both runs early: run a 20-account lab on fedora. `lab.ts` logs both
 processes' memory every 30 s.
 
-**Found, not fixed here:** a lab knight with no sharks goes to the food fallback's iron, and the iron sequence
-assumes the tutorial's bronze pickaxe is still carried. One account in each run had none, so its `mining` stage failed
-three times and the account was given up; run 3's had died thieving the Lumbridge men at HP 10 while it queued for
-a site (run 4's was not traced). Iron needs a pickaxe stage (buy or bank) before `mining`.
+**Found here, fixed by rs/732:** a lab knight with no sharks goes to the food fallback's iron, and the iron sequence
+assumed the tutorial's bronze pickaxe was still carried. One account in each run had none, so its `mining` stage
+failed three times and the account was given up; run 3's had died thieving the Lumbridge men at HP 10 while it queued
+for a site. The pickaxe stage (above) now gets one.
 
 ```sh
 # block M17 on fedora, inside the build slot (dependencies untracked), all fresh
@@ -595,6 +617,51 @@ bun markets/phase2/report.ts /tmp/rs632-r4/ledger.jsonl
 
 # the door recovery (rs/736): block M21 on fedora, from a copy of the checkout in /tmp
 . markets/methods/lab/block.sh M21 && LAB_RUNNERS=0 LAB_TIMEOUT=1800 speedrun/lab/lab.sh p2door1 markets/methods/lab/door.ts:--minutes=5
+```
+
+### The sale round trip and the pickaxe stage in the lab (rs/732)
+
+fedora, `NODE_TICKRATE=400` (observed 399.9-400.4 ms a tick, median 400.1), block M20, one runner process, four iron
+accounts with sales on (floor 80, every 5 minutes, into a lab bid of 100): two fresh, one left on the Lumbridge
+spawn with an empty pack, one on the Ardougne side with an empty pack and 200 coins. Run 2 (40 minutes, stopped by
+SIGINT) had the final errand; run 1 (45 minutes) found the two bank races below.
+
+| Leg (run 2, 16 round trips, 4 an account) | Ticks: range, median |
+|---|---|
+| Ardougne side to the Brimhaven ship and across (Captain Barnaby) | 43-47, 44 |
+| Karamja leg out: walk Brimhaven to Musa Point, the customs ship to Port Sarim | 128-152, 128 |
+| Walk Port Sarim to the Varrock west bank | 163 |
+| **Out** | **334-359, 336** |
+| The sale (`sellAtExchange`: book, notes, offer, 1-minute fill window, bank) | 36-43, 36 |
+| Walk the Exchange to Port Sarim and sail to Musa Point | 180-184, 182 |
+| Walk Musa Point to Brimhaven and sail to Ardougne | 124-129, 124 |
+| Walk back to where the account stood (the bank or the rocks) | 30-48, 30 |
+| **Back** | **334-355, 337** |
+| **Round trip** | **709-769, 723 (4.8 minutes)** |
+
+All 16 sales filled: 453 ore for 43,035 coins after the fee, every account out at the stop. The trip costs a sale
+4.8 minutes of mining: at Mining 99's 1,208 ore an hour a full 500-ore sale (the default cap) comes every 25 minutes,
+so the trip takes about 16% of the method; a higher `sell.cap` (at most 5,000) spreads it thinner.
+
+The pickaxe stage: the Lumbridge account earned its coin on the men and bought from Bob in 17 s (`earn`, `buy`); the
+Ardougne account bought from Aemad in 16 s, and the mining stage then sailed it to the mainland (226 ticks) for the
+copper. Three of the four then died on the men in the coins stage (seven deaths in run 2) and each bought again
+afterwards in about 5 s. Fresh account to the zoo: 4.9 and 5.2 minutes fresh, 7.5 from Lumbridge without a
+pickaxe, 9.6 from the Ardougne side.
+
+What the lab fixed in the errand: a sale falls due when the miner reports its bank, so the miner is stopped inside
+that bank visit. In run 1, eight sales filled (two more trips found the lab's 500-ore bid used up) and twelve were
+refused with "only 0 coins could be found": reading the bank while the miner's visit was still closing gave no items. The fares now come from a bank opened afresh,
+whose items are awaited. Run 2's one stumble was the same moment seen from the pack: the errand counted 162 coins
+that had just been banked, and the Brimhaven ship refused it (the account retried on its next sale). The errand now
+closes that visit and lets the state settle before counting. Run 3 (35 minutes, the same four-account setup, the
+final code): 14 sales, all filled, round trips 708-733 ticks, no stage failed, every account out at the stop.
+
+```sh
+# block M20 on fedora, inside the build slot (dependencies untracked)
+. markets/methods/lab/block.sh M20 && LAB_RUNNERS=0 LAB_TIMEOUT=3600 speedrun/lab/lab.sh p2t00 \
+  'markets/phase2/lab.ts:--prefix=p2t:--knights=0:--guards=0:--iron=4:--bare=1:--away=1:--sell=1:--iron-bid=3000:--sigint=40:--out=/tmp/rs732-r2'
+bun markets/phase2/report.ts /tmp/rs732-r2/ledger.jsonl
 ```
 
 ## Horizons

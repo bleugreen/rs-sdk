@@ -3,7 +3,8 @@
  * already holds. Every stage reuses the code that owns the skill: Tutorial Island through S00's `tutorialSkip`,
  * Hitpoints through hp-train.ts, Thieving and coins through speedrun/helpers/coins.ts (the lite-client earner; the
  * thieving.ts bands need the browser's page programs), Mining through speedrun/skills/mining.ts's lite-client steps,
- * the ship to Ardougne through thieving.ts's `thieving:to-ardougne` leg, and each method through its Role.
+ * the ship to Ardougne through thieving.ts's `thieving:to-ardougne` leg, any other sea crossing through
+ * lib/sea-route.ts, a missing pickaxe through pickaxe.ts's steps, and each method through its Role.
  *
  * A stage whose goal holds is skipped, so the runner recomputes the first unmet stage after anything that can undo
  * one (a death in the market loses the ship coins and the place; a redirect changes the method).
