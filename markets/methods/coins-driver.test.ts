@@ -37,8 +37,8 @@ describe('safety', () => {
         expect(safety(c({ hp: 10 }), o)).toEqual({ do: 'eat', to: 35, why: 'floor' });
         expect(safety(c({ target: 'warrior', hp: 4, atGuards: false }), o)).toEqual({ do: 'eat', to: 35, why: 'floor' });
         // the floor is a third of a low maximum, so eating up always clears it
-        expect(safety(c({ hp: 5, maxHp: 15 }), o)).toEqual({ do: 'go' });
-        expect(safety(c({ hp: 4, maxHp: 15 }), o)).toEqual({ do: 'eat', to: 10, why: 'floor' });
+        expect(safety(c({ hp: 6, maxHp: 15 }), o)).toEqual({ do: 'go' });
+        expect(safety(c({ hp: 5, maxHp: 15 }), o)).toEqual({ do: 'eat', to: 10, why: 'floor' });
     });
     test('no walk to or from the kebabs under 60% of the maximum', () => {
         expect(safety(c({ hp: 10, food: 0 }), o)).toEqual({ do: 'rest', to: 24, why: 'floor' });
