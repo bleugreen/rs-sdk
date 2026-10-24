@@ -32,6 +32,12 @@ describe('loadExclusion', () => {
         }
     });
 
+    test('always excludes our naming schemes, even with an empty list', () => {
+        const ex = loadExclusion({ path: file('stale.txt', ''), env: noEnv });
+        for (const ours of ['money_07', 'Money 12', 'moneybags', 'Moneybags', 'cairn_e01']) expect(ex.excludes(ours)).toBe(true);
+        for (const rival of ['moneymaker', 'Moneybagsx', 'tygem020', 'Croesus']) expect(ex.excludes(rival)).toBe(false);
+    });
+
     test('excludes every listed name in board or display form', () => {
         const ex = loadExclusion({ path: file('list.txt', 'Placeholder One\nplaceholder_two # note\n'), env: noEnv });
         expect(ex.size).toBe(2);

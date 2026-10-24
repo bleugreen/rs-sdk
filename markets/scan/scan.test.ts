@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { parseConfigBlocks, parseInvs, parseMapSection, parseMineRows, parseNpcShops, parseObjs, parsePickpockets, parseScriptShops, parseStalls, type Content } from './content.ts';
 import { mergeRows } from './ge-book.ts';
+import { atSite, backoff, insideRepo, readSites, SITES } from './headcount.ts';
 import { askLines, bidLines, buyFromShop, highAlch, pickpocketExpectation, sellToShop, shopAccepts, shopLines, shopValue, thievingLines } from './methods.ts';
 import { DEFAULT_RANK, marketPrice, mineRates, respawnAt } from './rank.ts';
 import { fletchingRecipes, priceRecipe, smeltingRecipes, smithingRecipes, statChance } from './recipes.ts';
@@ -235,5 +236,38 @@ describe('mining rates', () => {
         const [m] = parseMineRows('[i]\ntable=mining_table\ndata=rock,a\ndata=rock_output,iron_ore\ndata=rock_successchance,300,300\ndata=rock_respawnrate,20\n');
         const r = mineRates({ ...m!, count: 124, sites: { a: 16 } }, DEFAULT_RANK);
         expect(r.perLogin).toBeCloseTo(9000 / (3 + 40 / 27));
+    });
+});
+
+describe('headcount sites', () => {
+    const shilo = SITES.find(s => s.name === 'Shilo gem rocks')!;
+    test('a player counts within the radius of any rock, on its plane only', () => {
+        expect(atSite({ x: 2820 - 8, z: 2998, level: 0 }, shilo)).toBe(true);
+        expect(atSite({ x: 2820 - 9, z: 2998, level: 0 }, shilo)).toBe(false);
+        expect(atSite({ x: 2825 + 8, z: 3003 + 8, level: 0 }, shilo)).toBe(true);
+        expect(atSite({ x: 2823, z: 3000, level: 1 }, shilo)).toBe(false);
+    });
+
+    test('our accounts are counted, never named', () => {
+        const positions = [
+            { name: 'Tygem020', x: 2938, z: 9883, level: 0 },
+            { name: 'Money 03', x: 2939, z: 9883, level: 0 },
+            { name: 'Placeholder One', x: 2940, z: 9884, level: 0 },
+            { name: 'Elsewhere', x: 3200, z: 3200, level: 0 },
+        ];
+        const ex = { excludes: (n: string) => /^(money |placeholder one)/i.test(n) };
+        const sites = readSites(positions, ex);
+        expect(sites["Heroes' Guild runite"]).toEqual({ ours: 2, rivals: [['Tygem020', 2938, 9883]] });
+        expect(sites['Shilo gem rocks']).toEqual({ ours: 0, rivals: [] });
+        expect(JSON.stringify(sites)).not.toMatch(/money|placeholder/i);
+    });
+
+    test('backoff doubles to a 15-minute ceiling', () => {
+        expect([1, 2, 3, 4, 5].map(f => backoff(60, f))).toEqual([120, 240, 480, 900, 900]);
+    });
+
+    test('raw polls may not be written inside the repository', () => {
+        expect(insideRepo('/repo/docs/markets/data', '/repo')).toBe(true);
+        expect(insideRepo('/home/u/.cache/rs-markets', '/repo')).toBe(false);
     });
 });

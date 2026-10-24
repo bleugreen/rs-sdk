@@ -20,8 +20,8 @@ before that account's first login. If the poller moves machines, the file moves 
 Every tool that writes data from live reads (`poll`, `census`, `ge-history`, `players`, `searches`, `bids`,
 `timeline`) **refuses to start** when the list is missing or unreadable. It proceeds without one only under
 `--placeholder-data` or `MARKETS_ALLOW_NO_ACCOUNTS=1`, which are for tests and CI on placeholder data. An empty list
-file counts as present. Every listed name, and every `cairn_*` name, is dropped from the tools' output, files and
-console alike. Before committing data, run `bun markets/tools/check-excluded.ts` where the list exists: it scans
+file counts as present. Every listed name, and every `cairn_*`, `money_*` and `moneybags` name whatever the list
+holds (`ALWAYS_EXCLUDED`), is dropped from the tools' output, files and console alike. Before committing data, run `bun markets/tools/check-excluded.ts` where the list exists: it scans
 `docs/markets` and `markets` and exits 1 on any listed name.
 
 ## lib/: readers
