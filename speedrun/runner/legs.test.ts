@@ -529,12 +529,13 @@ describe('leg drops: the STEP-MANIFEST ledger contract', () => {
         );
     });
 
-    test("T07-08's row drops the S07 last load's <bones>, which the leg's /bones$/i takes; the walk leaves H6 its 12", () => {
-        expect(dropsOn('T07-08')).toEqual([{ name: 'bones', placeholder: true, count: 'all', reason: 'drop' }]);
-        expect(rows.find(r => r.row === 'S07 last load')!.in).toContainEqual({ name: 'bones', placeholder: true, count: 21, kind: 'u' });
+    test("T07-08's row drops `<bones> any`, the backstop the leg's /bones$/i performs; S07's last load brings none (rs/663), so the walk drops nothing and leaves H6 its 12", () => {
+        expect(dropsOn('T07-08')).toEqual([{ name: 'bones', placeholder: true, count: 'any', reason: 'drop' }]);
+        expect(legById('T07-08').def.drops).toEqual([/bones$/i]);
+        expect(rows.find(r => r.row === 'S07 last load')!.in.some(i => i.name === 'bones')).toBe(false);
         const entries = walk(rows);
         const at = (row: string) => entries.find(e => e.row.row === row)!;
-        expect(at('S07 last load')).toMatchObject({ verdict: 'pass', used: 25 });
+        expect(at('S07 last load')).toMatchObject({ verdict: 'pass', used: 4 });
         expect(at('T07-08')).toMatchObject({ verdict: 'pass', used: 2, held: 'knife x1, logs x1' });
         expect(at('H6')).toMatchObject({ verdict: 'pass', need: 12 });
     });
