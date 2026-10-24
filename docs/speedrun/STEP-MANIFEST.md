@@ -1432,9 +1432,10 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Parameters:** `phase` thresholds (Defence 99, Ranged 99) and `FINISH.bowFrom` (default 50, the
   bow's requirement, so the bow goes on when Defence reaches 99; 70 is the old plan); `flickEvery: 4` (3 when
   relay-driven); potion thresholds; `site`.
-- **Preconditions:** `questDone` for Dwarf Cannon (rs/114) and the cannon set (H23); **1,200
-  cannonballs**, the hand-off and the gate (rs/199: ~1,110 used, 0.6 a tick meleeing and 0.5-0.6 with
-  the bow); the magic shortbow (H12) and SCORED's own 570 rune arrows from S18 plus MM's leftovers
+- **Preconditions:** `questDone` for Dwarf Cannon (rs/114) and the cannon set (H23); **1,500
+  cannonballs** (H23 since rs/797: rs/764's run 1 spent all 1,200 short of Ranged 99, ~785 game xp a
+  ball, ~1,230 for 50-99, i), the hand-off and the gate (rs/199: ~1,110 used over the row's 1,972 ticks,
+  0.6 a tick meleeing and 0.5-0.6 with the bow; at 0.6 a tick, 1,500 covers ~2,500 ticks, run 1's 2,525); the magic shortbow (H12) and SCORED's own 570 rune arrows from S18 plus MM's leftovers
   (~540 used, 0.32 a bow tick; gate 550); the mithril scimitar; H23's potions (rs/199 measured, per
   400 ticks: 1 super antipoison dose, 1 dose each of super attack and super strength while meleeing,
   1-3 ranging doses, no sharks; no glory, rs/123); 12 sharks for S17 carried
