@@ -81,7 +81,7 @@ staging.
 | 17 | H18's logs trimmed from 10 to 6 | S22 | ≤1 / 0 | i: 1,995 / 513 = 3.9 logs used (m, rs/195's 1 per 513 knife ticks); 4 fewer offers is at most one offer tick | 0.5 | none (ledger) | rs/158, rs/41 | none | yes |
 | B1 | **Bow on Longrange through the Defence phase** (Rapid trains no Defence; the module has no Longrange phase, ranged.ts:165-182) | S27 | bound ≤60 i, sign unknown | i: 214 Defence ticks x ~6 more Ranged a tick (bow 18.24 at 70 against cannon 12.30 at 55, levels mismatched) / ~20 a tick. Against it: Longrange's slower attack and the split xp | 4-8 e | high: ranged.ts (RG) | rs/186 | a Defence 98-99 window on Longrange 3x | no |
 | B2 | **Cannon top-up every 30 ticks, not 20** (`RELOAD_EVERY` 20, lib/cannon.ts:44; a load is 30 balls, :42) | S27 | bound ≤33 i, likely 0-10 | i: 1,972 / 20 = 99 top-ups against 66; each costs at most the tick's one interaction (ranged.ts:523-556), and many fall on free ticks. Dry risk at 1 ball a tick | 1 | med: lib/cannon.ts default (S14 shares it) | rs/186 | dry events and attack gaps at 20 and 30, 400 ticks each | no |
-| B3 | One make per item in S25a so level-up pages open between items (the explorer's C5) | S25a | bound ≤12 i, likely ≤0 | i: on the route from Smithing ~55 the measured excess per trade is about 3, 2, 2, 2, 1, 1, 1, 0 over the floor (anvil.md:111-114). rs/197 traced it to an engine floor (anvil.md:115-122), and clicking the dialogs through changed nothing | 2 | high: smithing.ts (SM) | rs/186 | 5 trades at Smithing 55 | no |
+| B3 | One make per item in S25a, so level-up pages open between items | S25a | bound ≤12 i, likely ≤0 | i: on the route from Smithing ~55 the measured excess per trade is about 3, 2, 2, 2, 1, 1, 1, 0 over the floor (anvil.md:111-114). rs/197 traced it to an engine floor (anvil.md:115-122), and clicking the dialogs through changed nothing | 2 | high: smithing.ts (SM) | rs/186 | 5 trades at Smithing 55 | no |
 
 **Re-prices (the row is wrong; the run is not slower or faster).** These move the figure, not the
 clock, and cost no build.
@@ -93,7 +93,7 @@ clock, and cost no build.
 | R3 | S26 | **-9.7**: L at the pooled 11 runs, 111.5, in place of the browser five's 121.2 (rs/185 S4) | m |
 | R4 | S24 | none until a browser n = 3: today's 492 is n = 1 | m |
 | R5 | Relog before S21 | **+1.6**: its logout tail (2 + 46/29 a relog, section 4) is unpriced | i |
-| R6 | H18 | **+2 to +3**: 16 items take 4 offer ticks at 5 a tick (section 0's cap), not the '2 stacks' the 5 i was priced on | i |
+| R6 | H18 | **+2 to +3**: 16 items take 4 offer ticks at 5 a tick (RUN-ORDER.md's user-action cap, fold-in 31), not the '2 stacks' the 5 i was priced on | i |
 
 **Known levers, status.**
 
@@ -188,7 +188,7 @@ injected at craft 5) shows the restart, the re-tune at craft ~15 and 7-tick gaps
   clock (fishing.ts:76).
 - **S23** is at its burst floor (12 = best).
 - **S24.** The fresh prison door (27 against 24) is the route's case: SCORED is first through. The
-  quest order alternative is ~126 against today's 123 (the explorer's walk model, i).
+  quest order alternative is ~126 against today's 123 (a walk model at 0.51 ticks a tile, i).
 - **S25a's helper half** is at its floor (anvil.md:107-109). The trade-open lag after a level
   crossing is an engine floor (anvil.md:115-122).
 - **S25c.** Its relogs are fixed by the wine mechanic, and its order (last) is forced by slots: the
