@@ -203,6 +203,16 @@ click saved).
 - **The shed door.** In two of the runs the door was shut when the bot arrived
   from Lawgof and the inspect failed with "can't reach"; the script reopens it
   (cost about 10 ticks). Open it first.
+- **Nulodion's door is a walk-through toggle.** The door at (3015,3453)
+  (`mcannondoor`, `mcannon_doors.rs2` into `~open_and_close_door`) never
+  opens to walk through: a click teleports the player to its other side while
+  the door is an inviswall for 3 ticks. A click from inside the workshop
+  therefore carries the player out and leaves Nulodion shut in. K used to click
+  it unconditionally, so a K re-run from inside (a resume after a drop) failed
+  with `cant_reach` and no dialogue (lab: 2 of 2). Segment K now crosses only
+  when SCORED and Nulodion's live tile are on opposite sides (`inWorkshop` in
+  the module, read from `m47_53.jm2`'s walls). Nulodion himself can't leave:
+  the lab saw him on 25 tiles over 12 crossings, all inside, x at most 3014.
 - **Click replies on the browser client.** The browser stamps every game message
   one tick lower than lite, so a loc op's immediate reply carries the click's own
   tick. A tick filter taken before the click (`messagesSince(s, tick + 1)`)
