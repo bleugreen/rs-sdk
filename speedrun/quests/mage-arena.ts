@@ -776,7 +776,11 @@ export function steps(opts?: Options) {
             preconditions: allOf(inCellarCheck, () => (memo.fought ? true : 'the fight is not known to be won (%magearena 6 is not transmitted): B asks Kolodion')),
             run: ctx => poolSegment(ctx.sdk, opts),
             postconditions: inChamberCheck,
+            // D, E and F leave no mark the client sees once SCORED leaves the chamber (%magearena is not
+            // transmitted, all.varp; the god cape and staff are dropped at F's exit): past S16 only the
+            // attempt's step record proves them. The live reads are the evidence during S16 itself.
             done: o => inChamber(stateOf(o)) || held(stateOf(o), GOD_CAPE) || held(stateOf(o), GOD_STAFF) || exitedChamber(stateOf(o)),
+            recorded: true,
         },
         {
             letter: 'E', label: 'statue', logoutSafe: true,
@@ -784,6 +788,7 @@ export function steps(opts?: Options) {
             run: ctx => statueSegment(ctx.sdk, opts),
             postconditions: capeHeld,
             done: o => held(stateOf(o), GOD_CAPE) || held(stateOf(o), GOD_STAFF) || exitedChamber(stateOf(o)),
+            recorded: true,
         },
         {
             letter: 'F', label: 'guardian', logoutSafe: true,
@@ -793,6 +798,7 @@ export function steps(opts?: Options) {
             // its only evidence, seen before the exit drops put the staff and cape on the floor.
             postconditions: allOf(chargeSeen(memo), exitClean(keepSharks), inChamberCheck, noDialog),
             done: o => exitedChamber(stateOf(o)),
+            recorded: true,
         },
     ];
     return questSteps(stepId, segs);

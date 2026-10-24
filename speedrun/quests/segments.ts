@@ -24,7 +24,7 @@ import { matchesItem, type ItemPattern } from '../lib/items';
 import { requireQuestStage, type QuestView } from '../lib/quests';
 import { receiveFrom, type WantSpec } from '../lib/trade';
 import { waitUntil, type StateSource } from '../lib/wait';
-import type { Check, ObservedCheck, Step, StepContext } from '../runner/step';
+import type { Check, Observed, ObservedCheck, Step, StepContext } from '../runner/step';
 
 export type DialogueMode = 'burst' | 'fixed';
 
@@ -65,6 +65,13 @@ export interface Segment<C = any> {
     inProgress?: ObservedCheck<C>;
     resume?(ctx: StepContext<C>): Promise<void>;
     probes?: readonly string[];
+    /**
+     * `done` also holds once the attempt's step record has this segment (`recorded`). Only for a milestone
+     * the game keeps no mark of after the step; `done` stays the live check, the only evidence during the
+     * step and outside a run. A clause that must still hold on top of the record is written out with
+     * `recorded` in `done` instead.
+     */
+    recorded?: true;
 }
 
 const LETTER = /^[A-Z][0-9]?$/;
@@ -72,6 +79,16 @@ const LABEL = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 export function segmentName(stepId: string, letter: string, label: string): string {
     return `${stepId}:${letter}-${label}`;
+}
+
+/**
+ * Whether the attempt's step record has `stepName`: runner/step.ts `Observed.record`, which runSteps marks
+ * when a step's postconditions pass (fresh and resume paths alike), keyed by the attempt and kept on disk
+ * so a resumed process sees an earlier one's marks. Absent outside a run (unit tests, lab stand-ins): false.
+ * Prefer a game fact (a quest stage, items kept, a level) wherever one exists.
+ */
+export function recorded(o: Observed, stepName: string): boolean {
+    return !!(o as Observed & { record?: { has(name: string): boolean } }).record?.has(stepName);
 }
 
 const pass = () => true as const;
@@ -89,14 +106,19 @@ export function questSteps<C = any>(stepId: string, segments: readonly Segment<C
         if (!LABEL.test(seg.label)) throw new Error(`questSteps: ${stepId}:${seg.letter} has a bad label "${seg.label}" (kebab-case)`);
         if (seen.has(seg.letter)) throw new Error(`questSteps: ${stepId} repeats segment ${seg.letter}`);
         seen.add(seg.letter);
+        const name = segmentName(stepId, seg.letter, seg.label);
+        if (seg.recorded && !seg.done) throw new Error(`questSteps: ${name} is recorded but has no done`);
         const step: Step<C> = {
-            name: segmentName(stepId, seg.letter, seg.label),
+            name,
             logoutSafe: seg.logoutSafe,
             preconditions: seg.preconditions ?? pass,
             run: ctx => seg.run(ctx),
             postconditions: seg.postconditions ?? pass,
         };
-        if (seg.done) step.done = seg.done;
+        if (seg.done) {
+            const live = seg.done;
+            step.done = seg.recorded ? (o, c) => live(o, c) || recorded(o, name) : live;
+        }
         if (seg.inProgress) step.inProgress = seg.inProgress;
         if (seg.resume) step.resume = ctx => seg.resume!(ctx);
         if (seg.probes) step.probes = seg.probes;
