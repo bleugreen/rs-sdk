@@ -679,9 +679,9 @@ refusal. the carrier configs come from the generator and check below (fold-in 37
    <carrier> --rows <rows> --delivery-run a4-20261023 --serve "$S" --cue-root <RC>` exits 0 with its
    `no drift:` line: cairn_mule1, rows H1,H4,H4k,H18,H19,H21d,H22 with `--on-request H4e` (`no drift:
    H1, H4, H4k, H18, H19, H21d, H22, H4e (ask form)`); cairn_h55, rows
-   H6,H4p,H4m.1,H4m.2,H4m.3,H4m.4,H4m.5,H7,H8,H9,H10,H12,H13,H14,H15,H16 (`no drift: H6, H4p, H4m.1, H4m.2, H4m.3, H4m.4, H4m.5, H7, H8, H9, H10, H12, H13, H14, H15,
+   H6,H4p,H7,H8,H9,H10,H12,H13,H14,H15,H16 (`no drift: H6, H4p, H4m.1, H4m.2, H4m.3, H4m.4, H4m.5, H7, H8, H9, H10, H12, H13, H14, H15,
    H16 (ask form)`); cairn_h03, row H20 (`no drift: H20 (ask form)`). Verified at 233d0f34 on
-   bgsrv-mac with a placeholder name: the generator exit 0, all three checks exit 0 with those lines. For attempt 4 the H4m.1-H4m.5 row is in force (main 2de13ee8), so h55 carries those five loads after H4p; rs/41's regeneration at the token commit prints them.
+   bgsrv-mac with a placeholder name: the generator exit 0, all three checks exit 0 with those lines. For attempt 4 the H4m.1-H4m.5 row is in force (main 2de13ee8), so h55 carries those five loads after H4p; rs/41's regeneration at the token commit prints them. `--rows` names H4p, never H4m: H4p selects the five loads, and `mule-ledger.ts` refuses an H4m row by name (exit 1), here and in the stock walk below.
 3. **Merge** the three entries into `<R>/helpers.json` in login order; the run config gets
    `delivery: { run: "a4-20261023", launcherConfig: "<R>/helpers.json" }`, with `muleCueDir` =
    `<RC>/mule` if set.
