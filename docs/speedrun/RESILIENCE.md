@@ -189,9 +189,12 @@ handles it itself:
   at all (a lite client, or no DevTools port configured) goes to the watchdog's
   path unchanged.
 - **A gone page closes first (rs/752).** A browser page that cannot answer: its
-  tab gone from Chrome's targets, or its renderer crashed (OOM-killed: the target
-  stays listed and `Runtime.evaluate` rejects 'Target crashed') or hangs (the
-  evaluate never answers, cut off at the 3 s bound), or a silent DevTools port.
+  tab gone from Chrome's targets, or its renderer crashed or hangs, or a silent
+  DevTools port. A crashed renderer's target stays listed, so only the evaluate
+  tells it apart, and the evaluate need not fail fast: Chrome may reject it
+  'Target crashed', but on fedora's chrome-headless-shell 148 a `kill -9`ed
+  renderer's evaluate never answered, exactly as a SIGSTOPped one's. The 3 s
+  bound is what catches an OOM kill there, not the rejection.
   Once a second read 3 ticks later agrees (one read can fail on a page
   mid-navigation), the recovery treats it as out after a long silence: whatever
   is left of its tab closed (a blank page first if it is Chrome's last window),
@@ -208,7 +211,13 @@ handles it itself:
   `(drop)` row. So on run.ts the link reads a gone page as out of the world
   (`linkPage`), and the watchdog never logs out a gone page (a relaunch, reached
   only after a failed logout, is held for the hold window and is the backstop
-  past it).
+  past it). With both in, the same lab (`drop-accept.ts --renderer=kill`, and
+  `--renderer=stop` for a hung renderer, SIGCONTed after the relog) ends each
+  case exit 0: the watchdog's logout held on one 3 s read with the gateway
+  reading `dead`, the `(drop)` row at tick 54 (46 for the hang), the old tab
+  closed, a fresh tab in game about 24 s after the drop, one unplanned entry
+  with `freshTabs: 1` and `meta.pageGone`, and the leg finished on the new
+  session.
 - **Every wait keeps asking the page** (rs/659). The adopt's wait for an
   advancing tick, the watchdog's path and a world or gateway outage all re-read
   the page every 3 ticks; a page out of the world with the account meant to be
