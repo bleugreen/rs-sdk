@@ -50,12 +50,12 @@ On this page that is `handoff` (step 7, "The launch dry run", which gives the fo
 rehearsal account with `--rehearsal`) and step 8's attach-and-logout. The scored run's own start,
 run.ts, is rs/186's and not on main, so its line is pending; it is dry-run the same way.
 
-**The run bound is 9 h** (14 h by default once rs/680's run-gate `--bound` is on the run commit; step 3: it counts from `up`). A full run is our row, about 35,300 ticks (RUN-ORDER.md): about 2.9 h of
+**The run bound is 14 h** (rs/680's run-gate `--bound` default, on main as #542, 801e6a92; step 3: it counts from `up`; the stack can be raised long before step 7, rs/659). A full run is our row, about 35,300 ticks (RUN-ORDER.md): about 2.9 h of
 wall clock at the 300 ms tick the demo ran until 19:56Z on 2026-10-22, and about **3.9 h at the
 400 ms it has run since** ("Measured: the demo's tick period"); at 600 ms, which remains possible,
-about 5.9 h. Steps 3 to 7 take under an hour, so 9 h leaves about four hours of margin at 400 ms
-and about two at 600 ms (i). The same 9 h bounds the run's claim
-(below). Each hand-run launch below begins `T=9h;`, the only place the figure appears in a
+about 5.9 h. Steps 3 to 7 take under an hour, so 14 h leaves about nine hours of margin at 400 ms
+and about seven at 600 ms (i), against main's rule MIN_END = the planned end + 4 h. The same 14 h bounds the run's claim
+(below). Each hand-run launch below begins `T=14h;` (9 h before; host raises it by hand, 03:24Z), the only place the figure appears in a
 command, and a rehearsal replaces it with `T=30m`. `speedrun/tools/run-gate.ts` (steps 3-7) takes
 `--bound=DURATION` (a `timeout` duration such as `14h` or `90m`) for every piece it raises for the
 run (the gateway, page server, recording, live view and SCORED's tab), **default 14 h**, and 30 min
@@ -79,7 +79,7 @@ again before step 7.
 | Gate (a)-(c), rs/96's CLI (`gate`) | - | `15m` (its probe gives up after 10 min) |
 | Gate (d), the sampler (`gate`) | - | `10m` (a 5 min sample; the script's own limit is 7 min 10 s) |
 | run-gate.ts's own run on each machine | `up` 3 min, `gate` 40 min, `handoff` 12 min | the same |
-| rs/117's helper launcher (step 4) | `T=9h` | `T=30m` |
+| rs/117's helper launcher (step 4) | `T=14h` (9 h before; raised by hand, host 03:24Z) | `T=30m` |
 | SIGKILL after the bound, every launch | 30 s | 30 s |
 | rs/83's gate history timer read (not ours; "Gate history timer") | skipped while a claim holds | `timeout 240`; systemd kills the unit at 270 s |
 
@@ -87,7 +87,7 @@ again before step 7.
 
 - The bound is part of the command that starts the process, so nothing can be started without one,
   and there is no second thing to start, remember or cancel. A reaper such as
-  `systemd-run --user --on-active=9h tmux -L run kill-server` bounds only that one tmux socket, not
+  `systemd-run --user --on-active=9h tmux -L run kill-server` (an example, not a live bound; verified absent on both machines, host 03:24Z) bounds only that one tmux socket, not
   the foreground measurements or another socket. It is as easy to forget as teardown is, and a
   rehearsal's leftover timer fires into whatever runs on the same socket next. `timeout` also needs
   nothing beyond coreutils, while the host's user systemd manager reports `degraded` (m, 17:19 UTC).
@@ -145,7 +145,7 @@ claim is live and ignores one gone stale, so a forgotten release costs nothing (
 timer", below "The host"). Who takes one:
 
 - **the run**: step 0, on run night, on **both** machines, as owner `run`, before anything else
-  starts, covering setup, the 9 h run bound above and an hour's margin; the run never disables the
+  starts, covering setup, the 14 h run bound above and an hour's margin (host extended the claims to 18:59Z); the run never disables the
   timer instead. run.ts, on the chosen machine, refuses to start unless the claim is live and the
   run's own, and releases it after SCORED's final clean logout. The machine not chosen keeps its
   claim until the run's teardown (step 9), so its timer skips and rehearsals there stay paused
@@ -450,7 +450,7 @@ machine only; step 9 tears down both.
 **On run night, step 0 starts with the run's claim**, on both machines, before anything else on
 this page starts, even when the checkout is already on `RUN_COMMIT` ("The claim lock", "Rules for
 every launch"). It covers the whole run with margin, and the run never disables the timer instead.
-`M` is the minutes from now to the planned start plus 600 (the 9 h bound and an hour's margin). `L`
+`M` is the minutes from now to the planned start plus 900 (the 14 h bound and an hour's margin; 600 on the 9 h bound before). `L`
 is the most logins the machine holds during the run: SCORED, the full roster and its gate account
 (SUPPLIES.md, "Peak concurrent logins"), since either machine may be chosen. If the take is refused
 on the login count, log the unneeded fleet out first (step 7) and take it again; nothing below
@@ -668,22 +668,22 @@ refusal. the carrier configs come from the generator and check below (fold-in 37
    <R>/carriers.json`; it must print `serve nameHash <h>`, where `<h>` is the serve hash of the
    run's scored account, computed at install (no literal here: a fresh account's hash isn't public).
    The generator is rs/41's text,
-   committed verbatim (sha256 `8c7f66ca6520d7345cbf4ae41d7ce6f618615d5a4d2df4320d0f7884cf95f40b`): it reads `CHECKOUT`, `SCORED_NAME`,
+   committed verbatim (sha256 `46288f6ed795ab8b6ae172bd94b6a47477f8d486b38fb1931163019b68c846b0`): it reads `CHECKOUT`, `SCORED_NAME`,
    `docs/speedrun/research/mule-delivery-production.json` and the checkout's STEP-MANIFEST ledger
    (`slot-ledger.ts`'s `MANIFEST`), writes only its output file and prints only the serve nameHash,
-   never the name. Its `deliveryRun` is the literal `a3-20261023` for attempt 3 (main 20:05Z 2026-10-23; a carrier
+   never the name. Its `deliveryRun` is the literal `a4-20261023` for attempt 4 (main 09:5xZ 2026-10-24; a carrier
    never re-serves a row within one delivery run, so each attempt takes a token not used before:
-   `a1-20261023` and `a1b-20261023` are spent), so the next attempt changes it again (rs/41 suggests a `DELIVERY_RUN` env with no default, so it cannot
+   `a1-20261023`, `a1b-20261023` and `a3-20261023` are spent), so the next attempt changes it again (rs/41 suggests a `DELIVERY_RUN` env with no default, so it cannot
    be silently reused).
 2. **Check:** each `bun speedrun/helpers/mule-ledger.ts --check <R>/carriers.json --account
-   <carrier> --rows <rows> --delivery-run a3-20261023 --serve "$S" --cue-root <RC>` exits 0 with its
+   <carrier> --rows <rows> --delivery-run a4-20261023 --serve "$S" --cue-root <RC>` exits 0 with its
    `no drift:` line: cairn_mule1, rows H1,H4,H4k,H18,H19,H21d,H22 with `--on-request H4e` (`no drift:
    H1, H4, H4k, H18, H19, H21d, H22, H4e (ask form)`); cairn_h55, rows
-   H6,H4p,H7,H8,H9,H10,H12,H13,H14,H15,H16 (`no drift: H6, H4p, H7, H8, H9, H10, H12, H13, H14, H15,
+   H6,H4p,H7,H8,H9,H10,H12,H13,H14,H15,H16 (`no drift: H6, H4p, H4m.1, H4m.2, H4m.3, H4m.4, H4m.5, H7, H8, H9, H10, H12, H13, H14, H15,
    H16 (ask form)`); cairn_h03, row H20 (`no drift: H20 (ask form)`). Verified at 233d0f34 on
-   bgsrv-mac with a placeholder name: the generator exit 0, all three checks exit 0 with those lines.
+   bgsrv-mac with a placeholder name: the generator exit 0, all three checks exit 0 with those lines. For attempt 4 the H4m.1-H4m.5 row is in force (main 2de13ee8), so h55 carries those five loads after H4p; rs/41's regeneration at the token commit prints them. `--rows` names H4p, never H4m: H4p selects the five loads, and `mule-ledger.ts` refuses an H4m row by name (exit 1), here and in the stock walk below.
 3. **Merge** the three entries into `<R>/helpers.json` in login order; the run config gets
-   `delivery: { run: "a3-20261023", launcherConfig: "<R>/helpers.json" }`, with `muleCueDir` =
+   `delivery: { run: "a4-20261023", launcherConfig: "<R>/helpers.json" }`, with `muleCueDir` =
    `<RC>/mule` if set.
 4. **mule-hold: NOT used for attempt 1** (main 13:15Z 2026-10-23): the carriers launch unheld in
    the roster phase and self-stage their first rows. With the hold, run.ts's first-row prepare at
@@ -724,14 +724,14 @@ refusal. the carrier configs come from the generator and check below (fold-in 37
 
 **The fleet on the run commit:** back at 29/29 on 233d0f34 at ~12:11Z, 27 while two stand-ins serve
  rs/496's twin pass (rs/41 via rs/158; fold-in 37). **run.ts's own guard** (rs/598, on main as #487, 233d0f34, the run commit; `docs/speedrun/helpers/mule-delivery.md`, 'Run owner', lines 330-379 at 233d0f34; the run config's `delivery` block is read by `runner/delivery-owner.ts:161-256`, its type `runner/chain.ts:129`; the code wins): run.ts's run
-config carries `delivery: { run: "a3-20261023", launcherConfig: "<that launcher json>" }`, and its
+config carries `delivery: { run: "a4-20261023", launcherConfig: "<that launcher json>" }`, and its
 preflight refuses with exit 3, before any login, if that is missing or does not match every mule
 partner's launcher entry. That preflight is the code's own guard; rs/41's `mule-ledger --check` stays
-as the operator's check. `delivery.run` changes per attempt (a1-20261023 for attempt 1, a1b-20261023 for attempt 1's restart, a3-20261023 for attempt 3; the date part stays 20261023 even after midnight UTC), like h92's serve ids below. **For attempt 3 (main 20:05Z 2026-10-23): the run config's `delivery.run` is exactly `a3-20261023` and matches every mule helper's `deliveryRun`**, checked before the start is called (the code's own check of the match, `runner/delivery-owner.ts:192`).
+as the operator's check. `delivery.run` changes per attempt (a1-20261023 for attempt 1, a1b-20261023 for attempt 1's restart, a3-20261023 for attempt 3, a4-20261023 for attempt 4; the date part stays 20261023 even after midnight UTC), like h92's serve ids below. **For attempt 4 (main 09:5xZ 2026-10-24): the run config's `delivery.run` is exactly `a4-20261023` and matches every mule helper's `deliveryRun`**, checked before the start is called (the code's own check of the match, `runner/delivery-owner.ts:192`).
 
 **h92 on the run commit, and its serve ids per attempt** (rs/41's wording via rs/158; fold-in 36).
-h92 is applied on bbs on the run commit: fleet role cannon, serve.id a3-H11 at the Ardougne landing (2658,3301), returnTile the same, fallback (2659,3301) per SUPPLIES H11 (still pending rs/198's two-bot check), then a3-H23 on the same tile.
-serve.id is per run and carries delivery.run's prefix: a3-H11 / a3-H23 for attempt 3 (delivery.run a3-20261023; a1b-H11 / a1b-H23 were the restart after attempt 1's S03 failure); a completed record survives restarts and a reused id resumes as done and gives nothing, so rs/41 reassigns h92 between runs.
+h92 is applied on bbs on the run commit: fleet role cannon, serve.id a4-H11 at the Ardougne landing (2658,3301), returnTile the same, fallback (2659,3301) per SUPPLIES H11 (still pending rs/198's two-bot check), then a4-H23 on the same tile.
+serve.id is per run and carries delivery.run's prefix: a4-H11 / a4-H23 for attempt 4 (delivery.run a4-20261023; a3-H11 / a3-H23 were attempt 3, a1b-H11 / a1b-H23 the restart after attempt 1's S03 failure); a completed record survives restarts and a reused id resumes as done and gives nothing, so rs/41 reassigns h92 between runs.
 
 **The inventory check, before the start is called.** On any checkout at `RUN_COMMIT` (it reads only
 the repository), run
@@ -1213,7 +1213,7 @@ Two rules from this page apply to that launch:
 
 - **Bound.** Whatever command HELPERS.md gives starts as the whole command of its own tmux
   session, `exec timeout --kill-after=30s $T <launcher command> >>$HOME/rs-run/helpers.log 2>&1`,
-  with `T=9h` for the run and `T=30m` for a rehearsal ("Rules for every launch"), unless rs/117
+  with `T=14h` for the run (9 h before; raised by hand, host 03:24Z) and `T=30m` for a rehearsal ("Rules for every launch"), unless rs/117
   gives the launcher its own hard bound. Its clean logouts are HELPERS.md's teardown. If the bound
   fires instead, the helpers are dropped, not logged out; whether the launcher logs out on SIGTERM
   is rs/117's to say. Neither the launcher nor HELPERS.md is on this branch or on the host's
@@ -2035,6 +2035,10 @@ What the operator sees:
   resumes inside it. Past it run.ts does not rely on the page's own reconnect: it closes SCORED's
   tab, waits 10 s for the server to drop the body, and logs in on a fresh tab (rs/744, the host's
   runs D and E: a 60 s block mostly left the page claiming in game on a socket that never resumed).
+  A ~60 s hold is not free: SCORED is back ~163-167 s after the hold began, ~410-417 ticks at 400
+  ms, with one unplanned relog entry (m, the host's 60 s rerun on 213e2fba; the fresh-tab login can
+  be a 30 s takeover of the still-listed body; RUN-ORDER R71).
+  Holds under ~50 s adopt uncharged at about the hold plus TCP backoff.
   The helpers and the fleet drop at the same moment.
 - **The outage from outside:** `/playercount` stops answering for ~30 s, then answers 0; logins are
   refused with code 8 for ~1.5-2.5 min; the count refills over ~10 min (r:
