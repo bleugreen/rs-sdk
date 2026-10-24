@@ -1050,6 +1050,13 @@ export interface WatchdogInputs {
     /** How long a fresh client may take to log in before staleness counts. */
     launchGraceMs: number;
     gateway: BotStatus['status'] | null;
+    /**
+     * Our own gateway cannot be seen through: the SDK's socket to it is down (reconnecting), its
+     * status does not answer, or it came back GATEWAY_BACK_GRACE_TICKS ago at most with no tick
+     * since (the page reconnects to it on its own timer). Nothing about the client can be told then,
+     * and no click can land.
+     */
+    gatewayDown?: boolean;
     /** Lite child exit code, null while running or for the browser. */
     childExit: number | null;
     nextAttemptAt: number;
@@ -1094,15 +1101,27 @@ export function openInterface(s: Pick<BotWorldState, 'bank' | 'trade'> | null | 
  * - `outage`: the client is gone or wedged because the server is. Nothing is on
  *   the clock (the world died with the process) and nothing can be taken over;
  *   wait for the world and log in once it accepts logins (reconnectAfterOutage).
+ * - `gateway_down`: the tick stopped because our own gateway did, which is no
+ *   evidence the client is wedged or out (the page may be playing on, unseen),
+ *   and a logout through it cannot land. Wait for it; nothing is done.
  */
-export type WatchdogVerdict = 'ok' | 'wait' | 'logout' | 'relaunch' | 'stop' | 'outage' | 'give_up';
+export type WatchdogVerdict = 'ok' | 'wait' | 'logout' | 'relaunch' | 'stop' | 'outage' | 'gateway_down' | 'give_up';
+
+/**
+ * Ticks after our gateway is reachable again during which a stale tick still reads as the gateway's
+ * and not the client's: the page's gateway connection retries every 3 s on its own
+ * (webclient GatewayConnection), the SDK's within GATEWAY_RECONNECT_MAX_MS. 10 s at 400 ms.
+ */
+export const GATEWAY_BACK_GRACE_TICKS = 25;
 
 /**
  * Pure decision. While the account should be in the world: a lite child that
  * exited gets a relaunch; a stale tick or a dead/stale gateway with the client
  * still running gets a clean logout first, and a relaunch only if that logout
- * was not confirmed; a stalled bot gets a stop. Never relaunch after exit code
- * 3 (outdated client); relaunches respect the backoff window, a logout does not.
+ * was not confirmed; a stalled bot gets a stop. A stale tick while our own
+ * gateway is down is the gateway's, not the client's: `gateway_down`, before
+ * the server probe. Never relaunch after exit code 3 (outdated client);
+ * relaunches respect the backoff window, a logout does not.
  */
 export function watchdogDecision(i: WatchdogInputs): WatchdogVerdict {
     if (i.paused || !i.expectInWorld) return 'ok';
@@ -1114,7 +1133,7 @@ export function watchdogDecision(i: WatchdogInputs): WatchdogVerdict {
     const wedged = i.msSinceAdvance > i.staleMs || i.gateway === 'dead' || i.gateway === 'stale';
     // The logout refuses while a bank or trade is open, for a bounded hold (INTERFACE_HOLD_TICKS).
     const held = !!i.interfaceOpen && (i.msInterfaceHeld ?? 0) <= (i.interfaceHoldMs ?? Infinity);
-    if (wedged) return i.serverDown ? 'outage' : i.logoutFailed ? relaunch : held ? 'wait' : 'logout';
+    if (wedged) return i.gatewayDown ? 'gateway_down' : i.serverDown ? 'outage' : i.logoutFailed ? relaunch : held ? 'wait' : 'logout';
     if (i.progressStaleTicks !== null && i.ticksSinceProgress !== null && i.ticksSinceProgress > i.progressStaleTicks) return held ? 'wait' : 'stop';
     return 'ok';
 }
@@ -1220,7 +1239,11 @@ export function startWatchdog(session: Session, opts: WatchdogOptions = {}): Wat
     let logoutFailed = false;
     let busy = false;
     let gateway: BotStatus['status'] | null = null;
+    let gatewayAnswers = true;
     let lastGatewayPoll = 0;
+    // While our gateway is unreachable, and when it last became reachable again (0: not since start).
+    let gatewayWasDown = false;
+    let gatewayBackAt = 0;
     const interfaceHoldMs = INTERFACE_HOLD_TICKS * tickMs();
     let heldSince: number | null = null;
     let lastWait = '';
@@ -1238,8 +1261,19 @@ export function startWatchdog(session: Session, opts: WatchdogOptions = {}): Wat
             const now = Date.now();
             if (now - lastGatewayPoll > 2_000) {
                 lastGatewayPoll = now;
-                gateway = (await gatewayStatus(session))?.status ?? null;
+                const st = await gatewayStatus(session);
+                gatewayAnswers = st !== null;
+                gateway = st?.status ?? null;
             }
+            const connected = sdkConnected(session);
+            const unreachable = !connected || !gatewayAnswers;
+            if (unreachable) gatewayWasDown = true;
+            else if (gatewayWasDown) {
+                gatewayWasDown = false;
+                gatewayBackAt = Date.now();
+            }
+            const returning = gatewayBackAt > 0 && session.lastAdvanceAt < gatewayBackAt && Date.now() - gatewayBackAt < GATEWAY_BACK_GRACE_TICKS * tickMs();
+            const gatewayDown = unreachable || returning;
             const msSinceAdvance = Date.now() - session.lastAdvanceAt;
             const interfaceOpen = openInterface(session.sdk.getState());
             if (!interfaceOpen) heldSince = null;
@@ -1247,7 +1281,7 @@ export function startWatchdog(session: Session, opts: WatchdogOptions = {}): Wat
             const decide = (serverDown: boolean) => watchdogDecision({
                 expectInWorld: session.expectInWorld, paused, now: Date.now(), msSinceAdvance, staleMs: stale,
                 msSinceLaunch: Date.now() - session.launchedAt, tickedSinceLaunch: session.lastAdvanceAt > session.launchedAt, launchGraceMs,
-                gateway, childExit: session.child ? session.childExit : null, nextAttemptAt, logoutFailed,
+                gateway, gatewayDown, childExit: session.child ? session.childExit : null, nextAttemptAt, logoutFailed,
                 ticksSinceProgress: progressStaleTicks === null ? null : session.ticksSinceProgress, progressStaleTicks, serverDown,
                 interfaceOpen, msInterfaceHeld: heldSince === null ? 0 : Date.now() - heldSince, interfaceHoldMs,
             });
@@ -1263,7 +1297,14 @@ export function startWatchdog(session: Session, opts: WatchdogOptions = {}): Wat
                 lastWait = '';
                 return;
             }
-            const why = `childExit=${session.childExit} sinceAdvance=${msSinceAdvance}ms gateway=${gateway}`;
+            const why = `childExit=${session.childExit} sinceAdvance=${msSinceAdvance}ms gateway=${gateway}${unreachable ? ` (unreachable, sdk ${connected ? 'connected' : 'not connected'})` : returning ? ' (back, no tick yet)' : ''}`;
+            if (verdict === 'gateway_down') {
+                // Said once per outage, not every tick.
+                const line = returning ? 'our gateway is back; waiting for the page to publish through it' : 'our gateway is unreachable: no logout can land and the client cannot be judged; waiting';
+                if (lastWait !== line) emit('gateway_down', `${line} (${why})`);
+                lastWait = line;
+                return;
+            }
             if (verdict === 'wait' && interfaceOpen && !logoutFailed) {
                 // The logout is held for the open interface: said once per hold, not every tick.
                 heldSince ??= Date.now();
@@ -1307,6 +1348,18 @@ export function startWatchdog(session: Session, opts: WatchdogOptions = {}): Wat
             if (verdict === 'logout' || verdict === 'stop') {
                 logouts++;
                 const out = await actions.logout(session, logoutTimeoutMs);
+                if (out.superseded) {
+                    // An adopt or a relog began a newer session meanwhile; it set expectInWorld and resumed us.
+                    emit('logout', `logout dropped: ${out.reason}`);
+                    return;
+                }
+                if (!out.ok && out.sends === 0) {
+                    // Never sent (the gateway went away mid-logout): nothing failed to land, so no relaunch.
+                    session.expectInWorld = true;
+                    paused = false;
+                    emit('logout', `logout not sent (${out.reason})`);
+                    return;
+                }
                 if (!out.ok) {
                     // The click did not land (frozen client, broken relay). logoutClean
                     // paused us and cleared expectInWorld; the account is still in, so
