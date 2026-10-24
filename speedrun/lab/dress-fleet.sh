@@ -68,4 +68,5 @@ else
     case "$BOUND" in *h) secs=$(( ${BOUND%h} * 3600 ));; *m) secs=$(( ${BOUND%m} * 60 ));; *s) secs=${BOUND%s};; *) secs=$BOUND;; esac
     export LAB_TIMEOUT=${LAB_TIMEOUT:-$secs}
 fi
-exec "${T[@]}" bash speedrun/lab/lab.sh "$SCORED" "$SPEC"
+# ${T[@]+...}: macOS's bash 3.2 calls an empty array unbound under set -u.
+exec ${T[@]+"${T[@]}"} bash speedrun/lab/lab.sh "$SCORED" "$SPEC"
