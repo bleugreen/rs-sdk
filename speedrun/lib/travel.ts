@@ -708,6 +708,17 @@ const doorKey = (l: { x: number; z: number }) => `${l.x},${l.z}`;
 /** The cooked fish `eat` takes by default (and legs.ts counts as food). */
 export const FOOD = /^(shark|swordfish|lobster|tuna|salmon|trout|bass|monkfish|pike)$/i;
 
+/**
+ * Hitpoints each FOOD heals (player/configs/consumption/consume_normal.dbrow, `stat_heal`). This
+ * content has no monkfish, so it is absent and heals 0 here.
+ */
+export const FOOD_HEAL: Readonly<Record<string, number>> = { shark: 20, swordfish: 14, bass: 13, lobster: 12, tuna: 10, salmon: 9, pike: 8, trout: 7 };
+
+/** Hitpoints the FOOD held would heal, all of it eaten (FOOD_HEAL; the maximum's cap not applied). */
+export function healHeld(s: BotWorldState): number {
+    return s.inventory.filter(i => FOOD.test(i.name)).reduce((n, i) => n + (FOOD_HEAL[i.name.toLowerCase()] ?? 0) * i.count, 0);
+}
+
 type XZ = { x: number; z: number };
 
 /** Tiles from `from` through each point in turn, one step at a time (straight or diagonal). */
