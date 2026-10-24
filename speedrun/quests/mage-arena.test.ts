@@ -492,17 +492,20 @@ describe('D and E: the pool and the statue', () => {
 describe('exit drops (the ledger T16-18 row, done in F)', () => {
     const godItems = () => withInv(at(without(arrival(), /greegree/i), CHAMBER_AT), item('Cape of saradomin', ID.saradominCape), item('Staff of saradomin', ID.saradominStaff));
 
-    test('drops the god staff, the god cape and every shark after S18\'s 2', () => {
+    test('drops the god staff, the god cape, every prayer potion and every shark after S18\'s 2; the magic potion stays for S18', () => {
         const names = exitDropItems(godItems()).map(i => i.name);
         expect(names.filter(n => n === 'Shark').length).toBe(9 - KEEP_SHARKS);
         expect(names).toContain('Staff of saradomin');
         expect(names).toContain('Cape of saradomin');
-        expect(names.length).toBe(2 + 9 - KEEP_SHARKS);
-        expect(exitDropItems(godItems(), 9).length).toBe(2);
+        expect(names.filter(n => n === 'Prayer potion(4)').length).toBe(4);
+        expect(names).not.toContain('Magic potion(4)');
+        expect(names.length).toBe(2 + 4 + 9 - KEEP_SHARKS);
+        expect(exitDropItems(godItems(), 9).length).toBe(2 + 4);
     });
     test('exitClean names what is still held', () => {
         expect(exitClean()(godItems(), undefined)).toMatch(/still holding .*staff/);
-        const noGod = without(godItems(), /saradomin/i);
+        expect(exitClean(9)(without(godItems(), /saradomin/i), undefined)).toMatch(/still holding .*prayer potion/);
+        const noGod = without(godItems(), /saradomin|prayer potion/i);
         expect(exitClean()(noGod, undefined)).toBe('9 sharks held, S18 takes 2 (the ledger\'s T16-18 row)');
         expect(exitClean(9)(noGod, undefined)).toBe(true);
     });
@@ -553,7 +556,7 @@ describe('exit drops (the ledger T16-18 row, done in F)', () => {
         const F = seg('F');
         await drive(sdk, F.run(ctx) as Promise<unknown>, 30, each);
         expect(sdk.sent.some(a => a.method === 'sendInteractNpc')).toBe(false);
-        expect(sdk.sent.filter(a => a.method === 'sendDropItem').length).toBe(2 + 9 - KEEP_SHARKS);
+        expect(sdk.sent.filter(a => a.method === 'sendDropItem').length).toBe(2 + 4 + 9 - KEEP_SHARKS);
         const end = sdk.getState()!;
         expect(end.inventory.filter(i => i.name === 'Shark').length).toBe(KEEP_SHARKS);
         expect(F.postconditions(end, {})).toBe(true);
