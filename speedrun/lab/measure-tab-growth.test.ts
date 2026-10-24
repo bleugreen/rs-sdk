@@ -4,8 +4,9 @@ import { parseSmapsRollup, slope, summarize, throttleExpression, type GrowthSamp
 describe('measure-tab-growth', () => {
     test('parseSmapsRollup reads Pss and Rss in KiB', () => {
         const text = '55d0c0000000-7ffd00000000 ---p 00000000 00:00 0  [rollup]\nRss:              523412 kB\nPss:              498120 kB\nPss_Anon:         401000 kB\n';
-        expect(parseSmapsRollup(text)).toEqual({ pssKb: 498120, rssKb: 523412 });
+        expect(parseSmapsRollup(text)).toEqual({ pssKb: 498120, rssKb: 523412, anonKb: 401000 });
         expect(parseSmapsRollup('Rss: 1 kB\n')).toBeNull();
+        expect(parseSmapsRollup(`${text}Pss_File:          9000 kB\nPss_Shmem:         88120 kB\n`)).toEqual({ pssKb: 498120, rssKb: 523412, anonKb: 401000, shmemKb: 88120, fileKb: 9000 });
     });
 
     test('slope is the least-squares gradient', () => {

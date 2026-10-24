@@ -33,7 +33,9 @@ import { labLog } from './common';
 import { waitTicks, waitUntil } from '../lib/wait';
 import type { ChainStep } from '../runner/chain';
 import { launchLabBrowser } from './browser';
-import { leaveTutorial, mustTele, near, setStats, tele } from './setup';
+import { give, leaveTutorial, mustTele, near, setStats, tele } from './setup';
+import { runProgram, stopProgram } from '../lib/programs';
+import { bandParams, SITES } from '../skills/woodcutting';
 
 export interface Variant {
     chrome: 'attached' | 'detached';
@@ -51,7 +53,11 @@ export interface Variant {
      * 'tele' a staff teleport to a far town every 10 ticks (a new region each time); 'travel' the
      * pathfinder's long walks between towns, as the legs run.
      */
-    work?: 'walk' | 'tele' | 'travel';
+    work?: 'walk' | 'tele' | 'travel' | 'knife' | 'idle';
+    /** Ticks between teleports (work 'tele'; default 10). */
+    teleEvery?: number;
+    /** A forced full GC (HeapProfiler.collectGarbage, one-shot connection) every minute. */
+    gc?: boolean;
 }
 
 export const VARIANTS: Record<string, Variant> = {
@@ -74,6 +80,13 @@ export const VARIANTS: Record<string, Variant> = {
     'tele-plain': { chrome: 'detached', tabmem: false, runTs: false, work: 'tele' },
     'headed-tele': { chrome: 'attached', tabmem: true, runTs: true, headed: true, work: 'tele' },
     travel: { chrome: 'attached', tabmem: true, runTs: true, work: 'travel' },
+    /** S07's knife-cycle willow band on one tile: no new map region. */
+    knife: { chrome: 'attached', tabmem: true, runTs: true, work: 'knife' },
+    'knife-plain': { chrome: 'detached', tabmem: false, runTs: false, work: 'knife' },
+    'tele-gc': { chrome: 'detached', tabmem: false, runTs: false, work: 'tele', gc: true },
+    'tele-slow': { chrome: 'detached', tabmem: false, runTs: false, work: 'tele', teleEvery: 40 },
+    /** Logged in and standing: nothing sent. */
+    idle: { chrome: 'detached', tabmem: false, runTs: false, work: 'idle' },
 };
 
 export interface RendererReading {
@@ -83,6 +96,10 @@ export interface RendererReading {
     rssKb: number;
     /** The GPU process (compositing and raster in a headed Chrome); absent for a renderer. */
     gpu?: true;
+    /** Pss split (smaps_rollup Pss_Anon / Pss_Shmem / Pss_File), KiB, where the kernel gives it. */
+    anonKb?: number;
+    shmemKb?: number;
+    fileKb?: number;
 }
 
 export interface GrowthSample {
@@ -92,18 +109,22 @@ export interface GrowthSample {
     /** The last published tick, or null. */
     tick: number | null;
     renderers: RendererReading[];
+    /** The page's JS heap right after a forced GC (variant gc), bytes. */
+    heapAfterGc?: number;
     error?: string;
 }
 
 /** `Pss:` and `Rss:` of a /proc/<pid>/smaps_rollup text, KiB. */
-export function parseSmapsRollup(text: string): { pssKb: number; rssKb: number } | null {
+export function parseSmapsRollup(text: string): { pssKb: number; rssKb: number; anonKb?: number; shmemKb?: number; fileKb?: number } | null {
     const kb = (key: string) => {
         const m = new RegExp(`^${key}:\\s+(\\d+) kB`, 'm').exec(text);
         return m ? Number(m[1]) : null;
     };
     const pss = kb('Pss');
     const rss = kb('Rss');
-    return pss === null || rss === null ? null : { pssKb: pss, rssKb: rss };
+    if (pss === null || rss === null) return null;
+    const split = { anonKb: kb('Pss_Anon'), shmemKb: kb('Pss_Shmem'), fileKb: kb('Pss_File') };
+    return { pssKb: pss, rssKb: rss, ...Object.fromEntries(Object.entries(split).filter(([, v]) => v !== null)) };
 }
 
 /** Least-squares slope of y over x; null with fewer than two distinct x. */
@@ -132,6 +153,9 @@ export interface GrowthSummary {
     gpuFirstMB: number | null;
     gpuLastMB: number | null;
     gpuMbPerMin: number | null;
+    /** The tab renderer's Pss_Anon and Pss_Shmem slopes, MB/min. */
+    anonMbPerMin: number | null;
+    shmemMbPerMin: number | null;
 }
 
 /** The tab renderer's growth over `samples`, skipping those in the first `skipMs` (the load and login settling). */
@@ -144,8 +168,10 @@ export function summarize(variant: string, samples: readonly GrowthSample[], ski
         .filter(s => s.at - t0 >= skipMs)
         .flatMap(s => {
             const r = s.renderers.find(x => x.pid === pid);
-            return r ? [{ at: s.at, tick: s.tick, mb: (r.pssKb * 1024) / 1e6 }] : [];
+            const mbOf = (kb: number | undefined) => (kb === undefined ? null : (kb * 1024) / 1e6);
+            return r ? [{ at: s.at, tick: s.tick, mb: (r.pssKb * 1024) / 1e6, anon: mbOf(r.anonKb), shmem: mbOf(r.shmemKb) }] : [];
         });
+    const split = (k: 'anon' | 'shmem') => slope(series.flatMap(p => (p[k] === null ? [] : [{ x: (p.at - t0) / 60_000, y: p[k]! }])));
     const perMin = slope(series.map(p => ({ x: (p.at - t0) / 60_000, y: p.mb })));
     const ticked = series.filter((p): p is typeof p & { tick: number } => p.tick !== null);
     const perTick = slope(ticked.map(p => ({ x: p.tick, y: p.mb })));
@@ -169,6 +195,8 @@ export function summarize(variant: string, samples: readonly GrowthSample[], ski
         gpuFirstMB: round(gpu[0]?.y ?? null, 1),
         gpuLastMB: round(gpu[gpu.length - 1]?.y ?? null, 1),
         gpuMbPerMin: round(slope(gpu), 2),
+        anonMbPerMin: round(split('anon'), 2),
+        shmemMbPerMin: round(split('shmem'), 2),
     };
 }
 
@@ -271,15 +299,40 @@ const TOWNS: readonly { x: number; z: number }[] = [
     { x: 2662, z: 3305 }, // Ardougne
 ];
 
-/** A teleport to the next town every 10 ticks until `end`. */
-async function teleLoop(sdk: Session['sdk'], end: number): Promise<number> {
+/** A teleport to the next town every `every` ticks until `end`. */
+async function teleLoop(sdk: Session['sdk'], end: number, every = 10): Promise<number> {
     let n = 0;
     while (Date.now() < end) {
         const t = TOWNS[++n % TOWNS.length]!;
         await tele(sdk, t.x, t.z);
-        await waitTicks(sdk, 10);
+        await waitTicks(sdk, every);
     }
     return n;
+}
+
+/** S07's knife-cycle willow band with the run's own parameters, restarted whenever it ends, until `end`. */
+async function knifeLoop(sdk: Session['sdk'], end: number, say: (m: string) => void): Promise<number> {
+    const p: Record<string, unknown> = bandParams({}, 'willow', 99)('knife');
+    delete p.untilLevel;
+    let runs = 0;
+    while (Date.now() < end) {
+        const ticks = Math.max(20, Math.round((end - Date.now()) / 150));
+        try {
+            const st = await runProgram(sdk, 'knife-cycle', { ...p, maxTicks: ticks }, { maxTicks: ticks + 60 });
+            say(`knife run ${++runs}: ${st.phase}, counters ${JSON.stringify(st.counters)}`);
+        } catch (e) {
+            say(`knife run ${++runs} failed: ${e instanceof Error ? e.message : String(e)}`);
+            await stopProgram(sdk).catch(() => null);
+            await waitTicks(sdk, 5);
+        }
+    }
+    await stopProgram(sdk).catch(() => null);
+    return runs;
+}
+
+async function idleLoop(sdk: Session['sdk'], end: number): Promise<number> {
+    while (Date.now() < end) await waitTicks(sdk, 10);
+    return 0;
 }
 
 /** The pathfinder's walks Lumbridge -> Draynor -> Falador -> Barbarian Village -> Varrock -> Lumbridge until `end`; a failed walk teleports on. */
@@ -304,7 +357,9 @@ async function travelLoop(session: Pick<Session, 'sdk' | 'bot'>, end: number, sa
 }
 
 function work(v: Variant, session: Pick<Session, 'sdk' | 'bot'>, end: number, say: (m: string) => void): Promise<number> {
-    if (v.work === 'tele') return teleLoop(session.sdk, end);
+    if (v.work === 'tele') return teleLoop(session.sdk, end, v.teleEvery);
+    if (v.work === 'knife') return knifeLoop(session.sdk, end, say);
+    if (v.work === 'idle') return idleLoop(session.sdk, end);
     if (v.work === 'travel') return travelLoop(session, end, say);
     return walkLoop(session.sdk, end);
 }
@@ -335,9 +390,29 @@ async function child(bot: string, name: string, v: Variant, minutes: number, cdp
         // the far towns' NPCs must not kill a level-3 lab bot
         await setStats(s.sdk, { hitpoints: 70, attack: 70, strength: 70, defence: 70 });
         await mustTele(s.sdk, A.x, A.z);
+        if (v.work === 'knife') {
+            await setStats(s.sdk, { woodcutting: 60 });
+            for (const item of ['rune_axe', 'knife', 'logs']) await give(s.sdk, item);
+            await mustTele(s.sdk, SITES.willow.stand[0], SITES.willow.stand[1]);
+            await waitTicks(s.sdk, 5);
+        }
         if (v.throttle) say(`throttle: ${JSON.stringify((await evaluateInTab(cdp, bot, throttleExpression(v.throttle)))?.value)}`);
         const sample = async () => {
             const reading: GrowthSample = { variant: name, at: Date.now(), tick: s.sdk.getState()?.tick ?? null, renderers: [] };
+            if (v.gc && samples.length % 2 === 1) {
+                // every other 30 s sample: a full GC, then the heap it left
+                try {
+                    const targets = (await (await fetch(`${cdp}/json/list`)).json()) as CdpTarget[];
+                    const [tab] = botTabs(targets, bot);
+                    if (tab?.webSocketDebuggerUrl) {
+                        const [, usage] = await cdpCommands(tab.webSocketDebuggerUrl, [{ method: 'HeapProfiler.collectGarbage' }, { method: 'Runtime.getHeapUsage' }], 20_000);
+                        reading.heapAfterGc = (usage as { usedSize?: number }).usedSize;
+                        await Bun.sleep(1_000);
+                    }
+                } catch (e) {
+                    say(`gc failed: ${e instanceof Error ? e.message : String(e)}`);
+                }
+            }
             try {
                 reading.renderers = await readRenderers(chromePid);
             } catch (e) {
