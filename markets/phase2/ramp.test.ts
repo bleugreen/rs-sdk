@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { fallbackMix, PLAN_B_MIX } from './plan.ts';
-import { holdRates, incumbentRatio, KnightsRamp, rateBetween, type RampReading } from './ramp.ts';
+import { holdRates, incumbentRatio, KnightsRamp, rateBetween, workRate, type RampReading } from './ramp.ts';
 
 const MIN = 60_000;
 const cfg = { steps: [8, 20, 43], holdMinutes: 15, dropPct: 10, admitTimeoutMinutes: 30 };
@@ -129,6 +129,31 @@ describe('holdRates', () => {
         expect(holdRates(off, 10 * MIN, 5 * MIN, 7.5 * MIN).a02).toBeCloseTo(15, 1);
         const relog = [{ alias: 'a03', methodAt: 0, readings: [...readings(0, 18, 15), ...readings(18.5, 30, 15, 2)] }];
         expect(holdRates(relog, 10 * MIN, 0, 7.5 * MIN)).toEqual({});
+    });
+
+    test('a deposit trip inside the hold lowers the gross rate but not the rate at the knights', () => {
+        // 16 gp a tick at the knights; a 2-minute bank trip from minute 25 earns nothing and counts no work
+        const rs: RampReading[] = [];
+        let coins = 0, work = 0;
+        for (let at = 0; at <= 40 * MIN; at += 20_000) {
+            rs.push({ at, session: 1, tick: at / 400, coins, work });
+            if (at < 25 * MIN || at >= 27 * MIN) {
+                coins += 50 * 16;
+                work += 50;
+            }
+        }
+        const logins = [{ alias: 'a01', methodAt: 0, readings: rs }];
+        expect(holdRates(logins, 20 * MIN, 5 * MIN, 7.5 * MIN).a01).toBeCloseTo(16, 6);
+        const gross = holdRates(logins, 20 * MIN, 5 * MIN, 7.5 * MIN, 'gross').a01!;
+        expect(gross).toBeCloseTo(16 * (18 / 20), 6);
+    });
+
+    test('workRate needs work counts in one session and half the window at the knights', () => {
+        const a = { at: 0, session: 1, tick: 0, coins: 0, work: 0 };
+        expect(workRate(a, { at: 1, session: 1, tick: 100, coins: 800, work: 50 })).toBe(16);
+        expect(workRate(a, { at: 1, session: 1, tick: 100, coins: 800, work: 49 })).toBeNull();
+        expect(workRate(a, { at: 1, session: 2, tick: 100, coins: 800, work: 100 })).toBeNull();
+        expect(workRate({ at: 0, session: 1, tick: 0, coins: 0 }, { at: 1, session: 1, tick: 100, coins: 800, work: 100 })).toBeNull();
     });
 
     test('incumbentRatio pairs by alias and ignores logins only in one step', () => {

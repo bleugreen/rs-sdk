@@ -27,6 +27,8 @@ export interface Sample {
     coins: number;
     pos: [number, number] | null;
     target: NpcAt | null;
+    /** Ticks of the session spent in the thieve errand (ledger `workTicks`), when recorded. */
+    work: number | null;
 }
 
 type Line = Record<string, unknown>;
@@ -44,7 +46,8 @@ export function samplesOf(lines: readonly Line[]): Map<string, Sample[]> {
             stage: String(l.stage),
             coins: Number((l.coins as { total?: number } | undefined)?.total ?? 0),
             pos: (l.pos as [number, number] | null | undefined) ?? null,
-            target: (l.target as NpcAt | null | undefined) ?? null
+            target: (l.target as NpcAt | null | undefined) ?? null,
+            work: typeof l.workTicks === 'number' ? l.workTicks : null
         };
         const list = out.get(s.account) ?? [];
         list.push(s);
@@ -98,12 +101,23 @@ export function warmupCurve(by: Map<string, Sample[]>, minutes: number): { minut
     });
 }
 
-/** A login's gp a tick from its first sample at or after `from` to its last sample at or before `to`, within one stretch. */
-export function windowRate(stretch: readonly Sample[], from: number, to: number): { rate: number; minutes: number } | null {
+/**
+ * A login's gp a tick from its first sample at or after `from` to its last sample at or before `to`, within one
+ * stretch: over wall ticks (`rate`), and over the ticks at the knights (`knights`, null without work counts or under
+ * half the window there) with that share (`workShare`).
+ */
+export function windowRate(stretch: readonly Sample[], from: number, to: number): { rate: number; knights: number | null; workShare: number | null; minutes: number } | null {
     const a = stretch.find(s => s.at >= from);
     const b = stretch.findLast(s => s.at <= to);
     if (!a || !b || b.tick <= a.tick) return null;
-    return { rate: (b.coins - a.coins) / (b.tick - a.tick), minutes: (b.at - a.at) / 60_000 };
+    const ticks = b.tick - a.tick;
+    const work = a.work !== null && b.work !== null ? b.work - a.work : null;
+    return {
+        rate: (b.coins - a.coins) / ticks,
+        knights: work !== null && work >= ticks / 2 ? (b.coins - a.coins) / work : null,
+        workShare: work === null ? null : work / ticks,
+        minutes: (b.at - a.at) / 60_000
+    };
 }
 
 export interface HoldRow {
@@ -115,6 +129,8 @@ export interface HoldRow {
     fromStart: number | null;
     /** Measured from the later of the hold start and `warmup` minutes after it reached the method. */
     warm: number | null;
+    /** The same window, at the knights only (ramp.ts workRate): the step rule's measure. */
+    knights: number | null;
     arrivedBeforeHoldMin: number | null;
 }
 
@@ -126,16 +142,18 @@ export function holdRows(by: Map<string, Sample[]>, admitStep: Map<string, numbe
         if (st === null || st > step) continue;
         const s = stretches(samples).find(x => x[0]!.at <= end && x.at(-1)!.at >= start);
         if (!s) {
-            rows.push({ account, step: st, newcomer: st === step, fromStart: null, warm: null, arrivedBeforeHoldMin: null });
+            rows.push({ account, step: st, newcomer: st === step, fromStart: null, warm: null, knights: null, arrivedBeforeHoldMin: null });
             continue;
         }
         const arrived = s[0]!.at;
+        const warm = windowRate(s, Math.max(start, arrived + warmupMs), end);
         rows.push({
             account,
             step: st,
             newcomer: st === step,
             fromStart: windowRate(s, start, end)?.rate ?? null,
-            warm: windowRate(s, Math.max(start, arrived + warmupMs), end)?.rate ?? null,
+            warm: warm?.rate ?? null,
+            knights: warm?.knights ?? null,
             arrivedBeforeHoldMin: Math.round((start - arrived) / 6_000) / 10
         });
     }
@@ -203,6 +221,8 @@ export interface Placement {
     meanLoad: number | null;
     /** Median Chebyshev distance to its knight. */
     medianDistance: number | null;
+    /** Share of its ticks spent at the knights (the thieve errand), when recorded: the rest is bank trips and walks. */
+    workShare: number | null;
 }
 
 /** Where each knights login worked over [from, to], past its warm-up. */
@@ -221,9 +241,19 @@ export function placements(by: Map<string, Sample[]>, warmupMs: number, from = -
             ls.push(load.get(`${x.account}@${x.at}`) ?? 0);
             if (x.pos) ds.push(Math.max(Math.abs(x.pos[0] - x.target.x), Math.abs(x.pos[1] - x.target.z)));
         }
+        let work = 0, ticks = 0, counted = false;
+        for (const s of stretches(samples)) {
+            const w = s.filter(x => x.at - s[0]!.at >= warmupMs && x.at >= from && x.at <= to);
+            const a = w[0], b = w.at(-1);
+            if (!a || !b || a.work === null || b.work === null) continue;
+            work += b.work - a.work;
+            ticks += b.tick - a.tick;
+            counted = true;
+        }
         out.push({
             account,
             samples: xs.length,
+            workShare: counted && ticks > 0 ? work / ticks : null,
             none: (xs.length - ls.length) / xs.length,
             knights,
             meanLoad: ls.length ? ls.reduce((a, b) => a + b, 0) / ls.length : null,
@@ -272,12 +302,15 @@ if (import.meta.main) {
         console.log(`HOLD step ${step} ${h.holdStart} - ${h.holdEnd}: runner median ${Number(h.median).toFixed(2)} ratio ${h.ratio ?? '-'}`);
         console.log(`  from the hold start: all ${perHour(med(rows.map(r => r.fromStart)))}  incumbents ${perHour(med(inc.map(r => r.fromStart)))}  newcomers ${perHour(med(nw.map(r => r.fromStart)))}`);
         console.log(`  past a ${warmupMs / 60_000}-min warm-up: all ${perHour(med(rows.map(r => r.warm)))}  incumbents ${perHour(med(inc.map(r => r.warm)))}  newcomers ${perHour(med(nw.map(r => r.warm)))}`);
-        for (const r of rows) console.log(`    ${r.account} step ${r.step}${r.newcomer ? ' new' : '    '} arrived ${r.arrivedBeforeHoldMin ?? '-'} min before  start ${r.fromStart?.toFixed(2) ?? '-'}  warm ${r.warm?.toFixed(2) ?? '-'}`);
+        console.log(`  at the knights, past the warm-up: all ${perHour(med(rows.map(r => r.knights)))}  incumbents ${perHour(med(inc.map(r => r.knights)))}  newcomers ${perHour(med(nw.map(r => r.knights)))}`);
+        for (const r of rows) console.log(`    ${r.account} step ${r.step}${r.newcomer ? ' new' : '    '} arrived ${r.arrivedBeforeHoldMin ?? '-'} min before  start ${r.fromStart?.toFixed(2) ?? '-'}  warm ${r.warm?.toFixed(2) ?? '-'}  knights ${r.knights?.toFixed(2) ?? '-'}`);
         const p = placements(by, warmupMs, start, end);
         console.log(`  placement over the hold (load = our bots on its knight)`);
-        for (const x of p) console.log(`    ${x.account} none ${(x.none * 100).toFixed(0)}%  load ${x.meanLoad?.toFixed(2) ?? '-'}  dist ${x.medianDistance ?? '-'}  knights ${JSON.stringify(x.knights)}`);
+        for (const x of p) console.log(`    ${x.account} none ${(x.none * 100).toFixed(0)}%  load ${x.meanLoad?.toFixed(2) ?? '-'}  dist ${x.medianDistance ?? '-'}  at knights ${x.workShare === null ? '-' : `${(x.workShare * 100).toFixed(1)}%`}  knights ${JSON.stringify(x.knights)}`);
         console.log(`  rate by load: ${JSON.stringify(rateByLoad(by, warmupMs, start, end).map(r => ({ ...r, rate: Math.round(r.rate * 100) / 100 })))}`);
     }
     console.log('LOAD whole run past the warm-up (load 0 = no knight in view)');
     for (const r of rateByLoad(by, warmupMs)) console.log(`  ${r.load} bots  ${perHour(r.rate)}  intervals ${r.intervals}  accounts ${r.accounts}`);
+    const whole = placements(by, warmupMs).filter(x => x.workShare !== null);
+    if (whole.length) console.log(`AT KNIGHTS whole run past the warm-up: median share of ticks ${(median(whole.map(x => x.workShare!)) * 100).toFixed(1)}% (${whole.length} logins); the rest is bank trips and walks`);
 }

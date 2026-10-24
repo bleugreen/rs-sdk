@@ -54,6 +54,18 @@ describe('crowding', () => {
         expect(windowRate(by.get('a01')!, T0 + 50 * MIN, T0 + 60 * MIN)).toBeNull();
     });
 
+    test('with work counts a hold row and a placement give the rate at the knights and its share of ticks', () => {
+        // at the knights 9 ticks in 10 (a bank trip's share), 16 gp a tick there
+        const ls = lines('a01', { from: 0, to: 20, gpTick: 16 * 0.9 }).map(l => ({ ...l, workTicks: Math.round(Number(l.tick) * 0.9) }));
+        const by = samplesOf(ls);
+        const [row] = holdRows(by, new Map([['a01', 1]]), 1, T0 + 5 * MIN, T0 + 20 * MIN, 0);
+        expect(row!.warm).toBeCloseTo(14.4, 1);
+        expect(row!.knights).toBeCloseTo(16, 1);
+        expect(placements(by, 0)[0]!.workShare).toBeCloseTo(0.9, 2);
+        // no work counts: null, not a guess
+        expect(holdRows(samplesOf(lines('a02', { from: 0, to: 20, gpTick: 16 })), new Map([['a02', 1]]), 1, T0, T0 + 20 * MIN, 0)[0]!.knights).toBeNull();
+    });
+
     test('load counts our bots on the same knight, and rate by load pools past the warm-up', () => {
         // two on knight 1 at 14 gp a tick, one alone on knight 2 at 16, one with no knight in view
         const by = samplesOf([
