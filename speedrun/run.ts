@@ -15,7 +15,16 @@
 //    on main (lib/run-floor.ts; no floor lives in code);
 // 2. the host reservation is live and the run's own claim (--claim-owner / $SPEEDRUN_CLAIM_OWNER);
 // 3. the slot ledger (speedrun/tools/slot-ledger.ts) exits 0;
-// 4. no refusing step (a module not on main) on the path to --until;
+// 4. no refusing step (a module not on main) on the path to --until, and no seam mismatch: every
+//    step whose preconditions ask for a start tile starts within it wherever the leg before it
+//    arrives (runner/chain.ts chainSeams);
+// 4a. the rune census (runner/rune-census.ts): SCORED's runes, by obj id, against what the chain
+//    spends of each from the start step (--from, else the step the tick log's last census was taken
+//    before) up to the next row that brings that rune, a row this attempt's hand-off record has
+//    served not counted; a rune short refuses, naming it, the step that would run short and the
+//    supply it waits for. Before login the pack is the tick log's last census (a fresh run has none);
+//    once SCORED is in the world the same census runs on its live pack, and a shortfall logs it out
+//    (exit 3) before any step runs;
 // 5. the helpers are in: <run dir>/launcher.json says helpersReady, and the next helper step's helpers
 //    are ready by their roles' own phase in the cue dir, not merely online (runner/phase-gate.ts; one
 //    line per status file, every later family on the path reported);
@@ -27,8 +36,8 @@
 // The tick log defaults to <run dir>/run.jsonl, so running the same command again resumes into the
 // same log: the walk starts from game state, the run's cue files are kept, and the report covers
 // every session. A new run takes a new --log (or a cleared run dir).
-// --dry-run evaluates every gate (the floor included) and lists the chain and every refusing step,
-// and logs nothing in. No option skips or replaces a gate: --run-commit names the commit the floor
+// --dry-run evaluates every gate (the floor included) and lists the chain, every refusing step, the
+// seams and the rune census, and logs nothing in. No option skips or replaces a gate: --run-commit names the commit the floor
 // check judges (default HEAD), never the floor.
 //
 // The report at the end (runner/run-report.ts) is per RUN-ORDER id against section 2's figures.
@@ -44,8 +53,16 @@
 // The end: S17's final logout (agility's `finish: 'final-logout'`), confirmed; the total level read
 // from the last state against 1,881; the run's claim released (rs-claim release).
 //
+// A death (runner/death.ts): a logout that saw SCORED die while it held (lib/session.ts
+// logoutClean, at a stop, after a refused or failed step, at a signal, or the watchdog's) writes a
+// `(death)` row with the tile before and after, the logout line says DIED, the drop recovery
+// refuses to relog, and the attempt ends with exit 6 whatever the chain ended with. Any later run
+// into the same log, a walk from game state or a --from, is refused (exit 3) until R8's recovery is
+// done and --r8-recovered=<key> names that death; the start then writes `(death) acknowledged`.
+//
 // Exit: 0 the run done at 1,881 (or the --until slice done), 1 error or a short total, 2 usage,
-// 3 refused by a start gate, 4 stopped (resume), 5 host reserved (paused; resume once it is gone).
+// 3 refused by a start gate, 4 stopped (resume), 5 host reserved (paused; resume once it is gone),
+// 6 SCORED died before a logout landed (R8's recovery, then --r8-recovered).
 
 import { existsSync, readFileSync } from 'fs';
 import { join, resolve } from 'path';
@@ -56,7 +73,7 @@ import { claimBin, claimOwner, EXIT_HOST_RESERVED, readReservation, ReservationW
 import { programStatus } from './lib/programs';
 import { describePreflight, feedUrl, readFeedHello, tickPreflight, type TickPreflight } from './lib/feed-hello';
 import { checkRunFloor, gitIn, type FloorCheck, type TickMsParse } from './lib/run-floor';
-import { type ClientKind, cdpUrl, closeSession, loadBotEnv, logoutClean, type LogoutResult, openSession, pageWorld, ROOT, type Session, startWatchdog } from './lib/session';
+import { abandonClient, abandonFailed, type AbandonResult, type ClientKind, cdpUrl, closeSession, describeAbandon, loadBotEnv, logoutClean, type LogoutResult, openSession, pageWorld, ROOT, type Session, startWatchdog, type TakeoverGate } from './lib/session';
 import { pageInGame, pageLoginState, type PageLoginState } from './lib/tab';
 import { tickMs } from './lib/wait';
 import { returnExtrasFromLedger, serveDrift, serveFromLedger } from './helpers/cannon-receiver';
@@ -65,14 +82,18 @@ import { newRunId, parseLog, TickLog, type TickRow } from './lib/ticks';
 import { startRunTabMemory, type TabMemorySetting } from './lib/tab-memory';
 import { formatRunReport, runReport } from './runner/run-report';
 import { patchMethod } from './runner/fence';
-import { buildChain, chainProbes, missingOnPath, muleCueDir, resolveFrom, sliceUntil, type ChainOptions, type ChainStep, type CueSink, type RunConfig } from './runner/chain';
+import { buildChain, chainProbes, chainSeams, ledgerRows, missingOnPath, muleCueDir, resolveFrom, sliceUntil, type ChainOptions, type ChainStep, type CueSink, type RunConfig } from './runner/chain';
 import { exitStopIsFinal, prepareCueDir, RunCues } from './runner/cue-keeper';
 import { deliveryOwnerFor } from './runner/delivery-owner';
 import { dropRecovery } from './runner/drop-relog';
-import { LOST_AFTER_TICKS, sessionLink } from './runner/resume';
+import { awaitPlayer, LOST_AFTER_TICKS, sessionLink } from './runner/resume';
+import { formatCensus, lastCensus, runeCensus, runePlan, runesHeld, type RuneCensus, type RunePlan } from './runner/rune-census';
+import { loadModules, runeLabel } from './tools/rune-pins';
+import { MANIFEST } from './tools/slot-ledger';
 import { RelogBudget } from './runner/relog-budget';
 import { HandOffRecord } from './runner/handoff';
 import { SCORED_LOGIN, SCORED_RELOG } from './runner/scored-relog';
+import { ackRow, deathGate, deathRow, diedResult, operatorLine } from './runner/death';
 
 /** Ticks past the link's stale bound before the watchdog acts, with the drop recovery on. */
 export const WATCHDOG_AFTER_LINK_TICKS = 10;
@@ -85,7 +106,8 @@ export const USAGE = `usage: bun speedrun/run.ts --bot=<env name> --config=<run 
     [--from=<id|step name|index>] [--until=<id|step name>] [--dry-run] [--log=<file>]
     [--run-commit=<rev>] [--run-dir=<dir>] [--host-reservation=<file>] [--claim-owner=<rs/NNN>]
     [--s21-relog=on|off]  (SCORED's relog after S21's givers are ready; default on)
-    [--tick-override]  (operator only: go past a tick preflight refusal, logged as overridden)`;
+    [--tick-override]  (operator only: go past a tick preflight refusal, logged as overridden)
+    [--r8-recovered=<key>]  (operator only: R8's recovery is done for the death the log's (death) row records)`;
 
 /** The account every log row carries. */
 export const LOG_ACCOUNT = 'SCORED';
@@ -114,9 +136,11 @@ export interface RunArgs {
     tickOverride: boolean;
     /** SCORED's in-page relog between S21's pre-login and its first trade (--s21-relog=on|off, default on). */
     s21Relog: boolean;
+    /** The death (runner/death.ts deathKey) R8's recovery was done for: the start's death gate lets the run in past it. */
+    r8Recovered?: string;
 }
 
-const VALUE_FLAGS = new Set(['bot', 'config', 'client', 'from', 'until', 'log', 'run-commit', 'run-dir', 'host-reservation', 'claim-owner', 'cannon-serve', 's21-relog']);
+const VALUE_FLAGS = new Set(['bot', 'config', 'client', 'from', 'until', 'log', 'run-commit', 'run-dir', 'host-reservation', 'claim-owner', 'cannon-serve', 's21-relog', 'r8-recovered']);
 const SWITCHES = new Set(['dry-run', 'tick-override']);
 
 export function parseArgs(argv: readonly string[]): RunArgs {
@@ -146,7 +170,7 @@ export function parseArgs(argv: readonly string[]): RunArgs {
         log: resolve(v.log ?? join(runDir, 'run.jsonl')), cannonServe: resolve(v['cannon-serve'] ?? join(runDir, 'cannon-serve.json')),
         ...(v.from ? { from: v.from } : {}), ...(v.until ? { until: v.until } : {}),
         ...(v['run-commit'] ? { runCommit: v['run-commit'] } : {}), ...(v['host-reservation'] ? { hostReservation: v['host-reservation'] } : {}),
-        ...(v['claim-owner'] ? { claimOwner: v['claim-owner'] } : {}),
+        ...(v['claim-owner'] ? { claimOwner: v['claim-owner'] } : {}), ...(v['r8-recovered'] ? { r8Recovered: v['r8-recovered'] } : {}),
     };
 }
 
@@ -216,6 +240,8 @@ export interface GateIO {
     relogs?(): { room: true | string; used: string; path: string };
     /** The role-phase gate's lines (runner/phase-gate.ts), one per helper status file on the path. */
     phases?(): PhaseLine[];
+    /** The rune census before login (loggedRuneCensus). */
+    runes?(): RuneGateInput;
 }
 
 /** cannon.ts serve options, per cannon row, as h92 runs them on the day. */
@@ -282,6 +308,10 @@ export async function startGates(chain: readonly ChainStep[], io: GateIO): Promi
     out.push({ gate: 'slot ledger', ok: led.code === 0, detail: led.code === 0 ? 'exit 0' : `exit ${led.code}: ${led.out.trim().split('\n').slice(-3).join(' | ')}` });
     const missing = missingOnPath(chain);
     out.push({ gate: 'no refusing step on the path', ok: missing.length === 0, detail: missing.length ? missing.map(m => `#${m.index} ${m.name} (${m.owner})`).join('; ') : `${chain.length} steps, none refusing` });
+    const seams = chainSeams(chain);
+    const off = seams.filter(s => !s.ok);
+    out.push({ gate: 'seams', ok: off.length === 0, detail: off.length ? off.map(s => s.detail).join('; ') : `${seams.length} checked (${seams.map(s => s.id).join(', ')}), 0 mismatches` });
+    if (io.runes) out.push(runeGate(io.runes()));
     const ready = io.helpersReady();
     out.push({ gate: 'helpers ready', ok: ready === true, detail: ready === null ? 'no launcher.json in the run dir: start the helpers first' : ready ? 'launcher.json: helpersReady' : 'launcher.json: helpers not ready yet' });
     // Online is not ready: the next helper step's helpers must be ready by their roles' own phase.
@@ -302,6 +332,87 @@ export async function startGates(chain: readonly ChainStep[], io: GateIO): Promi
         });
     }
     return out;
+}
+
+// ------------------------------------------------------------------ the rune census
+
+/** The rune census gate's input: a census and where its pack came from, a reason there is none to take, or why it cannot be taken. */
+export type RuneGateInput = { census: RuneCensus; source: string } | { none: string } | { error: string };
+
+export const RUNE_GATE = 'rune census';
+
+export function runeGate(r: RuneGateInput, gate: string = RUNE_GATE): Gate {
+    if ('error' in r) return { gate, ok: false, detail: r.error };
+    if ('none' in r) return { gate, ok: true, detail: r.none };
+    const c = r.census;
+    const spent = c.lines.filter(l => l.needed > 0);
+    return {
+        gate,
+        ok: c.ok,
+        detail: c.refusal ?? `from #${c.from} ${c.start}, ${r.source}: ${spent.length ? spent.map(l => `${runeLabel(l.rune)} ${l.held} held, ${l.needed} needed until ${l.supply?.row ?? 'the end'}`).join('; ') : 'no rune spent before its next supply'}`,
+        meta: { from: c.from, source: r.source, lines: c.lines.map(l => ({ rune: l.rune, held: l.held, needed: l.needed, margin: l.margin, supply: l.supply?.row ?? null, short: l.short?.name ?? null })) },
+    };
+}
+
+/**
+ * The census before login: SCORED's pack as the tick log's last `(census)` row recorded it (by obj
+ * id), against the chain from --from, else from the step that census was taken before, where a
+ * re-run's walk picks up. Whatever that step spent after its census is not in the pack figure, so
+ * the live census after login is the one of record. A fresh run has nothing recorded.
+ */
+export function loggedRuneCensus(plan: RunePlan, chain: readonly ChainStep[], o: { from?: number; earlier: readonly TickRow[]; served: (row: string) => boolean }): RuneGateInput {
+    const logged = lastCensus(o.earlier);
+    if (!logged) {
+        return { none: o.from === undefined ? 'a fresh run: the tick log records no pack yet; the census is taken on the live pack after login' : `--from=#${o.from}: the tick log records no census of SCORED's pack; the census is taken on the live pack after login` };
+    }
+    const from = o.from ?? chain.findIndex(s => s.name === logged.before);
+    if (from < 0) return { none: `the tick log's last census was taken before ${logged.before}, which is not on this path; the census is taken on the live pack after login` };
+    return {
+        census: runeCensus(plan, from, runesHeld(logged.inventory), { served: o.served }),
+        source: `held as the tick log's last census recorded it before ${logged.before} (tick ${logged.tick}, ${logged.byId ? 'by id' : 'by name: a log from before ids were recorded'})`,
+    };
+}
+
+/** Where a session's census starts: --from, else the step the tick log's last census was taken before, else the chain's start. */
+export function censusStart(chain: readonly ChainStep[], from: number | undefined, earlier: readonly TickRow[]): number {
+    if (from !== undefined) return from;
+    const logged = lastCensus(earlier);
+    const i = logged ? chain.findIndex(s => s.name === logged.before) : -1;
+    return i < 0 ? 0 : i;
+}
+
+/** The census on SCORED's live pack, read by obj id once it is in the world. */
+export function liveRuneCensus(state: Pick<BotWorldState, 'inventory'> | null, plan: RunePlan, from: number, served: (row: string) => boolean): RuneGateInput {
+    if (!state) return { error: "SCORED's live pack could not be read after login, so the rune census cannot be taken" };
+    return { census: runeCensus(plan, from, runesHeld(state.inventory), { served }), source: 'the live pack after login, by id' };
+}
+
+/**
+ * The live census as a start check on an open session: logged as a gate row and printed; a refusal
+ * logs SCORED out (confirmed) and gives EXIT_REFUSED, before any step runs. Null when it passes.
+ */
+export async function liveRuneCheck(
+    session: Pick<Session, 'name' | 'sdk'>,
+    o: { plan: RunePlan | null; planError?: string; from: number; served: (row: string) => boolean; log: TickLog },
+    deps: { logout: () => Promise<LogoutResult>; awaitState?: () => Promise<Pick<BotWorldState, 'inventory'> | null>; say?: (line: string) => void },
+): Promise<number | null> {
+    const say = deps.say ?? ((l: string) => console.log(l));
+    const state = await (deps.awaitState ?? (async () => (await awaitPlayer(session.sdk), session.sdk.getState())))();
+    let input: RuneGateInput;
+    try {
+        input = o.plan ? liveRuneCensus(state, o.plan, o.from, o.served) : { error: `the rune plan could not be built: ${o.planError ?? 'unknown'}` };
+    } catch (e) {
+        // An unreadable hand-off record: refused like any other, with SCORED logged out.
+        input = { error: e instanceof Error ? e.message : String(e) };
+    }
+    const g = runeGate(input, `${RUNE_GATE}, live`);
+    o.log.append(annotation(o.log, session.name, 'gate', '(gate) rune census, live', { ok: g.ok, ...(g.ok ? {} : { error: g.detail }), meta: { detail: g.detail, ...g.meta } }));
+    say(`[gate] ${g.ok ? 'ok     ' : 'REFUSED'} ${g.gate}: ${g.detail}`);
+    if (g.ok) return null;
+    if ('census' in input) for (const l of formatCensus(input.census, input.source)) say(`[gate]   ${l}`);
+    const out = await deps.logout();
+    say(`[run] rune census refused after login: ${out.ok ? 'SCORED logged out' : `logout NOT confirmed (${out.reason})`}; no step ran`);
+    return EXIT_REFUSED;
 }
 
 /** The helpers the run config itself names, by the scope each serves (the phase gate's fallback where no launcher config names one). */
@@ -345,7 +456,7 @@ export function hostPhaseGates(cfg: RunConfig, path: readonly string[], runDir: 
     return phaseGates({ path, members, read: readStatusFile(cfg.cueDir), launcher, now, source });
 }
 
-export function hostGateIO(a: RunArgs, owner: string | undefined, relogs?: RelogBudget, phases?: () => PhaseLine[]): GateIO {
+export function hostGateIO(a: RunArgs, owner: string | undefined, relogs?: RelogBudget, phases?: () => PhaseLine[], runes?: () => RuneGateInput): GateIO {
     const git = gitIn(ROOT);
     const path = reservationPath(a.hostReservation);
     const world = pageWorld(loadBotEnv(a.bot));
@@ -374,6 +485,7 @@ export function hostGateIO(a: RunArgs, owner: string | undefined, relogs?: Relog
         },
         ...(relogs ? { relogs: () => ({ room: relogs.check('unplanned'), used: relogs.describe(), path: relogs.file }) } : {}),
         ...(phases ? { phases } : {}),
+        ...(runes ? { runes } : {}),
     };
 }
 
@@ -562,10 +674,26 @@ export async function runChainOnSession(session: Session, o: ChainRunOptions): P
     const tabMem = startRunTabMemory(session, log, o.tabMemory);
 
     let lastLogout: LogoutResult | null = null;
+    // The one `(death)` row, for whichever logout saw it: ours, or the watchdog's.
+    let died: TickRow | null = null;
+    const noteDeath = (): TickRow | null => {
+        const d = session.died;
+        if (!d || died) return died;
+        const by = lastLogout as LogoutResult | null;
+        died = deathRow(log, account, session.sessionId, d, by?.death === d ? by : undefined);
+        log.append(died);
+        console.log(`${tag} DIED: ${d.reason}`);
+        console.log(`${tag} operator: ${operatorLine(died)}`);
+        return died;
+    };
     const leave = async (): Promise<LogoutResult> => {
         const r = await logoutClean(session);
         lastLogout = r;
-        console.log(`${tag} logout: ${r.ok ? `out after the click on tick ${r.clickTick}` : `NOT confirmed (${r.reason})`}`);
+        const t = (x: { x: number; z: number }) => `(${x.x},${x.z})`;
+        const held = r.held ? `; held ${r.held.ticks} ticks, ${r.held.inCombatTicks} in combat, hp ${r.held.hp.map(h => h.hp).join(' > ')}` : '';
+        const dead = r.death ? `DIED before it landed, ${t(r.death.from)} to ${t(r.death.to)}; ` : '';
+        console.log(`${tag} logout: ${dead}${r.ok ? `out after the click on tick ${r.clickTick}` : `NOT confirmed (${r.reason})`}${held}`);
+        noteDeath();
         return r;
     };
     const sig = signalShutdown(tag, leave, o.signals);
@@ -573,12 +701,18 @@ export async function runChainOnSession(session: Session, o: ChainRunOptions): P
     try {
         result = await untilTerminated(runAttempt(session, o.chain, {
             log, account, link, reservation: o.reservation, probes,
-            ...(recovery ? { recover: recovery.recover } : {}),
+            // After a death the respawn is not a place to relog into and go on from.
+            ...(recovery ? { recover: async (reason: string, at: { step: string | null; tick: number }) => {
+                if (session.died) throw new Error(`no drop recovery after a death: ${session.died.reason}`);
+                await recovery.recover(reason, at);
+            } } : {}),
             stopAsked: sig.stopAsked, gateStop: () => null, logout: () => leave(), label: o.label ?? 'run',
             ...(o.from !== undefined ? { from: o.from } : {}),
             onEvent: e => console.log(`[resume] ${JSON.stringify(e)}`),
         }), sig);
         if (session.expectInWorld && !sig.leaving()) await leave();
+        const death = noteDeath();
+        if (death) result = diedResult(death, result);
         return { result, lastLogout, lastState };
     } finally {
         wd.stop();
@@ -596,6 +730,7 @@ export async function runChainOnSession(session: Session, o: ChainRunOptions): P
         sig.dispose();
         for (const st of programs.flush()) log.append(programRow(log, account, session.sessionId, st));
         unsubscribe();
+        noteDeath();
         const out = lastLogout as LogoutResult | null;
         clock.close(log, account, session.sessionId, 'logout', out?.ok ? out.lastInWorldTick : session.lastInWorldTick, out ?? undefined);
         }
@@ -613,21 +748,92 @@ async function releaseClaim(owner: string): Promise<string> {
 }
 
 /**
+ * The gate for an abandon's takeover login (session.ts abandonTab): a login SCORED makes, so it
+ * follows the relog rules. It takes the relog lock (refused while the operator's relog holds it) and
+ * is charged as one unplanned relog (refused when they are spent), recorded before the login starts.
+ */
+export function takeoverGate(relogs: RelogBudget, step: string, tick: () => number): TakeoverGate {
+    return async () => {
+        const lock = relogs.tryLock('run');
+        if (!lock.ok) return `the ${lock.holder.by}'s relog (pid ${lock.holder.pid}) holds the relog lock`;
+        const room = relogs.check('unplanned');
+        if (room !== true) {
+            lock.release();
+            return room;
+        }
+        relogs.record({
+            kind: 'unplanned', by: 'run', step, tick: tick(), via: 'page',
+            meta: { reason: 'abandon: the page was out of game with its body still in the world; logged in to take that body over and log it out' },
+        });
+        return lock.release;
+    };
+}
+
+/**
+ * Get SCORED out of the world for a run that is giving its session up (session.ts abandonClient: a
+ * logout through the page, confirmed by the page and the world's player list), with any takeover
+ * login under the relog rules (takeoverGate), and log how it went.
+ */
+export async function abandonScored(session: Session, relogs: RelogBudget, log: TickLog, why: string, abandon: typeof abandonClient = abandonClient): Promise<AbandonResult | null> {
+    const a = await abandon(session, undefined, { takeover: takeoverGate(relogs, why, () => session.lastInWorldTick) }).catch(abandonFailed);
+    if (a) {
+        log.append(annotation(log, session.name, 'note', `(run) SCORED abandoned: ${why}`, { ok: a.ok, meta: { ...a } }));
+        console.log(`[run] SCORED abandoned (${why}): ${describeAbandon(a)}`);
+    }
+    return a;
+}
+
+/**
+ * Run `body` on a logged-in SCORED session, then close it. Whatever ends `body` with the account still
+ * meant to be in the world (a throw before the chain starts, a crash inside it: anything no logout
+ * ran for) abandons it first (abandonScored), so the run never exits leaving SCORED in the world.
+ */
+export async function withScoredSession<T>(
+    session: Session,
+    o: { relogs: RelogBudget; log: TickLog },
+    body: () => Promise<T>,
+    deps: { abandon?: typeof abandonClient; close?: typeof closeSession } = {}
+): Promise<T> {
+    try {
+        return await body();
+    } finally {
+        try {
+            if (session.expectInWorld) await abandonScored(session, o.relogs, o.log, '(exit) the run ended with SCORED still in the world', deps.abandon);
+        } finally {
+            await (deps.close ?? closeSession)(session);
+        }
+    }
+}
+
+/**
  * An open planned S21 relog must attach without launching SCORED. Recheck the givers and finish
  * the login half before the normal in-world resume walk (which needs a scene and player ticks).
+ *
+ * A launch that fails is abandoned by openSession itself (a confirmed logout through the page, its
+ * takeover login gated by takeoverGate) and logged here; a login half that fails once it has started
+ * is abandoned here. A refusal before any login sends nothing.
  */
 export async function openRunSession(bot: string, o: {
     client: ClientKind; chain: readonly ChainStep[]; relogs: RelogBudget; log: TickLog;
     beforeLogin?: () => Promise<void>;
-}, deps: { open?: typeof openSession; close?: typeof closeSession; pageState?: (s: Session) => Promise<PageLoginState | null> } = {}): Promise<Session> {
+}, deps: { open?: typeof openSession; close?: typeof closeSession; pageState?: (s: Session) => Promise<PageLoginState | null>; abandon?: typeof abandonClient } = {}): Promise<Session> {
     const pending = o.relogs.planned(SCORED_RELOG) === 'open';
     const ready = pending ? o.chain.find(s => s.name === 'S21 runecraft:pre-login') : null;
     const loginHalf = pending ? o.chain.find(s => s.name === SCORED_LOGIN) : null;
     if (pending && (!ready || !loginHalf)) throw new Error('open S21 relog requires its giver wait and login half; do not disable or slice past it');
-    const session = await (deps.open ?? openSession)(bot, { client: o.client, launch: !pending, ...(pending ? { awaitInWorld: false as const } : {}) });
+    // No tick is known before the launch's first state.
+    const launch = { launch: true, takeover: takeoverGate(o.relogs, '(startup) the launch failed', () => -1) };
+    let session: Session;
+    try {
+        session = await (deps.open ?? openSession)(bot, { client: o.client, ...(pending ? { launch: false, awaitInWorld: false as const } : launch) });
+    } catch (e) {
+        if (!pending) o.log.append(annotation(o.log, LOG_ACCOUNT, 'note', '(startup) SCORED launch failed', { ok: false, error: e instanceof Error ? e.message : String(e) }));
+        throw e;
+    }
     session.beforeLogin = o.beforeLogin;
     if (!pending) return session;
     const unalias = aliasAccount(o.log, session.name);
+    let loggingIn = false;
     try {
         const state = await (deps.pageState ?? (async (s: Session) => {
             const cdp = s.client === 'browser' ? cdpUrl(s.env) : undefined;
@@ -643,12 +849,17 @@ export async function openRunSession(bot: string, o: {
         session.watchdog?.pause();
         const ctx = { session, sdk: session.sdk, bot: session.bot, c: {}, log: o.log };
         await ready!.run(ctx);
+        loggingIn = true;
         await loginHalf!.run(ctx);
         return session;
     } catch (e) {
         o.log.append(annotation(o.log, session.name, 'note', '(startup) S21 recovery refused', {
             ok: false, error: e instanceof Error ? e.message : String(e),
         }));
+        // The login half may have logged SCORED in before it threw.
+        if (loggingIn) {
+            await abandonScored(session, o.relogs, o.log, '(startup) the S21 login half failed', deps.abandon);
+        }
         await (deps.close ?? closeSession)(session);
         throw e;
     } finally {
@@ -670,7 +881,8 @@ async function main(argv: string[]): Promise<number> {
     const earlier = existsSync(a.log) ? parseLog(readFileSync(a.log, 'utf8')) : [];
     const runId = `run-${newRunId()}`;
     const attempt = attemptOf(earlier, runId);
-    const built = chainOrRefusal(cfg, keeper, { s21Relog: a.s21Relog, relogs, attempt, handOffs: new HandOffRecord(a.runDir, attempt) });
+    const handOffs = new HandOffRecord(a.runDir, attempt);
+    const built = chainOrRefusal(cfg, keeper, { s21Relog: a.s21Relog, relogs, attempt, handOffs });
     if ('refusal' in built) {
         console.error(`[gate] REFUSED run config: ${built.refusal}`);
         console.error('[run] nothing was logged in');
@@ -691,15 +903,47 @@ async function main(argv: string[]): Promise<number> {
         console.log(`[gate] ok      delivery: run ${delivery.owner.runId}, rows ${chain.filter(s => s.cue?.family === 'mule').map(s => s.cue!.step).join(', ')}`);
     }
 
+    const death = deathGate(earlier, a.r8Recovered);
+    if ('refusal' in death) {
+        console.error(`[gate] REFUSED death: ${death.refusal}`);
+        console.error('[run] nothing was logged in');
+        return EXIT_REFUSED;
+    }
+    if (death.acknowledge.length) console.log(`[gate] ok      death: ${death.acknowledge.join(', ')} acknowledged (R8's recovery done)`);
+
     const fresh = earlier.length === 0 && from === undefined;
     // A fresh run's budget is whole: the last run's relogs and any stale lock go (prepareCueDir's rule).
     if (fresh && !a.dryRun) relogs.clear();
-    const io = hostGateIO(a, owner, relogs, () => hostPhaseGates(cfg, chain.slice(from ?? 0).map(s => s.id), a.runDir));
+    // The rune census's figures: the ledger rows, the legs' hops and the modules' RUNE_USE (tools/rune-pins.ts).
+    let plan: RunePlan | null = null;
+    let planError: string | undefined;
+    try {
+        plan = runePlan(chain, ledgerRows(readFileSync(MANIFEST, 'utf8')), await loadModules());
+    } catch (e) {
+        planError = e instanceof Error ? e.message : String(e);
+    }
+    const served = (row: string) => handOffs.has(row);
+    const runes = (): RuneGateInput => {
+        if (!plan) return { error: `the rune plan could not be built: ${planError}` };
+        try {
+            return loggedRuneCensus(plan, chain, { ...(from !== undefined ? { from } : {}), earlier, served });
+        } catch (e) {
+            return { error: e instanceof Error ? e.message : String(e) };
+        }
+    };
+    const io = hostGateIO(a, owner, relogs, () => hostPhaseGates(cfg, chain.slice(from ?? 0).map(s => s.id), a.runDir), runes);
     const gates = await startGates(chain, io);
     for (const g of gates) console.log(`[gate] ${g.ok ? 'ok     ' : 'REFUSED'} ${g.gate}: ${g.detail}`);
     if (a.dryRun) {
         console.log(`\n${chain.length} steps${a.until ? ` (--until=${a.until})` : ''}:`);
         chain.forEach((s, i) => console.log(`${String(i).padStart(3)}  ${s.id.padEnd(14)} ${s.kind.padEnd(8)} ${s.name}${s.owner ?? s.refuses ? `  [refuses: ${s.owner ?? s.refuses}]` : ''}`));
+        const seams = chainSeams(chain);
+        console.log(`\n${seams.length} seams (a step's start tile against the leg before it), ${seams.filter(s => !s.ok).length} mismatches:`);
+        for (const s of seams) console.log(`  ${s.ok ? 'ok      ' : 'MISMATCH'} ${s.detail}`);
+        const census = runes();
+        console.log('');
+        if ('census' in census) for (const l of formatCensus(census.census, census.source)) console.log(l);
+        else console.log(`rune census: ${'none' in census ? census.none : `REFUSED: ${census.error}`}`);
         return gates.every(g => g.ok) ? 0 : EXIT_REFUSED;
     }
     if (!gates.every(g => g.ok)) {
@@ -717,6 +961,7 @@ async function main(argv: string[]): Promise<number> {
         }
     }
     const log = TickLog.open(runId, a.log);
+    if (death.acknowledge.length) log.append(ackRow(log, LOG_ACCOUNT, death.acknowledge));
     const bin = owner ? claimBin() : null;
     const reservation = new ReservationWatch(reservationPath(a.hostReservation), { label: 'run', ...(owner ? { owner, touch: bin ? claimToucher(bin) : null } : {}) });
     const recorded = gates.find(g => g.gate === 'demo tick rate')!.meta!.recorded as TickMsParse;
@@ -725,42 +970,51 @@ async function main(argv: string[]): Promise<number> {
         console.log(`[gate] ${t.ok ? 'ok     ' : 'REFUSED'} demo tick rate before login: ${describePreflight(t)}`);
     });
     const session = await openRunSession(a.bot, { client: a.client, chain, relogs, log, beforeLogin });
-    const unalias = aliasAccount(log, session.name);
-    log.append(annotation(log, session.name, 'gate', '(gate) start', { meta: { gates, fresh, cueDir: cfg.cueDir, removed, until: a.until ?? null, steps: chain.length, s21Relog: a.s21Relog } }));
-    console.log(`[run] ${LOG_ACCOUNT} on ${a.client}; ${chain.length} steps${a.until ? ` to ${a.until}` : ''}; log ${log.path}`);
+    // SCORED is logged in from here: withScoredSession abandons it on any way out that leaves it in.
+    let unalias = () => {};
     let code = 1;
     let term: Terminated | null = null;
     try {
-        // A signal: SCORED is out, then closeSession still closes the browser before the exit.
-        const ran = await runChainOnSession(session, { log, chain, reservation, cues: keeper, relogs, wholeRun: a.until === undefined, ...(from !== undefined ? { from } : {}) }).catch(e => {
-            if (!(e instanceof Terminated)) throw e;
-            term = e;
-            return null;
+        code = await withScoredSession(session, { relogs, log }, async () => {
+            unalias = aliasAccount(log, session.name);
+            // The census on the live pack, before any step: a shortfall logs SCORED out here.
+            const refused = await liveRuneCheck(session, { plan, ...(planError ? { planError } : {}), from: censusStart(chain, from, earlier), served, log }, {
+                logout: () => logoutClean(session),
+            });
+            if (refused !== null) return refused;
+            log.append(annotation(log, session.name, 'gate', '(gate) start', { meta: { gates, fresh, cueDir: cfg.cueDir, removed, until: a.until ?? null, steps: chain.length, s21Relog: a.s21Relog } }));
+            console.log(`[run] ${LOG_ACCOUNT} on ${a.client}; ${chain.length} steps${a.until ? ` to ${a.until}` : ''}; log ${log.path}`);
+            // A signal: SCORED is out, then closeSession still closes the browser before the exit.
+            const ran = await runChainOnSession(session, { log, chain, reservation, cues: keeper, relogs, wholeRun: a.until === undefined, ...(from !== undefined ? { from } : {}) }).catch(e => {
+                if (!(e instanceof Terminated)) throw e;
+                term = e;
+                return null;
+            });
+            if (!ran) {
+                const t = term as unknown as Terminated;
+                console.log(`[run] ${t.message}`);
+                return t.exitCode;
+            }
+            const { result, lastState } = ran;
+            let rc = result.code;
+            console.log(`[run] ${result.outcome}`);
+            if (rc === 0 && a.until === undefined) {
+                const total = lastState ? totalLevel(lastState) : null;
+                const ok = total === TARGET_TOTAL && !session.expectInWorld;
+                log.append(annotation(log, session.name, 'note', '(run) total', { ok, meta: { total, target: TARGET_TOTAL, loggedOut: !session.expectInWorld } }));
+                console.log(`[run] total ${total ?? '?'} of ${TARGET_TOTAL}; ${session.expectInWorld ? 'NOT logged out' : 'logged out'}`);
+                if (!ok) rc = 1;
+                if (owner && !session.expectInWorld) console.log(`[run] ${await releaseClaim(owner)}`);
+            }
+            if (rc === EXIT_HOST_RESERVED) console.log(`[run] resume: once ${reservation.path} is gone or expired, run the same command again`);
+            if (rc === 4) console.log('[run] resume: run the same command again (the walk starts from game state)');
+            return rc;
         });
-        if (!ran) {
-            const t = term as unknown as Terminated;
-            code = t.exitCode;
-            console.log(`[run] ${t.message}`);
-            return code;
-        }
-        const { result, lastState } = ran;
-        code = result.code;
-        console.log(`[run] ${result.outcome}`);
-        if (code === 0 && a.until === undefined) {
-            const total = lastState ? totalLevel(lastState) : null;
-            const ok = total === TARGET_TOTAL && !session.expectInWorld;
-            log.append(annotation(log, session.name, 'note', '(run) total', { ok, meta: { total, target: TARGET_TOTAL, loggedOut: !session.expectInWorld } }));
-            console.log(`[run] total ${total ?? '?'} of ${TARGET_TOTAL}; ${session.expectInWorld ? 'NOT logged out' : 'logged out'}`);
-            if (!ok) code = 1;
-            if (owner && !session.expectInWorld) console.log(`[run] ${await releaseClaim(owner)}`);
-        }
-        if (code === EXIT_HOST_RESERVED) console.log(`[run] resume: once ${reservation.path} is gone or expired, run the same command again`);
-        if (code === 4) console.log('[run] resume: run the same command again (the walk starts from game state)');
     } finally {
         unalias();
-        await closeSession(session);
         (term as Terminated | null)?.disarm();
     }
+    if (term) return code;
     console.log('\n' + formatRunReport(runReport([...earlier, ...log.rows], chain, readFileSync(join(ROOT, 'docs/speedrun/RUN-ORDER.md'), 'utf8'))));
     return code;
 }

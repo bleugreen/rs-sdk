@@ -4,7 +4,7 @@ import '../../lite/test-support/browser-globals.js';
 
 import type { NearbyPlayer } from '../types.js';
 import { canAttack, classifyHit, createAgility, DEFAULT_THREAT, threatOf, wildernessLevel, type Me } from './agility.js';
-import { AGILITY_COURSES, stepFromPosition, type AgilityCourse } from './agility-courses.js';
+import { AGILITY_COURSES, stepFromPosition, zoneAt, type AgilityCourse } from './agility-courses.js';
 import { Harness, makeState, type StateSpec } from './testkit.js';
 
 const COURSE: AgilityCourse = {
@@ -100,6 +100,205 @@ describe('agility course', () => {
         expect(r.levelTicks[2]).toBe(completions[2]!.tick);
         expect(r.levelTicks[3]).toBe(completions[2]!.tick);
         expect(r.levelTicks[4]).toBe(completions[3]!.tick);
+    });
+
+    describe("untilLevelAt 'lap'", () => {
+        // level 1 + one per 25 base xp, as above: lap 1's last obstacle makes 3, lap 2's first makes 4
+        const levels = (_t: number, xp: number) => ({ skills: { Agility: { xp: xp * 25, level: 1 + Math.floor(xp / 25) } } });
+        const lapRun = (untilLevel: number, extra: Record<string, unknown> = {}, spec: (t: number, xp: number) => Partial<StateSpec> = levels) =>
+            run({ ticks: 500, params: { maxTicks: undefined, untilLevel, ...extra }, spec });
+        const clicks = (h: Harness) => h.sent.filter(s => s.action.type === 'interactLoc').map(s => [s.tick, (s.action as { locId: number }).locId]);
+
+        test('the level reached mid-lap: it clicks the rest of the lap and ends at its close, on the ground', () => {
+            const { h, completions } = lapRun(4, { untilLevelAt: 'lap' });
+            const levelTick = completions[3]!.tick; // lap 2's first obstacle
+            const r = h.status.result as { ended: string; laps: number; levelTicks: Record<number, number>; afterLevel: { ticks: number; obstacles: number } };
+            expect(h.status.phase).toBe('done');
+            expect(r.ended).toBe('level');
+            expect(r.levelTicks[4]).toBe(levelTick);
+            // the lap's other two obstacles, then the end on the lap bonus's tick
+            expect(clicks(h).filter(([t]) => t! >= levelTick).map(([, id]) => id)).toEqual([2, 3]);
+            expect(h.status.endedTick).toBe(completions[5]!.tick);
+            expect(r.laps).toBe(2);
+            expect(r.afterLevel).toEqual({ ticks: completions[5]!.tick - levelTick, obstacles: 2 });
+            // up to the level tick it sends what the tick end sends
+            const tickEnd = lapRun(4).h;
+            expect(tickEnd.status.endedTick).toBe(levelTick);
+            expect(clicks(h).filter(([t]) => t! < levelTick)).toEqual(clicks(tickEnd));
+        });
+
+        test("the level reached on the lap's last obstacle: it ends at once, as the tick end does", () => {
+            const { h, completions } = lapRun(3, { untilLevelAt: 'lap' });
+            const tickEnd = lapRun(3).h;
+            expect(h.status.endedTick).toBe(completions[2]!.tick);
+            expect(tickEnd.status.endedTick).toBe(completions[2]!.tick);
+            expect(h.sent).toEqual(tickEnd.sent);
+            expect(h.status.result).toMatchObject({ ended: 'level', laps: 1, afterLevel: { ticks: 0, obstacles: 0 } });
+        });
+
+        test("absent, or 'tick', it ends on the level tick, packet for packet the same", () => {
+            const absent = lapRun(4).h;
+            const tick = lapRun(4, { untilLevelAt: 'tick' }).h;
+            expect(tick.sent).toEqual(absent.sent);
+            expect(tick.status.endedTick).toBe(absent.status.endedTick);
+            expect(tick.status.result).toEqual(absent.status.result);
+            expect(absent.status.result).not.toHaveProperty('afterLevel');
+        });
+
+        test('it needs untilLevel, and takes only tick or lap', () => {
+            expect(() => createAgility({ course: 'gnome', laps: 1, untilLevelAt: 'lap' })).toThrow(/needs untilLevel/);
+            expect(() => createAgility({ course: 'gnome', untilLevel: 25, untilLevelAt: 'ground' })).toThrow(/untilLevelAt/);
+            expect(() => createAgility({ course: 'gnome', untilLevel: 25, untilLevelAt: 'lap' })).not.toThrow();
+        });
+
+        test('in the Wilderness, a player, a player hit or no food still ends it at once, mid-lap', () => {
+            // the level comes at lap 2's first obstacle (tick 78); each exit fires at 82, before the lap closes at 93
+            const W = { x: 3004, z: 3940 };
+            const pker = { index: 7, name: 'pker', x: W.x + 1, z: W.z, combatLevel: 40, combatTargetType: 'player' as const, inCombat: true };
+            const cases: Array<{ ended: string; params: Record<string, unknown>; spec: (t: number) => Partial<StateSpec> }> = [
+                { ended: 'player', params: { pauseFor: 'any' }, spec: t => ({ players: t >= 82 ? [pker] : [] }) },
+                {
+                    ended: 'attacked',
+                    params: { pauseFor: 'none' },
+                    spec: t => ({
+                        players: t >= 82 ? [pker] : [],
+                        combatEvents: t >= 82 ? [{ tick: 82, type: 'damage_taken' as const, damage: 3, sourceType: 'other_player' as const, sourceIndex: 7, targetType: 'player' as const, targetIndex: -1 }] : []
+                    })
+                },
+                { ended: 'no-food', params: { eatBelow: 50, eatGap: 3 }, spec: t => ({ hp: t >= 82 ? 30 : 99 }) }
+            ];
+            for (const c of cases) {
+                const { h, completions } = lapRun(4, { untilLevelAt: 'lap', ...c.params }, (t, xp) => ({ ...W, ...levels(t, xp), ...c.spec(t) }));
+                expect(completions[3]!.tick).toBe(78);
+                expect(h.status.result).toMatchObject({ ended: c.ended, level: 4 });
+                expect(h.status.endedTick).toBe(82);
+            }
+        });
+
+        /** A lap whose middle step has two pipes (ids 2 and 4); a click landing while `locked(id, tick)` is refused with the game's message and no xp. */
+        function pipeRun(locked: (id: number, tick: number) => boolean, params: Record<string, unknown>) {
+            const course: AgilityCourse = {
+                start: [3000, 3000, 0],
+                lapBonus: 40,
+                steps: [
+                    { name: 'a', locs: [[1, 3001, 3000]], xp: 10 },
+                    { name: 'pipe', locs: [[2, 3002, 3000], [4, 3004, 3000]], xp: 10 },
+                    { name: 'c', locs: [[3, 3003, 3000]], xp: 10 + 40 }
+                ]
+            };
+            const dur: Record<number, number> = { 1: 5, 2: 7, 4: 7, 3: 6 };
+            const gain: Record<number, number> = { 1: 10, 2: 10, 4: 10, 3: 50 };
+            const h = new Harness('agl', createAgility);
+            let tick = 50;
+            let xp = 0;
+            const msgs: Array<{ text: string; tick: number }> = [];
+            const done: Array<{ at: number; id: number }> = [];
+            const pending: Array<{ at: number; id: number }> = [];
+            const state = () => makeState({
+                tick, x: 3000, z: 3000, messages: msgs.slice(-10),
+                skills: { Agility: { xp: xp * 25, level: 1 + Math.floor(xp / 25) } },
+                locs: [1, 2, 3, 4].map(id => ({ id, x: 3000 + id, z: 3000, name: `obstacle ${id}`, options: ['Cross'] }))
+            });
+            h.start('agl', { course, ...params }, state());
+            for (let k = 0; k < 300 && h.status.phase === 'running'; k++) {
+                tick++;
+                for (const p of pending.filter(q => q.at === tick)) {
+                    if (locked(p.id, tick)) msgs.push({ text: 'The pipe is being used', tick });
+                    else done.push({ at: tick + dur[p.id]!, id: p.id });
+                }
+                for (const d of done.filter(q => q.at === tick)) xp += gain[d.id]!;
+                for (const s of h.step(state())) if (s.action.type === 'interactLoc') pending.push({ at: tick + 1, id: s.action.locId });
+            }
+            return h;
+        }
+        // the level (4) comes with lap 2's first obstacle at tick 78, and its pipe click goes out then and lands at 79
+        const finish = { untilLevel: 4, untilLevelAt: 'lap', stepTimeout: 40 };
+
+        test('finishing the lap, a pipe another player holds sends the click to the other pipe on the same tick', () => {
+            const h = pipeRun((id, t) => id === 2 && t >= 75, finish);
+            expect(clicks(h).filter(([t]) => t! >= 78)).toEqual([[78, 2], [79, 4], [87, 3]]);
+            // the lap's close (xp 140) is level 6 in this fake
+            expect(h.status.result).toMatchObject({ ended: 'level', level: 6, levelTicks: { 4: 78 }, afterLevel: { obstacles: 2 } });
+            expect(h.status.counters.inUse).toBe(1);
+            expect(h.status.endedTick).toBe(94);
+        });
+
+        test('both pipes held: it re-clicks the first to come free inside its lock window, and still ends on the ground', () => {
+            const h = pipeRun((id, t) => (id === 2 && t >= 75 && t <= 85) || (id === 4 && t >= 75 && t <= 88), finish);
+            const after = clicks(h).filter(([t]) => t! >= 78);
+            expect(after.map(([, id]) => id)).toEqual([2, 4, 2, 3]);
+            // pipe 2 was refused at 79: back to it once its 12-tick lock has surely lapsed, not at stepTimeout
+            expect(after[2]![0]).toBe(79 + 13);
+            expect(h.status.result).toMatchObject({ ended: 'level', level: 6, levelTicks: { 4: 78 } });
+            expect(h.status.counters.inUse).toBe(2);
+        });
+
+        test('before the level is reached a held pipe is waited out as today (the switch is for finishing the lap only)', () => {
+            // lap 1's pipe click goes out at 57 and lands at 58
+            const h = pipeRun((id, t) => id === 2 && t >= 55 && t <= 60, finish);
+            expect(clicks(h).some(([t, id]) => id === 4 && t! < 57 + 40)).toBe(false);
+            expect(h.status.counters.inUse).toBeUndefined();
+        });
+
+        /** The real Gnome course from (x, z, plane), each click done 4 ticks after it lands; the pipe pays its own 7.5 and the bonus only on a lap seen from its start. */
+        function gnomeFrom(x: number, z: number, plane: number, params: Record<string, unknown>, level = 25) {
+            const course = AGILITY_COURSES.gnome!;
+            const xpOf: Record<number, number> = {};
+            const locs: Array<{ id: number; x: number; z: number; name: string; options: string[] }> = [];
+            for (const st of course.steps) for (const [id, lx, lz] of st.locs) {
+                xpOf[id] = st.xp;
+                if (!locs.some(l => l.id === id && l.x === lx && l.z === lz)) locs.push({ id, x: lx, z: lz, name: `loc ${id}`, options: ['Cross'] });
+            }
+            const h = new Harness('agl', createAgility);
+            let tick = 50;
+            let xp = 0;
+            let seenFromLog = false;
+            const pending: Array<{ at: number; id: number }> = [];
+            const done: Array<{ at: number; id: number }> = [];
+            const state = () => makeState({ tick, x, z, level: plane, skills: { Agility: { xp: Math.round(xp * 25), level } }, locs });
+            h.start('agl', { course: 'gnome', startStep: 'auto', ...params }, state());
+            for (let k = 0; k < 200 && h.status.phase === 'running'; k++) {
+                tick++;
+                for (const p of pending.filter(q => q.at === tick)) done.push({ at: tick + 4, id: p.id });
+                for (const d of done.filter(q => q.at === tick)) {
+                    if (d.id === 2295) seenFromLog = true;
+                    const pipe = d.id === 154 || d.id === 4058;
+                    xp += pipe ? 7.5 + (seenFromLog ? 39 : 0) : xpOf[d.id]!;
+                    if (pipe) { seenFromLog = false; x = d.id === 154 ? 2484 : 2487; z = 3437; plane = 0; }
+                }
+                for (const s of h.step(state())) if (s.action.type === 'interactLoc') pending.push({ at: tick + 1, id: s.action.locId });
+            }
+            return h;
+        }
+
+        test('a lap joined partway pays no bonus: the pipe is done on its own 7.5, and the level band ends there on the ground', () => {
+            const h = gnomeFrom(2487, 3420, 0, { untilLevel: 25, untilLevelAt: 'lap' }); // down the tree, before the second net
+            expect(clicks(h).map(([, id]) => id)).toEqual([2286, 154]);
+            expect(h.status.result).toMatchObject({ ended: 'level', laps: 0, afterLevel: { obstacles: 2 } });
+            expect(h.status.endedTick).toBe(51 + 5 + 5);
+        });
+
+        test('without the new keys, a partway start still goes on after a bonusless pipe (no stall), and the next lap needs its bonus as before', () => {
+            const h = gnomeFrom(2487, 3420, 0, { laps: 1 }, 10);
+            const ids = clicks(h).map(([, id]) => id);
+            expect(ids.slice(0, 3)).toEqual([2286, 154, 2295]); // the log, on the tick the pipe's 7.5 lands
+            expect(clicks(h)[2]![0]).toBe(61);
+            expect(h.status.result).toMatchObject({ ended: 'laps', laps: 1 });
+            expect(ids.slice(2)).toEqual([2295, 2285, 2313, 2312, 2315, 2286, 154]);
+        });
+
+        test('a Gnome resume on the rope platform with the level reached finishes the lap from the tree; at the lap start it ends at once', () => {
+            const gnome = { course: 'gnome', untilLevel: 25, untilLevelAt: 'lap', startStep: 'auto' };
+            const at = (tick: number, x: number, z: number, level: number) => makeState({ tick, x, z, level, skills: { Agility: { xp: 8740 * 10, level: 25 } } });
+            const h = new Harness('agl', createAgility);
+            h.start('agl', gnome, at(1, 2483, 3420, 2));
+            expect(h.step(at(2, 2483, 3420, 2)).map(s => s.action)).toMatchObject([{ type: 'interactLoc', locId: 2314 }]); // tree-down
+            expect(h.status.phase).toBe('running');
+            const atEnd = new Harness('agl', createAgility);
+            atEnd.start('agl', gnome, at(1, 2484, 3437, 0));
+            expect(atEnd.step(at(2, 2484, 3437, 0))).toEqual([]);
+            expect(atEnd.status.result).toMatchObject({ ended: 'level', afterLevel: { ticks: 0, obstacles: 0 } });
+        });
     });
 
     test('with eatGap, eats while waiting on an obstacle, at most once per eat gap', () => {
@@ -292,6 +491,67 @@ describe('agility course', () => {
         expect(h.step(makeState({ tick: 14, x: 3001, z: 10357 })).length).toBe(1);
     });
 
+    test("startStep 'auto' from a Gnome start-area tile or any Wilderness tile sends the base program's packets (the Gnome zones change nothing there)", () => {
+        // Two laps on the real course tables, every obstacle done 4 ticks after its click lands, the
+        // player held on its start tile. The expected streams are agent/rs-186-coordinator-9's program
+        // (before the Gnome zones and untilLevelAt) on this same script.
+        const stream = (name: string, x: number, z: number) => {
+            const course = AGILITY_COURSES[name]!;
+            const locs: Array<{ id: number; x: number; z: number; name: string; options: string[] }> = [];
+            const xpOf: Record<number, number> = {};
+            for (const st of course.steps) for (const [id, lx, lz] of st.locs) {
+                xpOf[id] = st.xp;
+                if (!locs.some(l => l.id === id && l.x === lx && l.z === lz)) locs.push({ id, x: lx, z: lz, name: `loc ${id}`, options: ['Cross'] });
+            }
+            const h = new Harness('agl', createAgility);
+            let tick = 50;
+            let xp = 0;
+            const pending: Array<{ at: number; id: number }> = [];
+            const done: Array<{ at: number; id: number }> = [];
+            const state = () => makeState({ tick, x, z, skills: { Agility: { xp: Math.round(xp * 25), level: 50 } }, locs });
+            h.start('agl', { course: name, startStep: 'auto', laps: 2 }, state());
+            for (let k = 0; k < 200 && h.status.phase === 'running'; k++) {
+                tick++;
+                for (const p of pending.filter(q => q.at === tick)) done.push({ at: tick + 4, id: p.id });
+                for (const d of done.filter(q => q.at === tick)) xp += xpOf[d.id]!;
+                for (const s of h.step(state())) if (s.action.type === 'interactLoc') pending.push({ at: tick + 1, id: s.action.locId });
+            }
+            const sent = h.sent.map(s => {
+                const a = s.action as { type: string; locId: number; x: number; z: number; optionIndex: number };
+                return a.type === 'interactLoc' ? `${s.tick}:${a.locId}@${a.x},${a.z}/${a.optionIndex}` : `${s.tick}:${a.type}`;
+            });
+            return `${sent.join(' ')} end:${h.status.endedTick}`;
+        };
+        const gnomeLap = (net: string, net2: string) =>
+            `51:2295@2474,3435/1 56:2285@${net}/1 61:2313@2473,3422/1 66:2312@2478,3420/1 71:2315@2487,3420/1 76:2286@${net2}/1 81:154@2484,3431/1 ` +
+            `86:2295@2474,3435/1 91:2285@${net}/1 96:2313@2473,3422/1 101:2312@2478,3420/1 106:2315@2487,3420/1 111:2286@${net2}/1 116:154@2484,3431/1 end:121`;
+        const W = ['2288@3004,3938', '2283@3005,3952', '2311@3001,3960', '2297@3001,3945'];
+        const wild = (from: number, rocks: string, laps: number) => {
+            const order = [...W, `2328@${rocks}`];
+            const seq = Array.from({ length: order.length * laps - from }, (_, k) => order[(from + k) % order.length]!);
+            return `${seq.map((c, k) => `${51 + 5 * k}:${c}/1`).join(' ')} end:${51 + 5 * seq.length}`;
+        };
+        const expected: Record<string, string> = {
+            'gnome 2474,3436': gnomeLap('2473,3425', '2483,3426'),
+            'gnome 2474,3438': gnomeLap('2473,3425', '2485,3426'),
+            'gnome 2484,3437': gnomeLap('2473,3425', '2485,3426'),
+            'gnome 2487,3437': gnomeLap('2475,3425', '2485,3426'),
+            'gnome 2470,3441': gnomeLap('2473,3425', '2485,3426'),
+            'wilderness 3004,3937': wild(0, '2995,3936', 2),
+            'wilderness 2994,3933': wild(0, '2994,3936', 2),
+            'wilderness 3004,3950': wild(1, '2994,3936', 2),
+            'wilderness 3005,3958': wild(2, '2994,3936', 2),
+            'wilderness 2996,3960': wild(3, '2994,3936', 2),
+            'wilderness 2994,3945': wild(4, '2994,3936', 2),
+            'wilderness 2980,3900': wild(0, '2994,3936', 2)
+        };
+        for (const [key, want] of Object.entries(expected)) {
+            const [name, at] = key.split(' ') as [string, string];
+            const [x, z] = at.split(',').map(Number) as [number, number];
+            expect(`${key}: ${stream(name, x, z)}`).toBe(`${key}: ${want}`);
+        }
+    });
+
     test('startStep auto picks the step from the tile', () => {
         const h = new Harness('agl', createAgility);
         h.start('agl', { course: 'wilderness', laps: 1, startStep: 'auto' }, makeState({ tick: 1, x: 2994, z: 3945 }));
@@ -385,5 +645,20 @@ describe('Wilderness rules', () => {
         expect(stepFromPosition(w, 2994, 3945)).toBe('rocks');
         expect(stepFromPosition(w, 3005, 10363)).toBe('stones');
         expect(stepFromPosition(AGILITY_COURSES.gnome!, 2400, 3400)).toBe('log');
+    });
+
+    test('stepFromPosition maps the Gnome landing tiles, plane by plane', () => {
+        const g = AGILITY_COURSES.gnome!;
+        expect(stepFromPosition(g, 2474, 3436, 0)).toBe('log'); // the start
+        expect(stepFromPosition(g, 2474, 3429, 0)).toBe('net');
+        expect(stepFromPosition(g, 2473, 3424, 1)).toBe('branch');
+        expect(stepFromPosition(g, 2473, 3420, 2)).toBe('rope');
+        expect(stepFromPosition(g, 2483, 3420, 2)).toBe('tree-down'); // where the rope lands
+        expect(stepFromPosition(g, 2487, 3420, 0)).toBe('net2');
+        expect(stepFromPosition(g, 2485, 3427, 0)).toBe('pipe');
+        expect(stepFromPosition(g, 2484, 3433, 0)).toBe('pipe'); // inside the pipe
+        expect(stepFromPosition(g, 2484, 3437, 0)).toBe('log'); // the pipe's landing: the next lap
+        expect(stepFromPosition(g, 2487, 3437, 0)).toBe('log');
+        expect(zoneAt(g, 2465, 3489, 0)).toBeUndefined(); // the Grand Tree door: off the course
     });
 });

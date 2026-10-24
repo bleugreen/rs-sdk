@@ -21,6 +21,11 @@
 // refused when the row is planned, so a launch dry-run names it rather than the trade's confirm.
 // The drop is idempotent: what a restart finds already gone is not dropped again.
 //
+// An `out`'s count: `xN` gives exactly N, `all` gives everything held and refuses when none is (a
+// kit hand-back or cannon part that must be there), and `any` gives everything held or, with none
+// held, nothing (dead stock a step before may have used up). resolvePlan turns each `any` into `all`
+// or no entry as the pack stands, so a row whose gives are all `any` and none held only receives.
+//
 // The partner (an account name, fleet staging, rs/41's) stands on the hand-off tile before SCORED
 // arrives; the step does not wait for it or walk (the legs carry the travel). preconditions refuse
 // with a reason when the partner is not in view, when SCORED does not hold what it gives, or when
@@ -113,7 +118,8 @@ export interface Received extends ItemMatch {
 }
 
 export interface Given extends ItemMatch {
-    count: number | 'all';
+    /** `any`: all of it when some is held, and nothing (the entry skipped) when none is (resolvePlan). */
+    count: number | 'all' | 'any';
 }
 
 export type Worn = ItemMatch;
@@ -201,11 +207,21 @@ const isWorn = (s: BotWorldState, m: ItemMatch) => s.equipment.some(e => matches
 /** Everything the row's `out` takes off SCORED: what the trade gives and what is dropped. */
 const leaving = (plan: HandOffPlan): Given[] => [...plan.give, ...plan.drop];
 
+/**
+ * `plan` as state `s` makes it: an `any` give or drop is `all` when some of it is held, and drops out
+ * of the plan when none is (dead stock an earlier step used up, a backstop with nothing to drop). The
+ * trade, its slot arithmetic and its offer work on this; an `all` with none held still refuses.
+ */
+export function resolvePlan(s: BotWorldState, plan: HandOffPlan): HandOffPlan {
+    const resolve = (gs: readonly Given[]) => gs.flatMap((g): Given[] => (g.count !== 'any' ? [g] : held(s, g) > 0 ? [{ ...g, count: 'all' }] : []));
+    return { ...plan, give: resolve(plan.give), drop: resolve(plan.drop) };
+}
+
 /** Worn items the row gives or drops that must come off first: swap() offers, and a drop takes, only the inventory. */
 export function toUnequip(s: BotWorldState, plan: HandOffPlan): InventoryItem[] {
-    return leaving(plan).flatMap(g => {
+    return leaving(resolvePlan(s, plan)).flatMap(g => {
         const inPack = total(s.inventory, g);
-        if (g.count !== 'all' && inPack >= g.count) return [];
+        if (typeof g.count === 'number' && inPack >= g.count) return [];
         return s.equipment.filter(e => matches(g, e));
     });
 }
@@ -215,20 +231,21 @@ export function toUnequip(s: BotWorldState, plan: HandOffPlan): InventoryItem[] 
  * or family entry one offer per obj held (an obj and its note, every dose form), so all of it goes.
  */
 export function giveSpecs(s: BotWorldState, plan: HandOffPlan): GiveSpec[] {
-    return plan.give.flatMap((g): GiveSpec[] => {
-        if (!g.perObj) return [{ item: g.pattern, n: g.count }];
+    return resolvePlan(s, plan).give.flatMap((g): GiveSpec[] => {
+        const n = g.count === 'any' ? 'all' : g.count;
+        if (!g.perObj) return [{ item: g.pattern, n }];
         const ids = [...new Set(s.inventory.filter(i => matches(g, i)).map(i => i.id))];
         // More than one obj: handOffPre has checked the row gives all it holds.
-        return ids.map(id => ({ item: id, n: ids.length === 1 ? g.count : 'all' }));
+        return ids.map(id => ({ item: id, n: ids.length === 1 ? n : 'all' }));
     });
 }
 
 /** Inventory slots the given items free once offered and the dropped ones once gone (after the unequips, one slot each). */
 function slotsFreed(s: BotWorldState, plan: HandOffPlan, unequipped: readonly InventoryItem[]): number {
     const pack = [...s.inventory, ...unequipped];
-    return leaving(plan).reduce((a, g) => {
+    return leaving(resolvePlan(s, plan)).reduce((a, g) => {
         const slots = pack.filter(i => matches(g, i));
-        if (g.count === 'all') return a + slots.length;
+        if (typeof g.count !== 'number') return a + slots.length;
         const stacked = slots.length === 1 && slots[0]!.count > 1;
         return a + (stacked ? (g.count >= slots[0]!.count ? 1 : 0) : Math.min(g.count, slots.length));
     }, 0);
@@ -284,10 +301,12 @@ export function handOffPre(s: BotWorldState, plan: HandOffPlan, partner: string,
     if (o.partnerInView !== false && !s.nearbyPlayers.some(p => sameName(p.name, partner))) return `${plan.id}: ${partner} is not in view (the partner stands on the hand-off tile before SCORED arrives)`;
     for (const g of plan.give) {
         const h = held(s, g);
+        // `any` with none held gives nothing (resolvePlan): not a refusal. `all` and a count still need some.
+        if (h === 0 && g.count === 'any') continue;
         if (h === 0) return `${plan.id}: holds no ${g.name} to give`;
-        if (g.count !== 'all' && h < g.count) return `${plan.id}: holds ${h} ${g.name}, gives ${g.count}`;
+        if (typeof g.count === 'number' && h < g.count) return `${plan.id}: holds ${h} ${g.name}, gives ${g.count}`;
         // done reads a given item as gone; part of it left behind would never read done.
-        if (g.count !== 'all' && h > g.count) return `${plan.id}: holds ${h} ${g.name} and gives ${g.count}; the row must give all of it`;
+        if (typeof g.count === 'number' && h > g.count) return `${plan.id}: holds ${h} ${g.name} and gives ${g.count}; the row must give all of it`;
         // planHandOff refused a name that is only ever untradeable; this is a held obj of a mixed name.
         const refused = [...s.inventory, ...s.equipment].find(i => matches(g, i) && untradeable(i.id));
         if (refused) return `${plan.id}: gives ${g.name}, but the engine refuses ${refused.name} (obj ${refused.id}) in a trade: the row must drop it`;
@@ -295,7 +314,7 @@ export function handOffPre(s: BotWorldState, plan: HandOffPlan, partner: string,
     for (const g of plan.drop) {
         // None held is a drop already made (a restart after it): nothing to do, not a refusal.
         const h = held(s, g);
-        if (g.count !== 'all' && h > g.count) return `${plan.id}: holds ${h} ${g.name} and drops ${g.count}; the row must drop all of it`;
+        if (typeof g.count === 'number' && h > g.count) return `${plan.id}: holds ${h} ${g.name} and drops ${g.count}; the row must drop all of it`;
     }
     for (const w of plan.wield) {
         if (!plan.receive.some(r => r.name === w.name) && !held(s, w)) return `${plan.id}: +${w.name} is neither held nor received`;
@@ -527,7 +546,9 @@ export async function applyEquip(sdk: HandOffSdk, plan: HandOffPlan): Promise<vo
 }
 
 /** One hand-off: unequip what is given or dropped while worn, drop the row's drops, trade, then the equip changes. */
-export async function runHandOff(sdk: HandOffSdk, plan: HandOffPlan, partner: string, o: Omit<HandOffOptions<unknown>, 'partner' | 'supersededBy' | 'record'> = {}): Promise<HandOffReport> {
+export async function runHandOff(sdk: HandOffSdk, rowPlan: HandOffPlan, partner: string, o: Omit<HandOffOptions<unknown>, 'partner' | 'supersededBy' | 'record'> = {}): Promise<HandOffReport> {
+    // `any` entries as the pack stands: with none held of every give, the trade only receives.
+    const plan = resolvePlan(sdk.getState()!, rowPlan);
     const off = await unequipGives(sdk, plan);
     // The drops are observed gone before the trade, so the slots they free are real when it counts them.
     const dropped = (await dropOuts(sdk, plan)).map(i => i.name);

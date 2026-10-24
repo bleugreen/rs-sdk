@@ -1,11 +1,18 @@
 import { preLoginDeadline, preLoginReady, type RunecraftOptions } from '../skills/runecraft';
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
-import { fakeCdp } from './fake-cdp';
+import { fakeCdp, fakeWorld } from './fake-cdp';
 import { FakeSdk, flush, runToggleServer } from './fake-sdk';
 import { IF_RUN_ON, runIsOn } from './run-mode';
 import { sleep, TickPeriod } from './wait';
 import { loginTokenProof } from '../../server/webclient/login-token';
+import type { BotWorldState, PlayerState } from '../../sdk/types';
+import type { Death, DeathSign } from '../runner/death';
+import { RESPAWN } from './travel';
 import {
+    ABANDON_SENDS,
+    describeAbandon,
+    PAGE_ENDED_HOLD_MS,
+    waitOwnLaunch,
     IF_RETALIATE_OFF,
     IF_RETALIATE_ON,
     GATEWAY_BACK_GRACE_TICKS,
@@ -418,6 +425,144 @@ describe('logoutClean and the post-combat window', () => {
         const { session, clicks } = atTick(100, 83);
         expect((await logoutClean(session, { timeoutMs: 1_000 })).ok).toBe(true);
         expect(clicks).toEqual([100]);
+    });
+});
+
+describe('logoutClean sees a death while the logout holds', () => {
+    // Attempt 3's S14: refused at tick 231 at the spiders, the logout held through the combat, SCORED
+    // died and respawned on the Lumbridge spawn before the click.
+    const WILD = { worldX: 3288, worldZ: 3810 };
+    const SPAWN = { worldX: 3222, worldZ: 3218 };
+    const player = (p: Partial<PlayerState> = {}): PlayerState => ({
+        name: 'srtest', worldX: 0, worldZ: 0, x: 0, z: 0, level: 0, hp: 42, maxHp: 42, isDead: false, lifeId: 1, respawnCount: 0, lastDeathTick: null,
+        combat: { inCombat: false, targetIndex: -1, targetType: 'none', lastDamageTick: -1 }, ...p,
+    }) as unknown as PlayerState;
+    const fight = (inCombat: boolean, lastDamageTick: number) => ({ combat: { inCombat, targetIndex: inCombat ? 7 : -1, targetType: inCombat ? 'npc' : 'none', lastDamageTick } }) as Partial<PlayerState>;
+
+    /**
+     * A lite session at tick 231 whose child exits on the logout click; `at(t)` patches the player on
+     * tick t, `say(t)` adds game messages. Ticked one tick at a time until the click goes out.
+     */
+    function holding(start: Partial<PlayerState>, at: (t: number, p: PlayerState) => Partial<PlayerState> = () => ({}), say: (t: number) => string[] = () => []) {
+        const f = fakeSession({ lastInWorldTick: 231 });
+        f.sdk.state = { ...f.sdk.state!, tick: 231, player: player(start) };
+        const clicks: number[] = [];
+        f.sdk.onSend = (a, sdk) => {
+            if (a.method !== 'sendClickComponent' || a.args[0] !== LOGOUT_BUTTON) return;
+            clicks.push(sdk.state!.tick);
+            f.child.exit(0);
+        };
+        const out = async (): Promise<LogoutResult> => {
+            const r = logoutClean(f.session, { timeoutMs: 2_000 });
+            for (let i = 0; i < 80 && clicks.length === 0; i++) {
+                await flush();
+                if (clicks.length) break;
+                f.sdk.tick((s: BotWorldState) => {
+                    const t = s.tick + 1;
+                    return {
+                        player: { ...s.player!, ...at(t, s.player!) },
+                        gameMessages: [...s.gameMessages, ...say(t).map(text => ({ type: 0, text, sender: '', tick: t, fromSelf: false }))],
+                    } as Partial<BotWorldState>;
+                });
+            }
+            return r;
+        };
+        return { ...f, clicks, out };
+    }
+
+    /** Hit from 231 to 262 (hp 20 down to 1), dead 263-266, respawned on 267 with the engine's message. */
+    const s14 = (t: number): Partial<PlayerState> =>
+        t <= 262 ? { hp: 20 - Math.floor(((t - 231) * 19) / 31), ...fight(true, t) }
+        : t <= 266 ? { hp: 0, isDead: true, lastDeathTick: 263, ...fight(true, 262) }
+        : { ...SPAWN, hp: 42, isDead: false, lifeId: 2, respawnCount: 1, ...fight(false, 262) };
+    const dies = (t: number) => (t === 267 ? ['Oh dear you are dead!'] : []);
+
+    test('the held logout lands on the respawn: flagged with the tile before and after, the signs, and the combat it held', async () => {
+        const h = holding({ ...WILD, hp: 20, ...fight(true, 231) }, s14, dies);
+        const r = await h.out();
+        expect(r).toMatchObject({ ok: true, clickTick: 267 });
+        expect(r.death).toMatchObject({
+            from: { x: 3288, z: 3810, level: 0 }, fromTick: 266, to: { x: 3222, z: 3218, level: 0 }, toTick: 267, tick: 263,
+            signs: ['dead', 'respawned', 'message', 'respawn-tile'], hpBefore: 20, hpMin: 0, hpAfter: 42,
+        });
+        expect(r.death!.reason).toBe('SCORED died before the logout landed: (3288,3810,0) on tick 266 to (3222,3218,0) on tick 267 (dead, respawned, message, respawn-tile; hp 20 at the start, lowest 0, 42 after)');
+        expect(h.session.died).toEqual(r.death!);
+        expect(r.held).toMatchObject({ fromTick: 231, clickTick: 267, ticks: 36, inCombatTicks: 36, lastDamageTick: 262 });
+        expect(r.held!.hp[0]).toEqual({ tick: 231, hp: 20 });
+        expect(r.held!.hp.slice(-2)).toEqual([{ tick: 263, hp: 0 }, { tick: 267, hp: 42 }]);
+    });
+
+    test('any one sign alone is a death: the message, hp 0, the client counting a respawn, a jump onto the respawn square with hp restored', async () => {
+        const cases: [DeathSign, (t: number) => Partial<PlayerState>, (t: number) => string[]][] = [
+            ['message', () => ({}), t => (t === 245 ? ['Oh dear you are dead!'] : [])],
+            ['dead', t => (t === 240 ? { hp: 0, isDead: true } : {}), () => []],
+            // A client without isDead: hp 0 of a maxHp is the same sign.
+            ['dead', t => (t === 240 ? { hp: 0 } : {}), () => []],
+            ['respawned', t => (t >= 240 ? { lifeId: 2 } : {}), () => []],
+            // A client that publishes none of the rest and skipped the 0-hp frame: the jump with the full restore.
+            ['respawn-tile', t => (t >= 240 ? { ...SPAWN, hp: 42 } : {}), () => []],
+        ];
+        for (const [sign, at, say] of cases) {
+            const h = holding({ ...WILD, hp: 20, ...fight(true, 231) }, t => ({ ...at(t), ...fight(t < 250, 231) }), say);
+            const r = await h.out();
+            expect([sign, r.ok, r.death?.signs]).toEqual([sign, true, [sign]]);
+        }
+    });
+
+    test('a forced teleport onto the respawn square, hitpoints as they were, is not a death', async () => {
+        const h = holding({ ...WILD, hp: 20, ...fight(true, 231) }, t => ({ ...(t >= 240 ? SPAWN : {}), ...fight(t < 245, 231) }));
+        const r = await h.out();
+        expect(h.session.sdk.getState()!.player).toMatchObject({ ...SPAWN, hp: 20 });
+        expect(r.death).toBeUndefined();
+        expect(h.session.died).toBeUndefined();
+    });
+
+    test('a teleport elsewhere while the logout holds is not a death', async () => {
+        const varrock = { worldX: 3213, worldZ: 3424 };
+        const h = holding({ ...WILD, ...fight(true, 231) }, t => ({ ...(t >= 240 ? varrock : {}), ...fight(t < 245, 231) }));
+        const r = await h.out();
+        expect(r.ok).toBe(true);
+        expect(r.death).toBeUndefined();
+        expect(r.held).toBeDefined();
+        expect(h.session.died).toBeUndefined();
+    });
+
+    test('a walk onto the respawn square, and a logout begun standing on it, are not deaths', async () => {
+        // Hit at 225: the window holds the click to tick 248; meanwhile a run carries the player 2 tiles a tick onto the spawn.
+        const walk = holding({ worldX: 3252, worldZ: 3218, ...fight(false, 225) }, (_t, p) => ({ worldX: Math.max(RESPAWN.x + 1, p.worldX - 2) }));
+        const w = await walk.out();
+        expect(w.clickTick).toBe(248);
+        expect(walk.session.sdk.getState()!.player!.worldX).toBe(3222);
+        expect(w.death).toBeUndefined();
+        const standing = holding({ ...SPAWN, ...fight(false, 225) });
+        expect((await standing.out()).death).toBeUndefined();
+    });
+
+    test('a logout with no wait and no death returns exactly what it always did', async () => {
+        const h = holding({ ...WILD });
+        const r = await h.out();
+        expect({ ...r, wallMs: 0 }).toStrictEqual({ ok: true, clickTick: 231, lastInWorldTick: 231, latencyTicks: 0, wallMs: 0, sends: 1, confirmedBy: 'child', confirmTicks: 0 });
+        expect(h.session.died).toBeUndefined();
+    });
+
+    test('relog refuses to log back in after a death', async () => {
+        const h = holding({ ...SPAWN, hp: 0, isDead: true });
+        await expect(relog(h.session, { offlineMs: 0 })).rejects.toThrow(/no relog after a death: SCORED died before the logout landed/);
+        expect(h.session.expectInWorld).toBe(false);
+    });
+
+    test("the watchdog's logout that saw a death leaves the account out: no login, a stop naming R8", async () => {
+        const { session } = fakeSession({ lastAdvanceAt: Date.now() - 10_000 });
+        const rec = recorder(true);
+        const death = { reason: 'SCORED died before the logout landed: (3288,3810,0) on tick 266 to (3222,3218,0) on tick 267 (dead)' } as Death;
+        const events: WatchdogEvent[] = [];
+        const wd = startWatchdog(session, { timer: false, actions: { ...rec.actions, logout: async (s: Session) => ({ ...(await rec.actions.logout(s)), death }) }, onEvent: e => events.push(e) });
+        await wd.check();
+        expect(rec.calls).toEqual(['logout']);
+        expect(session.expectInWorld).toBe(false);
+        expect(events.at(-1)).toMatchObject({ verdict: 'stop', reason: `${death.reason}: left out for R8's recovery` });
+        await wd.check();
+        expect(rec.calls).toEqual(['logout']);
     });
 });
 
@@ -1339,5 +1484,229 @@ describe("settleScene: a launched browser tab's scene, the same wait as the resu
         expect(s.scene?.ready).toBe(false);
         expect(warn.mock.calls.join(' ')).toContain('scene was not ready');
         warn.mockRestore();
+    });
+});
+
+describe('abandonClient on a browser tab: a logout through the page, confirmed by the page and the world (rs/668)', () => {
+    let prevTick: string | undefined;
+    beforeEach(() => {
+        prevTick = process.env.SPEEDRUN_TICK_MS;
+        process.env.SPEEDRUN_TICK_MS = '30';
+    });
+    afterEach(() => {
+        if (prevTick === undefined) delete process.env.SPEEDRUN_TICK_MS;
+        else process.env.SPEEDRUN_TICK_MS = prevTick;
+    });
+
+    /** A browser session on a fake tab whose world lists the account; the logout button takes it out of both. */
+    function tab(over: Partial<Session> = {}) {
+        const cdp = fakeCdp('srtest', 'x');
+        const world = fakeWorld();
+        const f = fakeSession({ client: 'browser', child: null, launchTag: null, ...over } as Partial<Session>);
+        (f.session as { env: Record<string, string> }).env = { BOT_USERNAME: 'srtest', PASSWORD: 'x', CDP_URL: cdp.origin, CLIENT_URL: `${cdp.origin}/bot?server=${world.host}` };
+        world.players.add('srtest');
+        cdp.hooks.onClickComponent = id => {
+            if (id !== LOGOUT_BUTTON) return;
+            cdp.client.ingame = false;
+            world.players.delete('srtest');
+        };
+        return { ...f, cdp, world, stop: () => (cdp.stop(), world.stop()) };
+    }
+
+    test('in game: one click inside the page, none through the gateway, confirmed once the world drops the account', async () => {
+        const t = tab();
+        try {
+            const r = await abandonClient(t.session);
+            expect(r).toMatchObject({ ok: true, sends: 1, takeovers: 0 });
+            expect(t.cdp.page.clicks).toEqual([LOGOUT_BUTTON]);
+            expect(t.sdk.sent).toEqual([]);
+            expect(t.session.expectInWorld).toBe(false);
+            expect(describeAbandon(r!)).toMatch(/^logged out, confirmed \(1 logout click/);
+        } finally {
+            t.stop();
+        }
+    });
+
+    test('a click that does not take is sent again each LOGOUT_CONFIRM_TICKS, at most ABANDON_SENDS times, then reported', async () => {
+        const t = tab();
+        t.cdp.hooks.onClickComponent = () => {};
+        try {
+            const r = await abandonClient(t.session, undefined, { timeoutMs: 30_000 });
+            expect(r).toMatchObject({ ok: false, sends: ABANDON_SENDS });
+            expect(r!.reason).toMatch(/still in game after 15 logout clicks/);
+            expect(t.cdp.page.clicks).toHaveLength(ABANDON_SENDS);
+            // Gave up one re-send window after the last click, not at the wall bound.
+            expect(r!.wallMs).toBeLessThan(15_000);
+        } finally {
+            t.stop();
+        }
+    });
+
+    test("the page out and its body still listed (04:2xZ): one gated takeover login in page, then the click logs it out", async () => {
+        const t = tab();
+        t.cdp.client.ingame = false;
+        t.cdp.hooks.onAutoLogin = () =>
+            void setTimeout(() => {
+                t.cdp.client.loginInProgress = false;
+                t.cdp.client.ingame = true;
+            }, 50);
+        const gate = { asked: 0, released: 0 };
+        try {
+            const r = await abandonClient(t.session, undefined, {
+                takeover: async () => {
+                    gate.asked++;
+                    return () => void gate.released++;
+                },
+            });
+            expect(r).toMatchObject({ ok: true, sends: 1, takeovers: 1 });
+            expect(gate).toEqual({ asked: 1, released: 1 });
+            expect(t.cdp.page.minted).toHaveLength(1);
+            expect(t.cdp.page.autoLogins).toHaveLength(1);
+            expect(t.cdp.page.clicks).toEqual([LOGOUT_BUTTON]);
+            expect(t.world.players.has('srtest')).toBe(false);
+            // The takeover began a session of its own; the click went out under it.
+            expect(t.session.sessionId).toBe(2);
+        } finally {
+            t.stop();
+        }
+    });
+
+    test('a takeover the gate refuses is not made: reported with its reason', async () => {
+        const t = tab();
+        t.cdp.client.ingame = false;
+        try {
+            const r = await abandonClient(t.session, undefined, { takeover: async () => 'relog budget spent: 3/3 unplanned relogs used' });
+            expect(r).toMatchObject({ ok: false, takeovers: 0, sends: 0 });
+            expect(r!.reason).toContain('no takeover login: relog budget spent');
+            expect(t.cdp.page.autoLogins).toEqual([]);
+        } finally {
+            t.stop();
+        }
+    });
+
+    test("a session that launched its tab leaves a tab on another launch alone", async () => {
+        const t = tab({ launchTag: 'mine' } as Partial<Session>);
+        t.cdp.page.url = `${t.cdp.origin}/bot?server=${t.world.host}&bot=srtest&launch=theirs`;
+        try {
+            const r = await abandonClient(t.session);
+            expect(r!.ok).toBe(false);
+            expect(r!.reason).toMatch(/not this session's launch mine \(it shows theirs\)/);
+            expect(t.cdp.page.clicks).toEqual([]);
+        } finally {
+            t.stop();
+        }
+    });
+
+    test('once a newer session begins (an adopt), nothing more is sent', async () => {
+        const t = tab();
+        t.cdp.hooks.onClickComponent = () => void t.session.sessionId++;
+        try {
+            const r = await abandonClient(t.session);
+            expect(r!.ok).toBe(false);
+            expect(r!.reason).toMatch(/^superseded/);
+            expect(t.cdp.page.clicks).toHaveLength(1);
+        } finally {
+            t.stop();
+        }
+    });
+
+    test("the page alone does not confirm: with the world's list down the abandon ends unconfirmed", async () => {
+        const t = tab();
+        t.cdp.client.ingame = false;
+        t.world.down = true;
+        try {
+            const r = await abandonClient(t.session, undefined, { timeoutMs: 500 });
+            expect(r!.ok).toBe(false);
+            expect(r!.reason).toMatch(/playerpositions\) did not answer/);
+            expect(t.cdp.page.autoLogins).toEqual([]);
+        } finally {
+            t.stop();
+        }
+    });
+});
+
+describe("waitOwnLaunch: a launched tab's session is known by its launch id, not by a fresh tick (rs/668)", () => {
+    let prevTick: string | undefined;
+    beforeEach(() => {
+        prevTick = process.env.SPEEDRUN_TICK_MS;
+        process.env.SPEEDRUN_TICK_MS = '30';
+    });
+    afterEach(() => {
+        if (prevTick === undefined) delete process.env.SPEEDRUN_TICK_MS;
+        else process.env.SPEEDRUN_TICK_MS = prevTick;
+    });
+
+    /** A session that launched tab L1, whose SDK was handed a lite one-off's cached state (tick 5000, no launch id). */
+    function launched(cdp?: ReturnType<typeof fakeCdp>) {
+        const f = fakeSession({ client: 'browser', child: null, launchTag: 'L1' } as Partial<Session>);
+        (f.session as { env: Record<string, string> }).env = { BOT_USERNAME: 'srtest', PASSWORD: 'x', ...(cdp ? { CDP_URL: cdp.origin } : {}) };
+        f.sdk.state = { ...f.sdk.state!, tick: 5000, inGame: true };
+        return f;
+    }
+
+    test("the cached state never counts; two of the launch's own ticks do", async () => {
+        const { session, sdk } = launched();
+        const p = waitOwnLaunch(session, 5_000);
+        sdk.push({}); // the cached frame handed over again (a reconnect) is still not this launch's
+        sdk.push({ tick: 1, launch: 'L1' });
+        sdk.push({ tick: 2, launch: 'L1' });
+        expect(await p).toMatchObject({ tick: 2, launch: 'L1' });
+    });
+
+    test('in-game states with no launch id advancing: refused at once, naming the other client or an old page bundle', async () => {
+        const { session, sdk } = launched();
+        const p = waitOwnLaunch(session, 5_000);
+        sdk.push({ tick: 5001 });
+        await expect(p).rejects.toThrow(/refusing launch L1: in-game states with no launch id are advancing \(ticks 5000 then 5001\).*bun run build.*nothing was sent/);
+    });
+
+    test('states from another launch advancing: refused', async () => {
+        const { session, sdk } = launched();
+        const p = waitOwnLaunch(session, 5_000);
+        sdk.push({ tick: 7, launch: 'L0' });
+        sdk.push({ tick: 8, launch: 'L0' });
+        await expect(p).rejects.toThrow(/in-game states from launch L0 are advancing/);
+    });
+
+    test('nothing of its own: the timeout names the cached state it would not take', async () => {
+        const { session } = launched();
+        await expect(waitOwnLaunch(session, 300)).rejects.toThrow(/no in-game state from this launch within 300 ms; the only in-game state was not this launch's \(tick 5000, launch none\)/);
+    });
+
+    test("the page's login ended: refused after PAGE_ENDED_HOLD_MS, but only once the tab shows this launch", async () => {
+        const cdp = fakeCdp('srtest', 'x');
+        try {
+            const { session } = launched(cdp);
+            // The replaced page (launch L0) reads as ended too; it is not this launch's.
+            cdp.page.url = `${cdp.origin}/bot?bot=srtest&launch=L0`;
+            cdp.client.ingame = false;
+            cdp.client.loginMes1 = 'Connection lost';
+            const t0 = Date.now();
+            setTimeout(() => (cdp.page.url = `${cdp.origin}/bot?bot=srtest&launch=L1`), 800);
+            await expect(waitOwnLaunch(session, 20_000)).rejects.toThrow(/refusing launch L1: the page's login ended without getting in, or it dropped out of the game \(title screen: Connection lost\)/);
+            expect(Date.now() - t0).toBeGreaterThanOrEqual(800 + PAGE_ENDED_HOLD_MS);
+            expect(Date.now() - t0).toBeLessThan(5_000);
+        } finally {
+            cdp.stop();
+        }
+    });
+
+    test('a page still logging in is waited for, not refused', async () => {
+        const cdp = fakeCdp('srtest', 'x');
+        try {
+            const { session, sdk } = launched(cdp);
+            cdp.page.url = `${cdp.origin}/bot?bot=srtest&launch=L1`;
+            cdp.client.ingame = false;
+            cdp.client.loginInProgress = true;
+            const p = waitOwnLaunch(session, 20_000);
+            await sleep(PAGE_ENDED_HOLD_MS + 500);
+            cdp.client.loginInProgress = false;
+            cdp.client.ingame = true;
+            sdk.push({ tick: 1, launch: 'L1' });
+            sdk.push({ tick: 2, launch: 'L1' });
+            expect((await p).tick).toBe(2);
+        } finally {
+            cdp.stop();
+        }
     });
 });

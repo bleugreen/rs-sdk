@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { BANKS } from './questitems';
-import { isTileWalkable } from '../../sdk/pathfinding';
+import { findDoorsAlongPath, getDoorAt, isTileWalkable } from '../../sdk/pathfinding';
+import type { PlayerState } from '../../sdk/types';
+import { deliveryTradeReach } from './mule';
 import { TILES } from '../runner/legs';
 import { MULE1_ORDER, MULE1_ON_REQUEST } from './mule-ledger';
 import { assertMuleTopology, muleDelivery, muleItinerary, muleTopologyConflicts, type ItineraryOptions } from './mule-itinerary';
@@ -109,7 +111,7 @@ const coordinates: Record<string, [number, number]> = {
     H4p: [2604, 3235], H7: [2504, 3191], H8: [2465, 3489], H9: [2658, 3301],
     H10: [2658, 3301], H12: [2465, 3489], H13: [2658, 3301], H14: [2670, 3305],
     H15: [2716, 3302], H16: [2820, 3486], H18: [3241, 3248], H19: [3209, 3215],
-    H20: [3045, 3257], H21d: [3185, 3436], H22: [3191, 3363],
+    H20: [3045, 3257], H21d: [3185, 3436], H22: [3191, 3366],
     H4e: [2920, 3406], H4m: [2605, 3234],
 };
 
@@ -159,6 +161,32 @@ describe('canonical delivery itinerary', () => {
     });
 });
 
+describe("H22 meets SCORED clear of the Champions' Guild door", () => {
+    const door = { x: 3191, z: 3363 };
+    const tradeReach = (mule: { x: number; z: number }, scored: { x: number; z: number }) => deliveryTradeReach(baseState({
+        player: { worldX: mule.x, worldZ: mule.z, level: 0 } as PlayerState,
+        nearbyPlayers: [{ kind: 'player', index: 9, name: 'Cairn Scored', combatLevel: 3, x: scored.x, z: scored.z, distance: Math.max(Math.abs(mule.x - scored.x), Math.abs(mule.z - scored.z)) }]
+    }), 'cairn_scored');
+
+    test('the collision data has the guild door, and it refuses every stand beside its neighbour (3191,3364)', () => {
+        expect(getDoorAt(0, door.x, door.z)).toBeDefined();
+        const beside = { x: door.x, z: door.z + 1 };
+        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) expect(tradeReach({ x: beside.x + dx!, z: beside.z + dz! }, beside)).toBe(false);
+    });
+
+    test("the stand (3191,3366) is north of T25-26's single arrival tile (3191,3365), with no door on or beside either, and the delivery guard accepts it", () => {
+        const scored = { x: TILES.championsGuild.x, z: TILES.championsGuild.z, level: 0 };
+        const stand = muleDelivery('H22').at;
+        expect(scored).toEqual({ x: 3191, z: 3365, level: 0 });
+        expect(TILES.championsGuild.tol).toBe(0);
+        expect(stand).toEqual({ x: 3191, z: 3366, level: 0 });
+        // findDoorsAlongPath checks each tile and its four cardinal neighbours.
+        expect(findDoorsAlongPath([scored])).toEqual([]);
+        expect(findDoorsAlongPath([stand])).toEqual([]);
+        expect(Math.abs(stand.x - scored.x) + Math.abs(stand.z - scored.z)).toBe(1);
+        expect(tradeReach(stand, scored)).toBe(true);
+    });
+});
 
 describe('delivery topology', () => {
     test('reports both actual ordered mountain crossings, not just the first', () => {

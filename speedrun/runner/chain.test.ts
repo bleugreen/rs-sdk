@@ -22,13 +22,13 @@ import * as cooking from '../skills/cooking';
 import * as mining from '../skills/mining';
 import * as woodcutting from '../skills/woodcutting';
 import {
-    ALTERNATIVES, anvilAnnounce, CANNON_ROWS, cueAround, cueMuleRows, FAMILY_CUES, KIT_PARTNER_ROWS, KIT_SEGMENTS, buildChain, CENSUS_STEP, chainIds, chainProbes, ledgerCoverage, ledgerRows, missingOnPath, missingStep, MULE_ROWS, muleCued, muleCueDir, muleScope, s07Woodcutting, S09_MINING, parseStepTable, PLACEMENT, resolveFrom, sliceUntil, tag,
+    ALTERNATIVES, anvilAnnounce, CANNON_ROWS, cueAround, cueMuleRows, FAMILY_CUES, KIT_PARTNER_ROWS, KIT_SEGMENTS, buildChain, CENSUS_STEP, chainIds, chainProbes, chainSeams, ledgerCoverage, ledgerRows, missingOnPath, missingStep, MULE_ROWS, muleCued, muleCueDir, muleScope, s07Woodcutting, S09_MINING, parseStepTable, PLACEMENT, resolveFrom, sliceUntil, tag,
     whenNeeded, withCue, askedOnTrade, h12oLogin, h12oLoginRefusal, h12oTopUp, H12O_LOGIN, type ChainStep, type CueSink, type RunConfig,
 } from './chain';
 import { CUE_BEACONS, CueKeeper, exitStopIsFinal, prepareCueDir, RunCues } from './cue-keeper';
 import { ScopeSessions } from '../helpers/standalone';
 import { FencedError } from './fence';
-import { legsFor, netTotal, type LegStep } from './legs';
+import { leg, legsFor, netTotal, type LegStep } from './legs';
 import { Observation, resolveResume, type Link } from './resume';
 import type { RunnerSession, Step, StepContext } from './step';
 
@@ -43,7 +43,8 @@ const RUN_ORDER = readFileSync(join(import.meta.dir, '../../docs/speedrun/RUN-OR
 const PARTNERS: Record<string, string> = { ...Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS].map(id => [id, `p_${id.toLowerCase()}`])), H12a: 'p_h12', H12b: 'p_h12' };
 const CONFIG: RunConfig = {
     partners: PARTNERS,
-    firemakingTiles: '3240,3296;3239,3296;3238,3296',
+    // The castle lap's west end (rehearsals/firemaking.md), entered where T02-03 ends.
+    firemakingTiles: '3222,3219;3221,3219;3220,3219',
     rings: { giver: 'ring_giver' },
     bones: { giver: 'bone_giver' },
     courier: { giver: 'courier', below: 3 },
@@ -75,6 +76,37 @@ const CARRIERS: Record<string, readonly string[]> = {
 const CARRIER_CONFIG: RunConfig = { ...CONFIG, partners: Object.fromEntries(Object.entries(CARRIERS).flatMap(([who, rows]) => rows.map(r => [r, who]))) };
 /** Each mule-cued step of `c`: its row and whether a success stops it final. */
 const muleStops = (c: readonly ChainStep[]) => c.filter(s => s.cue?.family === 'mule').map(s => `${s.cue!.step}:${s.finalStop ? 'final' : 'plain'}`);
+
+describe('the seam check: each step start tile against the leg before it', () => {
+    test('the whole chain: every declared start tile a leg reaches is within its step\'s tolerance', () => {
+        const seams = chainSeams(chain);
+        expect(seams.filter(s => !s.ok).map(s => s.detail)).toEqual([]);
+        // S07's oak band follows the walk-oaks step, not a leg, so it has no seam; S25a's later inventories follow S25a.
+        expect(seams.map(s => [s.id, s.leg, s.distance])).toEqual([
+            ['S02', 'T01-02', 2], ['S03', 'T02-03', 0], ['S07', 'T07a', 1], ['S22', 'T21-22', 0], ['S25a', 'T24-25', 1],
+        ]);
+        // The data is the modules' own: S03's tile is the run config's row entry, at firemaking.ts's `near`.
+        expect(chain.find(s => s.name === 'S03 firemaking')!.startTile).toMatchObject({ x: 3222, z: 3219, within: 15 });
+    });
+
+    test("attempt 1's seam fails: the castle row's entry against T02-03 to the coop placeholder (3240,3296), 77 tiles", () => {
+        const at = chain.findIndex(s => s.id === 'T02-03');
+        const old = legsFor({ s21Altar: 'body' }).find(l => l.def.id === 'T02-03')!;
+        const coopLeg = tag('T02-03', 'leg', leg('T02-03', old.def.start, { x: 3240, z: 3296, tol: 0 }, [{ kind: 'run', to: { x: 3240, z: 3296, tol: 0 } }], { after: 'S02', before: 'S03', method: 'the old placeholder', expected: old.def.expected }));
+        const attempt1 = [...chain.slice(0, at), coopLeg, ...chain.slice(at + 1)];
+        const bad = chainSeams(attempt1).filter(s => !s.ok);
+        expect(bad.map(s => [s.id, s.leg, s.distance, s.start.within])).toEqual([['S03', 'T02-03', 77, 15]]);
+        expect(bad[0]!.detail).toContain('T02-03 ends at 3240,3296 tol 0, 77 tiles from 3222,3219');
+    });
+
+    test('a hand-off or cue step between the leg and the step does not move SCORED; a step does, and ends the seam', () => {
+        const at = chain.findIndex(s => s.id === 'S03');
+        const cueStep = { ...chain[at - 1]!, kind: 'cue' as const, id: 'X', name: 'X cue' };
+        expect(chainSeams([...chain.slice(0, at), cueStep, ...chain.slice(at)]).find(s => s.id === 'S03')!.leg).toBe('T02-03');
+        const walker = { ...chain[at - 1]!, kind: 'step' as const, id: 'W', name: 'W walks' };
+        expect(chainSeams([...chain.slice(0, at), walker, ...chain.slice(at)]).some(s => s.id === 'S03')).toBe(false);
+    });
+});
 
 describe('chainProbes', () => {
     test("every probe the chain's steps read, S25c's wineBank from cooking.ts's PROBES, none missing", () => {
@@ -176,6 +208,12 @@ describe('the chain', () => {
         }
         expect(s07Woodcutting(group, 'run-x').boneSession).toBe('run-x.S07.bone');
         expect(s07Woodcutting(CONFIG, 'run-x')).not.toHaveProperty('boneSession');
+        // rs/663: S07's early last load fires at the band's own targets, which the run sets to Woodcutting 99 (the default `to`) and Prayer 99
+        for (const cfg of [CONFIG, group]) {
+            const opts = s07Woodcutting(cfg, 'run-x');
+            expect([opts.to, opts.prayerTo]).toEqual([undefined, 99]);
+            expect(woodcutting.steps(opts).map(s => s.name)).toContain('woodcutting:willow-73-99');
+        }
         const item = (slot: number, name: string) => ({ slot, id: 100 + slot, name, count: 1, optionsWithIndex: [] });
         const census = baseState({
             player: { worldX: 2920, worldZ: 3406 } as PlayerState,

@@ -251,6 +251,95 @@ BotSDK queues an action sent while it reconnects and dispatches it the moment th
 gateway is back, which is how attempt 3's watchdog logout reached the session
 run.ts had just adopted.
 
+### A death is never a clean stop (`runner/death.ts`, rs/709)
+
+Attempt 3's twin rehearsal: S14 refused at tick 231 at the Wilderness spiders,
+the logout after it waited out 37 ticks of combat, and SCORED died and respawned
+at Lumbridge before the click. The logout was logged `ok`, and the next session
+refused S14 on site with no reason given. Now one `DeathWatch` watches every
+state of the two stretches where a death could otherwise pass unseen:
+
+- **Every logout** (`logoutClean`): a stop, the logout after a refused or failed
+  step, a signal, the watchdog's, and relog's. It watches from the call until the
+  account is out.
+- **Every leg** (`runLeg`): rs/593's relocation detector (`travel.ts`
+  `onRelocated`) fails the hop when a relocation onto `RESPAWN` comes with a death
+  the watch corroborates. Any other jump is re-pathed, as before.
+
+A death is any of these: the engine's `Oh dear you are dead!` (death.rs2), hp 0,
+the browser client's `lifeId` going up, or a jump onto the respawn square that the
+hitpoints confirm (0 before it, or restored to full on it). A teleport elsewhere
+is not a death, nor is a walk, nor a Lumbridge Teleport onto the square with the
+hitpoints unchanged. The lite client publishes no `lifeId`. If its frames skip
+the 0-hp tick, a death within 15 tiles of the square shows only through the
+message.
+
+On a death the account stays out. The watchdog does not log it back in,
+relog refuses, and the drop recovery refuses to relog. A death on a leg reaches
+the logout at once (read from the code, not measured): the hop fails on the
+first state after the corroborated landing, the step fails, and run.ts's
+logout follows with nothing run between. `logoutClean` waits out only the
+16-tick post-combat window from the killing hit, so the click lands at most
+about 12 ticks after the respawn. The logout line says
+DIED, giving the tile before and after. A held logout also reports its combat
+ticks and hp trajectory. run.ts writes one `(death)` row and ends the attempt
+with **exit 6**, whatever the chain ended with. Any later run into the same log
+is refused at the start (exit 3), whether it would walk from game state or start
+at a `--from`. It stays refused until R8's recovery is done (RUN-HOST.md, "After
+a player-kill") and `--r8-recovered=<key>` names that death; the start then
+writes `(death) acknowledged`. The key is the row's `runId@tick`, so a flag left
+on a command line never acknowledges a later death.
+
+### A launch is known by its id; a failed start is logged out (rs/668)
+
+Attempt 3's 04:2xZ start: the loopback gateway still held a lite one-off's last
+state for SCORED (210 s old) and handed it to run.ts's new controller as current.
+The tab's token login reached the game, then the page's game socket dropped,
+leaving a socketless body in the world. openSession waited 120 s for that cached
+state to advance and exited with the body still in the world.
+
+- **Identity, not freshness.** Every browser launch gets a launch id
+  (`Session.launchTag`) in the tab's URL, `?launch=`. The page keeps it when the
+  token leaves the URL, and the overlay echoes it in every state it publishes
+  (`BotWorldState.launch`). openSession (`waitOwnLaunch`) takes only states that
+  carry it. It refuses, with the reason and before anything is sent to the
+  account, on: in-game states from another launch or with no launch id advancing
+  (another client, or a page bundle that predates the echo: rebuild it with
+  `cd server/webclient && bun run build`); the page, read over CDP once it shows
+  this launch's URL, having made its auto-login and being neither in game nor
+  logging in for `PAGE_ENDED_HOLD_MS`; the page in game with none of its states
+  reaching our gateway for `GATEWAY_BACK_GRACE_TICKS`. The echo was chosen over
+  the gateway's lists because those name SDK controllers, not the page, and a
+  page's gateway client id is minted afresh on every reconnect. An id on each
+  state holds through any gateway, upstream's included.
+- **Log out what we logged in.** `abandonClient` on a browser tab
+  (`abandonTab`) clicks logout inside the page over CDP, straight down its game
+  socket, so neither our gateway nor the page's gateway socket has to be up.
+  The click carries its session generation, as `sendLogoutClick`'s do. It is
+  re-sent every `LOGOUT_CONFIRM_TICKS`, at most `ABANDON_SENDS` (15) times.
+  The logout is confirmed only when the page is out of game *and* the world's
+  `/playerpositions` no longer lists the account: a page whose game socket
+  dropped is out of game while its body stays in the world for 500 ticks. That
+  body cannot be clicked out, so once the page has been out with the account
+  still listed for longer than a removal takes to show, the page logs in again
+  in place, which takes the body over (World.ts "kick the existing session"),
+  and the click then logs it out. There are at most `ABANDON_TAKEOVERS` (2)
+  such logins, and in run.ts each one follows the relog rules (`takeoverGate`):
+  it is refused while the operator's relog holds the lock or the unplanned
+  relogs are spent, and is otherwise recorded as one unplanned relog.
+- **Every startup failure in run.ts abandons.** A failed launch is abandoned
+  by openSession, and the thrown error says how the abandon went; run.ts logs
+  it as `(startup) SCORED launch failed`. A failed S21 login half is abandoned
+  once that half has started; a refusal before it sends nothing. Everything
+  after `openRunSession` runs inside `withScoredSession`, so any way out that
+  leaves the account meant to be in the world (a throw before the chain, a
+  crash inside it) ends in the abandon, logged as `(run) SCORED abandoned`.
+
+The gateway itself (`server/gateway/gateway.ts`, upstream's code) still keeps a
+gone client's last state, hands it to the next controller, and lets the next
+client inherit it. The run no longer depends on that changing: the launch id
+refuses such a state through any gateway.
+
 ### The two clients
 
 - **Lite** (helpers, lab): each launch is a fresh runner. Our launches set

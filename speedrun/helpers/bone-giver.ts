@@ -307,28 +307,35 @@ export function boneWithdrawals(bank: readonly { name: string; count: number }[]
     return { specs, short: need };
 }
 
-/** True when the load after `tradesDone` completed trades (the group's, with a group) is the last one, the one that carries `finalExtras`. */
-export function isFinalLoad(o: Pick<BoneGiverOptions, 'trades' | 'finalExtras'>, tradesDone: number): boolean {
-    return o.finalExtras.length > 0 && tradesDone === o.trades - 1;
+/**
+ * True when the load after `tradesDone` completed trades (the group's, with a group) is the last one,
+ * the one that carries `finalExtras`: by the count, or at once when the cue says `lastLoad` (Cue.lastLoad).
+ */
+export function isFinalLoad(o: Pick<BoneGiverOptions, 'trades' | 'finalExtras'>, tradesDone: number, lastLoad = false): boolean {
+    return o.finalExtras.length > 0 && (lastLoad || tradesDone === o.trades - 1);
 }
 
-/** Bones on the load after `tradesDone` trades: `finalN` on the last load, else `n`. */
-export function loadBones(o: Pick<BoneGiverOptions, 'n' | 'finalN' | 'trades' | 'finalExtras'>, tradesDone: number): number {
+/** Bones on the load after `tradesDone` trades: `finalN` on the last load, none on the cue's `lastLoad` (the extras alone), else `n`. */
+export function loadBones(o: Pick<BoneGiverOptions, 'n' | 'finalN' | 'trades' | 'finalExtras'>, tradesDone: number, lastLoad = false): number {
+    if (lastLoad && isFinalLoad(o, tradesDone, true)) return 0;
     return isFinalLoad(o, tradesDone) ? o.finalN : o.n;
 }
 
 /**
  * The standing mode's offer for the load after `tradesDone` trades: `n` bones, or `finalN` bones and
- * `finalExtras` on the last load. With an item list the bones are split by what is carried
- * (`carried`, by name), first item first.
+ * `finalExtras` on the last load by the count. With the cue's `lastLoad` the last-load giver offers
+ * `finalExtras` alone: SCORED wants no more bones, and T07-08 has no room to carry them. With an item
+ * list the bones are split by what is carried (`carried`, by name), first item first.
  */
 export function loadOffer(
     o: Pick<BoneGiverOptions, 'items' | 'n' | 'finalN' | 'trades' | 'finalExtras'>,
     tradesDone: number,
-    carried: (item: string) => number = () => Number.POSITIVE_INFINITY
+    carried: (item: string) => number = () => Number.POSITIVE_INFINITY,
+    lastLoad = false
 ): GiveSpec[] {
-    const extras = isFinalLoad(o, tradesDone) ? o.finalExtras : [];
-    let need = loadBones(o, tradesDone);
+    const extras = isFinalLoad(o, tradesDone, lastLoad) ? o.finalExtras : [];
+    let need = loadBones(o, tradesDone, lastLoad);
+    if (need <= 0) return extras.map(e => ({ item: exact(e.item), n: e.count }));
     const bones: GiveSpec[] = [];
     for (const [i, name] of o.items.entries()) {
         // The last type takes whatever is still to give, so a short pack fails in give(), not silently here.
@@ -527,6 +534,8 @@ export interface BoneStatus {
     final: boolean;
     /** The `trades` option, the group's load count with a group; null without one. */
     loads: number | null;
+    /** This giver served the load the cue's `lastLoad` asked for, in `session`: the group has no load left to give there. */
+    lastGiven?: boolean;
     detail?: string;
     ms: number;
 }
@@ -568,6 +577,11 @@ export function groupLoads(statuses: readonly BoneStatus[], group: readonly stri
     return sessionStatuses(statuses, group, session).map(s => s.loads).find((l): l is number => typeof l === 'number' && Number.isFinite(l)) ?? null;
 }
 
+/** The group's giver of the cue's `lastLoad` has served it in the session (BoneStatus.lastGiven). */
+export function lastLoadGiven(statuses: readonly BoneStatus[], group: readonly string[], session?: string): boolean {
+    return sessionStatuses(statuses, group, session).some(s => s.lastGiven === true);
+}
+
 /**
  * The group's server: the one giver of `group` that keeps a request standing with the scored
  * account and that the scored side trades next (altar-cue.ts turnOrder). The giver already
@@ -579,16 +593,22 @@ export function groupLoads(statuses: readonly BoneStatus[], group: readonly stri
  * extras: no other giver serves it, and the final giver serves no load within one rotation of it
  * (fewer than group-size loads before the last), so it is back from its last bank trip and waiting
  * when the last load comes. Once the group has given its loads there is no server.
+ *
+ * `lastLoad`, the session cue's (Cue.lastLoad; each side passes what it knows of the cue): the next
+ * load is the last, whatever the count. Only the `final` giver serves it, with no one-rotation bar,
+ * and once it has (`lastGiven`) there is no server. Ignored without a `final` giver in the session.
  */
-export function boneServer(statuses: readonly BoneStatus[], group: readonly string[], now: number, session?: string): string | undefined {
+export function boneServer(statuses: readonly BoneStatus[], group: readonly string[], now: number, session?: string, lastLoad = false): string | undefined {
     const current = sessionStatuses(statuses, group, session);
     const done = current.reduce((n, s) => n + s.trades, 0);
     // A status without `loads` or `final` (written before they existed, or a fixture) sets neither.
     const loads = groupLoads(statuses, group, session);
     if (loads !== null && done >= loads) return undefined;
+    const flagged = lastLoad && current.some(s => s.final === true);
+    if (flagged && current.some(s => s.lastGiven === true)) return undefined;
     const last = loads !== null && done === loads - 1;
     const withFinal = loads !== null && current.some(s => s.final === true);
-    const takes = (s: BoneStatus) => !withFinal || (s.final === true ? last || done + group.length <= loads! - 1 : !last);
+    const takes = (s: BoneStatus) => (flagged ? s.final === true : !withFinal || (s.final === true ? last || done + group.length <= loads! - 1 : !last));
     return turnOrder(current, now, {
         eligible: s => (s.phase === 'waiting' || s.phase === 'requested' || s.phase === 'trading') && s.held > 0 && s.readyAt !== null && takes(s),
         holding: s => s.phase === 'requested' || s.phase === 'trading'
@@ -612,10 +632,10 @@ export interface ServerWait {
  * stand-in (bone-receiver `givers`) both take their partner from here. With `session` (the S07 cue's,
  * which the givers record in their statuses) only that session's statuses count, as on the givers' side.
  */
-export async function awaitBoneServer(sdk: StateSource, dir: string, group: readonly string[], maxTicks: number = SERVER_WAIT_TICKS, session?: string): Promise<ServerWait> {
+export async function awaitBoneServer(sdk: StateSource, dir: string, group: readonly string[], maxTicks: number = SERVER_WAIT_TICKS, session?: string, lastLoad = false): Promise<ServerWait> {
     const t0 = sdk.getState()?.tick ?? 0;
     let server: string | undefined;
-    const r = await waitUntil(sdk, () => (server = boneServer(readBoneStatuses(dir), group, Date.now(), session)) !== undefined, { maxTicks });
+    const r = await waitUntil(sdk, () => (server = boneServer(readBoneStatuses(dir), group, Date.now(), session, lastLoad)) !== undefined, { maxTicks });
     return { server: r.ok ? server : undefined, waited: Math.max(0, r.tick - t0) };
 }
 
@@ -627,6 +647,8 @@ export class BoneGiver {
     private detail = '';
     private site = 0;
     private trades = 0;
+    /** Served the cue's `lastLoad` in the cue's session (BoneStatus.lastGiven). */
+    private lastGiven = false;
     private bounces = 0;
     private lastRequestTick = -1;
     /** Date.now() of the last ask served (altar-cue.ts usableAsk). */
@@ -685,6 +707,8 @@ export class BoneGiver {
             return;
         }
         const fresh = this.cue?.session !== cue.session;
+        // `lastGiven` is the session's: another session's last load is not this one's.
+        if (fresh) this.lastGiven = false;
         this.cue = cue;
         if (!this.resumeChecked) {
             this.resumeChecked = true;
@@ -692,6 +716,10 @@ export class BoneGiver {
             if (p && p.session === cue.session && Number.isInteger(p.trades) && p.trades > this.trades) {
                 this.trades = p.trades;
                 this.ctx.log('resumed', { trades: p.trades, session: cue.session });
+            }
+            if (p && p.session === cue.session && p.lastGiven === true) {
+                this.lastGiven = true;
+                this.ctx.log('resumed: the last load was given', { session: cue.session });
             }
         }
         // The receiver counts only statuses in its cue's session: show ours in it at once, not at the next heartbeat.
@@ -724,6 +752,11 @@ export class BoneGiver {
         return this.o.group.length && this.cue ? groupLoadsDone(this.statuses(), this.o.group, this.cue.session) : this.trades;
     }
 
+    /** The cue's `lastLoad` was served: the group's in this cue's session with a group, else ours. */
+    private lastLoadDone(): boolean {
+        return this.o.group.length && this.cue ? lastLoadGiven(this.statuses(), this.o.group, this.cue.session) : this.lastGiven;
+    }
+
     /** No group, or this giver is the group's server now. */
     private ourTurn(): boolean {
         if (!this.o.group.length) return true;
@@ -732,7 +765,7 @@ export class BoneGiver {
 
     /** The group's server in this cue's session; none before any cue. */
     private server(): string | undefined {
-        return this.cue ? boneServer(this.statuses(), this.o.group, Date.now(), this.cue.session) : undefined;
+        return this.cue ? boneServer(this.statuses(), this.o.group, Date.now(), this.cue.session, this.cue.lastLoad === true) : undefined;
     }
 
     private get s(): BotWorldState | null {
@@ -765,6 +798,7 @@ export class BoneGiver {
             session: this.cue?.session ?? null,
             final: this.o.group.length > 0 && this.o.finalExtras.length > 0,
             loads: Number.isFinite(this.o.trades) ? this.o.trades : null,
+            ...(this.lastGiven ? { lastGiven: true } : {}),
             ...(this.detail ? { detail: this.detail } : {}),
             ms: Date.now()
         };
@@ -807,7 +841,7 @@ export class BoneGiver {
             await ensureOutOfTutorial(ctx);
             await ctx.bot.dismissBlockingUI();
             if (ctx.sdk.getTradeState().isOpen) await ctx.sdk.sendDeclineTrade();
-            while (!ctx.signal.aborted && this.loadsDone() < this.o.trades && !this.cue?.stop) {
+            while (!ctx.signal.aborted && this.loadsDone() < this.o.trades && !this.lastLoadDone() && !this.cue?.stop) {
                 try {
                     await this.cycle();
                 } catch (e) {
@@ -839,9 +873,12 @@ export class BoneGiver {
         // A group's last-load giver carries a whole load and the extras on every trip: any of them can be the last load.
         const carriesFinal = o.group.length > 0 && o.finalExtras.length > 0;
         const k = this.loadsDone();
-        const extras = carriesFinal || isFinalLoad(o, k) ? o.finalExtras : [];
-        const bones = o.group.length ? o.n : loadBones(o, k);
-        if (this.mustBank || this.held() !== bones || extras.some(e => count(this.s, exact(e.item)) < e.count)) {
+        const flagged = this.cue?.lastLoad === true;
+        const extras = carriesFinal || isFinalLoad(o, k, flagged) ? o.finalExtras : [];
+        const bones = o.group.length ? o.n : loadBones(o, k, flagged);
+        // An extras-only load (a lone giver on the cue's lastLoad) offers no bones: whatever it holds is no reason to bank.
+        const bonesOk = this.held() === bones || (bones === 0 && flagged);
+        if (this.mustBank || !bonesOk || extras.some(e => count(this.s, exact(e.item)) < e.count)) {
             this.mustBank = false;
             this.setPhase('restock', carriesFinal ? 'with the last load\'s extras' : extras.length ? 'the last load' : '');
             await this.restock(bones, extras);
@@ -894,7 +931,7 @@ export class BoneGiver {
         if (!found || this.cue?.stop || moved()) return;
         // A group takes turns: wait loaded, without requesting, until we are its server.
         while (!this.ourTurn()) {
-            if (this.cue?.stop || ctx.signal.aborted || !this.receiverInSight() || this.loadsDone() >= o.trades || moved()) return;
+            if (this.cue?.stop || ctx.signal.aborted || !this.receiverInSight() || this.loadsDone() >= o.trades || this.lastLoadDone() || moved()) return;
             const server = this.server();
             this.setPhase('waiting', server ? `queued behind ${server}` : carriesFinal ? 'holding the last load' : 'queued');
             await until(ctx, () => this.ourTurn() || !!this.cue?.stop, 2);
@@ -915,15 +952,19 @@ export class BoneGiver {
         }
         this.setPhase('trading');
         // No expectTheirs: the scored account offers nothing, and anything it does offer is declined.
-        // The load's index now, the group's with a group: the last one offers finalN bones and the extras.
+        // The load's index now, the group's with a group: the last one offers finalN bones and the extras,
+        // or, on the cue's lastLoad, the extras alone. Read once: a flag landing mid-trade makes the next load the last.
         const load = this.loadsDone();
-        const r = await give(ctx.sdk, t.partner, loadOffer(o, load, name => count(this.s, exact(name))), { openMaxTicks: 17 });
+        const lastLoad = this.cue?.lastLoad === true;
+        const final = isFinalLoad(o, load, lastLoad);
+        const r = await give(ctx.sdk, t.partner, loadOffer(o, load, name => count(this.s, exact(name)), lastLoad), { openMaxTicks: 17 });
         if (r.ok) {
             this.trades++;
+            if (lastLoad && final) this.lastGiven = true;
             this.trip = { tick: this.s?.tick ?? 0, energy: this.energy(), at: pos(this.s) };
         }
         if (r.ok && o.acceptReturn) await this.takeReturn(t.partner, r.gave);
-        ctx.log('trade', { ok: r.ok, ticks: r.ticks, load, gave: r.gave.map(i => `${i.name} x${i.count}`), final: isFinalLoad(o, load), waited: req.waited, sends: req.sends, bounces: req.bounces, ...(r.reason ? { reason: r.reason } : {}) });
+        ctx.log('trade', { ok: r.ok, ticks: r.ticks, load, gave: r.gave.map(i => `${i.name} x${i.count}`), final, ...(lastLoad ? { lastLoad: true } : {}), waited: req.waited, sends: req.sends, bounces: req.bounces, ...(r.reason ? { reason: r.reason } : {}) });
     }
 
     /** Onto `site`'s giver tile; throws when the walk cannot stand there (altar-room.ts standOn). */

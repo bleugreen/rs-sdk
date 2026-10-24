@@ -597,6 +597,12 @@ export interface BotWorldState {
     fastKbdPrayerOff?: { tick: number; prayerIndices: number[] };
     /** Monotonic state publication cursor; advances even for multiple publications in one game tick. */
     revision?: number;
+    /**
+     * The launch id the browser page was opened with (its `?launch=`), echoed in every state it
+     * publishes: which tab launch this state came from. Absent from the lite client, from a page
+     * opened without one, and from pages that predate it.
+     */
+    launch?: string;
     inGame: boolean;
     /**
      * The client has built the region around the player. False while it shows
