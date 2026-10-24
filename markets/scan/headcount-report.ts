@@ -104,7 +104,8 @@ export const stemOf = (name: string): string => name.toLowerCase().replace(/[\s_
 export function families(names: Iterable<string>): Record<string, string[]> {
     const by = new Map<string, Set<string>>();
     for (const n of names) by.set(stemOf(n), (by.get(stemOf(n)) ?? new Set()).add(n));
-    return Object.fromEntries([...by].filter(([, m]) => m.size >= 2).map(([s, m]) => [s, [...m].sort()]).sort(([a], [b]) => a.localeCompare(b)));
+    const shared = [...by].filter(([, m]) => m.size >= 2).map(([s, m]): [string, string[]] => [s, [...m].sort()]);
+    return Object.fromEntries(shared.sort(([a], [b]) => a.localeCompare(b)));
 }
 
 if (import.meta.main) {
