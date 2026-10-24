@@ -119,11 +119,18 @@ export function labCarriersFile(o: CarriersFileOptions): { accounts: CarrierEntr
     return { accounts: byAccount.map(p => ({ account: p.account, role: 'mule', cueDir: p.options.cueDir, options: p.options })) };
 }
 
-/** Row to lab carrier for every row the binding holds, H4m's loads on H4p's carrier (the run config's partners). */
+/**
+ * Row to lab carrier for every row the binding holds, H4m's loads on H4p's carrier, and the H4m row
+ * itself (runner/chain.ts asks the run config for H4m's carrier while the ledger has its loads): the
+ * run config's partners.
+ */
 export function carrierPartners(manifest: string, prod: ProductionBinding, names: Readonly<Record<string, string>>): Record<string, string> {
     const bound = labBinding(prod, names);
     const ledger = muleFromLedger(manifest, { form: 'ask', rows: prod.rows, onRequest: prod.onRequest.filter(r => prod.accounts[r]) });
-    return Object.fromEntries(ledger.map(l => [l.row, bound[l.anchor ?? l.row]!]));
+    const out: Record<string, string> = Object.fromEntries(ledger.map(l => [l.row, bound[l.anchor ?? l.row]!]));
+    const load = ledger.find(l => l.anchor !== undefined);
+    if (load) out.H4m = bound[load.anchor!]!;
+    return out;
 }
 
 /** The cue root whose `mule` folder is `muleDir`; throws when the run's mule cue dir is not so named (mule-ledger.ts muleCueDir). */

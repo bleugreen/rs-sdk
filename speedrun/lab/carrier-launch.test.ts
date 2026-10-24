@@ -71,6 +71,7 @@ describe('the lab carriers file', () => {
         const p = carrierPartners(manifest, prod, names);
         expect([p.H1, p.H6, p.H20, p.H4e]).toEqual(['cairn_dm1', 'cairn_dw55', 'cairn_de03', 'cairn_dm1']);
         for (const r of h4mLoadRows(manifest)) expect(p[r]).toBe('cairn_dw55');
+        expect(p.H4m).toBe('cairn_dw55');
     });
 
     test('three lab names in role order; a missing production account throws; the mule dir must be <root>/mule', () => {
