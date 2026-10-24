@@ -69,5 +69,7 @@ else
     case "$BOUND" in *h) secs=$(( ${BOUND%h} * 3600 ));; *m) secs=$(( ${BOUND%m} * 60 ));; *s) secs=${BOUND%s};; *) secs=$BOUND;; esac
     export LAB_TIMEOUT=${LAB_TIMEOUT:-$secs}
 fi
+# PRE=<lab.sh spec>: a script run on the same lab before the rehearsal (e.g. one that takes a fresh
+# SCORED off Tutorial Island with auto-retaliate off: the rehearsal's retaliate gate cannot pass there).
 # ${T[@]+...}: macOS's bash 3.2 calls an empty array unbound under set -u.
-exec ${T[@]+"${T[@]}"} bash speedrun/lab/lab.sh "$SCORED" "$SPEC"
+exec ${T[@]+"${T[@]}"} bash speedrun/lab/lab.sh "$SCORED" ${PRE:+"$PRE"} "$SPEC"
