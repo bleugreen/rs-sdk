@@ -37,7 +37,6 @@ const byId = (items: ReadonlyArray<{ id: number; count: number }>) => {
     return m;
 };
 const before = receivers.map(r => byId(r.sdk.getInventory()));
-const bankBefore = new Map<number, number>();
 const ids = [...ADAMANT_MELEE.map(k => PIECES[k]!.obj), BAR_OBJ.adamantite_bar!];
 
 // Each stand-in accepts the smith's trade whenever it comes (the smith smiths first, a few minutes).
@@ -56,10 +55,7 @@ const finish = await role
         account: smith.name,
         options: { receivers: receivers.map(r => r.name), id: 'lab' },
         log,
-        reportBank: b => {
-            banks.push(b.items);
-            if (banks.length === 1) for (const i of b.items) bankBefore.set(i.id, i.count);
-        },
+        reportBank: b => banks.push(b.items),
         signal: abort.signal,
         state: memoryRoleState()
     })
