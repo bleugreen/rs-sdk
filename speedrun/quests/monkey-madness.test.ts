@@ -1529,6 +1529,7 @@ describe('S15:A cures a poison carried in from S14 (rs/755)', () => {
     });
 
     test('not poisoned: nothing is drunk before or after the swap', async () => {
+        noteSessionStart(0); // the process has run since the client's launch: not a fresh session
         const sdk = new FakeSdk(baseState({ tick: 5000, inventory: [potion(3, 'Antipoison(3)'), potion(4, 'Superantipoison(4)', MM_OBJ.superAntipoison4)] }));
         potionServer(sdk);
         await drive(sdk, cureBeforeSwap(sdk as never), 5);
@@ -1583,6 +1584,13 @@ describe('S15:A cures a poison carried in from S14 (rs/755)', () => {
         expect(sdk.state!.inventory.map(i => i.name)).toEqual(['Superantipoison(3)']);
     });
 
+    test('a run.ts restart on a page that counts on (first tick seen 5000, no fall): fresh, so the plain antipoison is drunk before the swap', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 5000, inventory: [potion(3, 'Superantipoison(4)', MM_OBJ.superAntipoison4), potion(8, 'Antipoison(3)')] }));
+        potionServer(sdk);
+        await drive(sdk, cureBeforeSwap(sdk as never), 10);
+        expect(sdk.sent).toEqual([{ method: 'sendUseItem', args: [8, 1] }]);
+    });
+
     test('a fresh session with no antipoison held: nothing drunk and nothing thrown; not fresh and no hit: nothing drunk', async () => {
         const none = new FakeSdk(baseState({ tick: 5 }));
         await drive(none, cureBeforeSwap(none as never), 5);
@@ -1595,6 +1603,8 @@ describe('S15:A cures a poison carried in from S14 (rs/755)', () => {
 });
 
 describe("the Grand Tree swap leaves the kit complete, however low SCORED arrives (attempt 4: 3 held, 12 asked, one eaten in A's first ticks, 14 at the check)", () => {
+    // Mid-process, not a fresh session: the trade's own shape is under test, not the fresh-session dose.
+    beforeEach(() => noteSessionStart(0));
     const BOW = DEFAULT_OPTIONS.bow;
     const SHARK = MM_OBJ.shark;
     // H12's kit but its sharks, already held, so the trade moves only sharks; the bow and arrows worn from H11r.

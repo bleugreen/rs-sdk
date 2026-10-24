@@ -395,6 +395,7 @@ describe('poison: the published evidence, the shared dose record and the entry c
         };
 
         test('fresh (a launched client under a poison period old) with none seen and a dose held: unknown', () => {
+            noteSessionStart(0); // a launched client counts from 0
             expect(poisonUnknown(fresh(4))).toBe(true);
             expect(poisonUnknown(fresh(POISON_PERIOD - 1))).toBe(true);
             expect(poisonUnknown(fresh(POISON_PERIOD))).toBe(false); // a carried poison has shown its first hit by now
@@ -459,6 +460,7 @@ describe('poison: the published evidence, the shared dose record and the entry c
         });
 
         test('entryCure: not fresh and no hit drinks nothing; fresh with none held drinks nothing and does not throw; a seen hit is cured as before', async () => {
+            noteSessionStart(0); // a process that has run since its client's launch
             const old = new FakeSdk(fresh(300));
             expect(await entryCure(old as never, 'T')).toBe('clean');
             expect(old.sent).toEqual([]);
