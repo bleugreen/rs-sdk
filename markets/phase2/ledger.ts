@@ -95,6 +95,8 @@ export interface AccountSnapshot {
     bankTick: number | null;
     /** Wall ms per tick observed this session, if measured. */
     msPerTick?: number | null;
+    /** Deaths over every session of the run (deaths.ts). */
+    deaths: number;
 }
 
 export interface AccountLine {
@@ -109,6 +111,7 @@ export interface AccountLine {
     bank: { seenTick: number | null; store: number | null; book: { low: number; high: number } | null; unpriced: string[]; unknownCost: string[] };
     carriedStore: number;
     msPerTick: number | null;
+    deaths: number;
 }
 
 export function accountLine(s: AccountSnapshot, v: Valuer, now: Date): AccountLine {
@@ -127,7 +130,8 @@ export function accountLine(s: AccountSnapshot, v: Valuer, now: Date): AccountLi
         coins: { carried, banked, total: carried + (banked ?? 0) },
         bank: { seenTick: s.bankTick, store: store?.value ?? null, book: book ? { low: book.low, high: book.high } : null, unpriced: book?.unpriced ?? [], unknownCost: store?.unknown ?? [] },
         carriedStore: storeValue(s.carried, v.cost).value,
-        msPerTick: s.msPerTick ?? null
+        msPerTick: s.msPerTick ?? null,
+        deaths: s.deaths
     };
 }
 
@@ -151,6 +155,8 @@ export interface TotalsLine {
     bankBook: { low: number; high: number; unpriced: string[] };
     /** Accounts whose bank has not been seen yet: their banked value is missing from the totals. */
     bankUnseen: number;
+    /** Deaths across the accounts over the run. */
+    deaths: number;
 }
 
 /** Totals over each account's latest snapshot (one per account). */
@@ -160,8 +166,10 @@ export function totalsLine(latest: readonly AccountSnapshot[], v: Valuer, sessio
     let coins = 0;
     let bankStore = 0;
     let bankUnseen = 0;
+    let deaths = 0;
     const banks: Stack[] = [];
     for (const s of latest) {
+        deaths += s.deaths;
         const c = coinsOf(s.carried) + coinsOf(s.bank);
         const store = s.bank ? storeValue(s.bank, v.cost).value : 0;
         if (!s.bank) bankUnseen++;
@@ -175,7 +183,7 @@ export function totalsLine(latest: readonly AccountSnapshot[], v: Valuer, sessio
         const st = s.stage === 'method' ? `method:${s.method}` : s.stage;
         stages[st] = (stages[st] ?? 0) + 1;
     }
-    return { kind: 'totals', t: now.toISOString(), final, accounts: latest.length, sessions, stages, byMethod, coins, bankStore, bankBook: bookValue(banks, v.quote), bankUnseen };
+    return { kind: 'totals', t: now.toISOString(), final, accounts: latest.length, sessions, stages, byMethod, coins, bankStore, bankBook: bookValue(banks, v.quote), bankUnseen, deaths };
 }
 
 // ------------------------------------------------------------------ rates from a ledger

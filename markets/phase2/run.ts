@@ -44,6 +44,7 @@ import { DemoMarket, type MarketQuote } from '../lib/market.ts';
 import { numberFlag, parseArgs } from '../methods/probe-sampler.ts';
 import { debugNameOf } from '../methods/trips.ts';
 import { costOf } from '../methods/value.ts';
+import { DeathWatch, type DeathRecord } from './deaths.ts';
 import { buySharks, sellAtExchange, type BookReader } from './errands.ts';
 import { DEFAULT_POLICY, LoginGate } from './gate.ts';
 import { accountLine, COINS_ID, totalsLine, type AccountSnapshot, type Stack, type Valuer } from './ledger.ts';
@@ -101,6 +102,10 @@ class Worker {
     shortSessions = 0;
     thieving = 1;
     logout: Record<string, unknown> | null = null;
+    deaths = 0;
+    watch = new DeathWatch();
+    /** The pickpocket target the account's role last switched to (its 'phase' log line), for the death lines. */
+    target: string | null = null;
     /** First tick of this session and when it was seen: the session's observed ms a tick. */
     private tick0: { tick: number; at: number } | null = null;
 
@@ -118,6 +123,7 @@ class Worker {
         this.sessionNo++;
         this.nextLedgerTick = -1;
         this.tick0 = null;
+        this.watch = new DeathWatch();
     }
 
     msPerTick(s: BotWorldState): number | null {
@@ -374,7 +380,10 @@ export class Runner {
                 signal: stageCtl.signal,
                 roleState: w.roleState,
                 options: roleOptions({ ...w.plan, method: w.method }, this.plan),
-                event: (m, d) => this.event(w, m, d),
+                event: (m, d) => {
+                    if (m.endsWith(': phase') && typeof d?.to === 'string') w.target = d.to;
+                    this.event(w, m, d);
+                },
                 reportBank: items => {
                     w.bank = items;
                     w.bankTick = sdk.getState()?.tick ?? w.bankTick;
@@ -382,7 +391,8 @@ export class Runner {
                 hooks: this.hooks(w, () => x)
             };
             const st = sequenceFor({ method: w.method, hp: w.plan.hp }, this.plan).find(s => !stageDone(s, sdk.getState()!, x.hooks, w.roleState))!;
-            if (st.do !== w.stage) this.event(w, 'stage', { to: st.do, ...('to' in st ? { level: st.to } : {}) }, true);
+            const p = sdk.getState()?.player;
+            if (st.do !== w.stage) this.event(w, 'stage', { to: st.do, ...('to' in st ? { level: st.to } : {}), hp: p?.hp, maxHp: p?.maxHp }, true);
             w.stage = st.do;
             if (st.do === 'admission') w.arrivedAdmission ??= Date.now();
             w.stageCtl = stageCtl;
@@ -504,8 +514,17 @@ export class Runner {
 
     // ------------------------------------------------------------ the ledger
 
+    /** A death: the ledger's `death` line (its cause, hits and Hitpoints trace, deaths.ts) and a loud event. */
+    private died(w: Worker, d: DeathRecord): void {
+        w.deaths++;
+        this.ledger({ kind: 'death', account: w.alias, method: w.method, stage: w.stage, target: w.target, session: w.sessionNo, deaths: w.deaths, ...d });
+        this.event(w, 'died', { cause: d.cause, damage: d.damage, target: w.target, thieving: d.thieving, maxHp: d.maxHp, at: d.at, carriedCoins: d.carriedCoins, food: d.food, deaths: w.deaths }, true);
+    }
+
     private observe(w: Worker, s: BotWorldState): void {
         if (!s.inGame || !s.player) return;
+        const death = w.watch.observe(s);
+        if (death) this.died(w, death);
         // the bank's first published state can be empty while it loads; only a fresh account's really is
         if (s.bank?.isOpen && (s.bank.items.length > 0 || w.bank === null)) {
             w.bank = stacks(s.bank.items);
@@ -515,7 +534,7 @@ export class Runner {
         const msPerTick = w.msPerTick(s);
         if (w.nextLedgerTick >= 0 && s.tick < w.nextLedgerTick) return;
         w.nextLedgerTick = s.tick + this.plan.ledger.everyTicks;
-        const snap: AccountSnapshot = { account: w.alias, method: w.method, stage: w.stage, session: w.sessionNo, tick: s.tick, carried: stacks(s.inventory), bank: w.bank, bankTick: w.bankTick, msPerTick };
+        const snap: AccountSnapshot = { account: w.alias, method: w.method, stage: w.stage, session: w.sessionNo, tick: s.tick, carried: stacks(s.inventory), bank: w.bank, bankTick: w.bankTick, msPerTick, deaths: w.deaths };
         w.latest = snap;
         const line = accountLine(snap, this.valuer, new Date());
         this.ledger(line as unknown as Record<string, unknown>);

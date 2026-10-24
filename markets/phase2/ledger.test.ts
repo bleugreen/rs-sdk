@@ -24,6 +24,7 @@ const snap = (o: Partial<AccountSnapshot> = {}): AccountSnapshot => ({
     carried: [COINS(1_234), SHARK(5)],
     bank: [COINS(50_000), SHARK(100), IRON(10)],
     bankTick: 450,
+    deaths: 0,
     ...o
 });
 
@@ -61,7 +62,8 @@ describe('ledger lines', () => {
             coins: { carried: 1_234, banked: 50_000, total: 51_234 },
             bank: { seenTick: 450, store: 50_000 + 30_000 + 170, book: { low: 50_000 + netOfFee(800), high: 50_000 + netOfFee(1_100) }, unpriced: ['Shark'], unknownCost: [] },
             carriedStore: 1_234 + 1_500,
-            msPerTick: null
+            msPerTick: null,
+            deaths: 0
         });
         expect(JSON.parse(JSON.stringify(l))).toEqual(l);
     });
@@ -73,7 +75,7 @@ describe('ledger lines', () => {
     });
 
     test('totals sum the accounts by method and price the merged banks once against the bids', () => {
-        const a = snap({ bank: [COINS(100), IRON(800)] });
+        const a = snap({ bank: [COINS(100), IRON(800)], deaths: 2 });
         const b = snap({ account: 'acct02', method: 'iron', stage: 'mining', carried: [COINS(5)], bank: [IRON(800)] });
         const c = snap({ account: 'acct03', method: 'guards', stage: 'hp', carried: [], bank: null, bankTick: null });
         const t = totalsLine([a, b, c], valuer, { pending: 1, inWorld: 2 }, now, true);
@@ -83,6 +85,7 @@ describe('ledger lines', () => {
         expect(t.coins).toBe(1_234 + 100 + 5);
         expect(t.bankStore).toBe(100 + 1_600 * 17);
         expect(t.bankUnseen).toBe(1);
+        expect(t.deaths).toBe(2);
         expect(t.stages).toEqual({ 'method:knights': 1, mining: 1, hp: 1 });
         expect(t.byMethod).toEqual({ knights: { accounts: 1, coins: 1_334, bankStore: 100 + 800 * 17 }, iron: { accounts: 1, coins: 5, bankStore: 800 * 17 }, guards: { accounts: 1, coins: 0, bankStore: 0 } });
         // 1,600 ore against a 1,000-deep bid: the whole side, once, not 800 twice
