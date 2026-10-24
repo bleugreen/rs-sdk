@@ -20,8 +20,8 @@ before that account's first login. If the poller moves machines, the file moves 
 Every tool that writes data from live reads (`poll`, `census`, `ge-history`, `players`, `searches`, `bids`,
 `timeline`) **refuses to start** when the list is missing or unreadable. It proceeds without one only under
 `--placeholder-data` or `MARKETS_ALLOW_NO_ACCOUNTS=1`, which are for tests and CI on placeholder data. An empty list
-file counts as present. Every listed name, and every `cairn_*` name, is dropped from the tools' output, files and
-console alike. Before committing data, run `bun markets/tools/check-excluded.ts` where the list exists: it scans
+file counts as present. Every listed name, and every `cairn_*` and `money_*` name and markets' main account whatever
+the list holds (`ALWAYS_EXCLUDED`), is dropped from the tools' output, files and console alike. Before committing data, run `bun markets/tools/check-excluded.ts` where the list exists: it scans
 `docs/markets` and `markets` and exits 1 on any listed name.
 
 ## lib/: readers
@@ -49,6 +49,7 @@ Tests use recorded replies in `lib/fixtures/` (2026-10-22 ~22:1xZ) and never the
 | `searches.ts` | 1 per query | `bank-searches-<stamp>.json` and an item-by-item diff of named accounts against an earlier file. |
 | `timeline.ts` | none | Each leader's totals and stack growth across every saved read. |
 | `bids.ts` | 1 | `bids-<stamp>.json`: every open GE bid (units, coins committed, mean and best bid, store cost, 90-day volume). |
+| `book-watch.ts` | 1 per item every 10 min | `--out` JSON lines: a few items' quotes over hours (default the uncut gems and runite), with hourly and daily history at the start and end. |
 | `check-excluded.ts [PATH...]` | none | Scans files for listed names; exits 1 on a hit. |
 
 All tools default to writing `docs/markets/data/`; pass `--out` to write elsewhere.

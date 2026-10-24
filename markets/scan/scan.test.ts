@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { parseConfigBlocks, parseInvs, parseMapSection, parseMineRows, parseNpcShops, parseObjs, parsePickpockets, parseScriptShops, parseStalls, type Content } from './content.ts';
 import { mergeRows } from './ge-book.ts';
+import { atSite, backoff, insideRepo, readSites, SITES } from './headcount.ts';
+import { families, sessionsOf, stemOf, summariseSite, type Read } from './headcount-report.ts';
 import { askLines, bidLines, buyFromShop, highAlch, pickpocketExpectation, sellToShop, shopAccepts, shopLines, shopValue, thievingLines } from './methods.ts';
 import { DEFAULT_RANK, marketPrice, mineRates, respawnAt } from './rank.ts';
 import { fletchingRecipes, priceRecipe, smeltingRecipes, smithingRecipes, statChance } from './recipes.ts';
@@ -235,5 +237,62 @@ describe('mining rates', () => {
         const [m] = parseMineRows('[i]\ntable=mining_table\ndata=rock,a\ndata=rock_output,iron_ore\ndata=rock_successchance,300,300\ndata=rock_respawnrate,20\n');
         const r = mineRates({ ...m!, count: 124, sites: { a: 16 } }, DEFAULT_RANK);
         expect(r.perLogin).toBeCloseTo(9000 / (3 + 40 / 27));
+    });
+});
+
+describe('headcount sites', () => {
+    const shilo = SITES.find(s => s.name === 'Shilo gem rocks')!;
+    test('a player counts within the radius of any rock, on its plane only', () => {
+        expect(atSite({ x: 2820 - 8, z: 2998, level: 0 }, shilo)).toBe(true);
+        expect(atSite({ x: 2820 - 9, z: 2998, level: 0 }, shilo)).toBe(false);
+        expect(atSite({ x: 2825 + 8, z: 3003 + 8, level: 0 }, shilo)).toBe(true);
+        expect(atSite({ x: 2823, z: 3000, level: 1 }, shilo)).toBe(false);
+    });
+
+    test('our accounts are counted, never named', () => {
+        const positions = [
+            { name: 'Tygem020', x: 2938, z: 9883, level: 0 },
+            { name: 'Money Placeholder', x: 2939, z: 9883, level: 0 },
+            { name: 'Placeholder One', x: 2940, z: 9884, level: 0 },
+            { name: 'Elsewhere', x: 3200, z: 3200, level: 0 },
+        ];
+        const ex = { excludes: (n: string) => /^(money |placeholder one)/i.test(n) };
+        const sites = readSites(positions, ex);
+        expect(sites["Heroes' Guild runite"]).toEqual({ ours: 2, rivals: [['Tygem020', 2938, 9883]] });
+        expect(sites['Shilo gem rocks']).toEqual({ ours: 0, rivals: [] });
+        expect(JSON.stringify(sites)).not.toMatch(/money|placeholder/i);
+    });
+
+    test('backoff doubles to a 15-minute ceiling', () => {
+        expect([1, 2, 3, 4, 5].map(f => backoff(60, f))).toEqual([120, 240, 480, 900, 900]);
+    });
+
+    test('raw polls may not be written inside the repository', () => {
+        expect(insideRepo('/repo/docs/markets/data', '/repo')).toBe(true);
+        expect(insideRepo('/home/u/.cache/rs-markets', '/repo')).toBe(false);
+    });
+});
+
+describe('headcount report', () => {
+    const at = (m: number) => new Date(Date.UTC(2026, 9, 24, 4, m)).toISOString();
+    const read = (m: number, rivals: string[], ours = 0): Read => ({ at: at(m), online: 1200, sites: { S: { ours, rivals: rivals.map(n => [n, 0, 0]) } } });
+
+    test('sessions join gaps up to the limit', () => {
+        expect(sessionsOf([0, 1, 2, 5, 6, 20], 2)).toEqual([[0, 6], [20, 20]]);
+        expect(sessionsOf([0, 1, 2, 5, 6, 20], 1)).toEqual([[0, 2], [5, 6], [20, 20]]);
+    });
+
+    test('dwell, sessions, co-arrivals and our count per site', () => {
+        const reads = [read(0, ['A']), read(1, ['A', 'B', 'C'], 1), read(2, ['A', 'B', 'C'], 2), read(3, []), read(4, []), read(5, ['A'])];
+        const s = summariseSite('S', reads, 1);
+        expect(s.byRival.map(r => [r.name, r.reads, r.sessions, r.longestMin])).toEqual([['A', 4, 2, 2], ['B', 2, 1, 1], ['C', 2, 1, 1]]);
+        expect(s.coArrivals).toEqual([{ at: at(1), names: ['B', 'C'] }]);
+        expect(s.ours).toEqual({ min: 0, mean: 0.5, max: 2 });
+        expect(s.hourly).toEqual([{ hour: '2026-10-24T04Z', reads: 6, distinct: 3, meanRivals: 8 / 6, meanOurs: 0.5 }]);
+    });
+
+    test('families group names by their stem', () => {
+        expect(stemOf('Tygem020')).toBe('tygem');
+        expect(families(['Tygem020', 'Tygem050', 'U238', 'Croesus'])).toEqual({ tygem: ['Tygem020', 'Tygem050'] });
     });
 });

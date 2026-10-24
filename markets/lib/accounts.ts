@@ -7,7 +7,8 @@
  * the path in MARKETS_ACCOUNTS_FILE. Every tool that writes shared data from live reads takes its exclusion from
  * writerExclusion(): it refuses to start when the list is missing or unreadable (fail closed), unless
  * `--placeholder-data` or MARKETS_ALLOW_NO_ACCOUNTS=1 says the output is placeholder data for tests or CI.
- * An empty file counts as present. `cairn_*` names are always excluded too.
+ * An empty file counts as present. Our own naming schemes are always excluded too, list or no list (ALWAYS_EXCLUDED):
+ * the fleet's `cairn_*`, and markets' `money_*` and `moneybags`, so a stale list file can't leak one of them.
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -44,6 +45,11 @@ export function readAccountsFile(path: string): string[] | null {
     }
 }
 
+/** Name keys excluded whatever the list holds: a prefix (ending in the key's space for `_`) or a whole name. */
+export const ALWAYS_EXCLUDED = { prefixes: ['cairn ', 'money '], names: ['moneybags'] } as const;
+
+export const alwaysExcluded = (key: string): boolean => ALWAYS_EXCLUDED.prefixes.some(p => key.startsWith(p)) || (ALWAYS_EXCLUDED.names as readonly string[]).includes(key);
+
 export class Exclusion {
     private readonly names: Set<string>;
     constructor(
@@ -60,7 +66,7 @@ export class Exclusion {
 
     excludes(name: string): boolean {
         const key = playerNameKey(name);
-        return key.startsWith('cairn ') || this.names.has(key);
+        return alwaysExcluded(key) || this.names.has(key);
     }
 
     keep<T extends { name: string }>(rows: T[]): T[] {

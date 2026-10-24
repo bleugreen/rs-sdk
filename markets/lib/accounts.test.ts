@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { AccountsListMissing, loadExclusion, parseAccounts } from './accounts.ts';
+import { ALWAYS_EXCLUDED, AccountsListMissing, loadExclusion, parseAccounts } from './accounts.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'markets-accounts-'));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
@@ -30,6 +30,12 @@ describe('loadExclusion', () => {
             expect(ex.excludes('Cairn H61')).toBe(true);
             expect(ex.excludes('nickai3')).toBe(false);
         }
+    });
+
+    test('always excludes our naming schemes, even with an empty list', () => {
+        const ex = loadExclusion({ path: file('stale.txt', ''), env: noEnv });
+        for (const ours of ['money_placeholder', 'Money Placeholder', ...ALWAYS_EXCLUDED.names, 'cairn_e01']) expect(ex.excludes(ours)).toBe(true);
+        for (const rival of ['moneymaker', 'Moneybagsx', 'tygem020', 'Croesus']) expect(ex.excludes(rival)).toBe(false);
     });
 
     test('excludes every listed name in board or display form', () => {
