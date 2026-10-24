@@ -30,7 +30,7 @@ import { muleDelivery } from '../helpers/mule-itinerary';
 import { PRE_REQUEST_TILES } from '../helpers/mule-readiness';
 import { INVENTORY_SIZE } from '../lib/items';
 import { questDone, type QuestKey } from '../lib/quests';
-import type { GiveSpec } from '../lib/trade';
+import { sameName, sawTradeAccepted, tradeOf, type GiveSpec } from '../lib/trade';
 import { tickMs } from '../lib/wait';
 import { skillLevel } from '../lib/world';
 import * as cooksAssistant from '../quests/cooks-assistant';
@@ -67,13 +67,14 @@ import * as woodcutting from '../skills/woodcutting';
 import { MANIFEST, parseLedger, type LedgerRow } from '../tools/slot-ledger';
 import { h4mLoadRows, parseFallbacks } from '../helpers/mule-ledger';
 import { XP_RATE, xpForLevel } from '../lib/xp';
-import type { AttemptRecord } from './attempt-record';
+import type { AttemptRecord, Marks } from './attempt-record';
 import { askFor, handOffFrom, handOffStep, planHandOff, rollbackWitnesses, type HandOffPlan, type Meeting } from './handoff';
 import { legById, legsFor, splitLeg, type LegStep } from './legs';
 import { type Probe, stepProbes } from './resume';
 import { scoredLoginStep, scoredLogoutStep } from './scored-relog';
 import { RelogBudget } from './relog-budget';
 import type { ObservedCheck, Step, StepContext } from './step';
+import { guardWait, loggedActs } from './wait-guard';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyStep = Step<any>;
@@ -192,7 +193,7 @@ export interface CueSink {
     stop(scope: CueScope, ctx: StepContext<unknown>, o?: { final?: boolean; failed?: boolean }): void;
     /** Rewrite `scope`'s open delivery cue now, just before its trade; record-only sinks may omit this. */
     refresh?(scope: CueScope): boolean;
-    /** A cued row the chain skips without opening it (CueKeeper.skip); record-only sinks may omit this. */
+    /** A cued row the chain skips without opening it (an H4m load at Prayer 99, a kit row served or wanting nothing: CueKeeper.skip); record-only sinks may omit this. */
     skip?(scope: CueScope, o: { final: boolean }): void;
     /** Runtime ownership of a module's direct writer; record-only sinks may omit this. */
     writer?(scope: CueScope): runecraft.CueSink;
@@ -453,17 +454,113 @@ export function muleCued(step: ChainStep, row: string, cues: CueSink, o: { final
  * carrier stands until the launcher ends; every earlier row of that carrier stops plain. 'Last' is over
  * the steps present, so an alternative or fallback the ledger in force leaves out never counts.
  */
-export function cueMuleRows(chain: readonly ChainStep[], rows: ReadonlyMap<ChainStep, string>, carrierOf: (row: string) => string, cues: CueSink): ChainStep[] {
+export function cueMuleRows(
+    chain: readonly ChainStep[], rows: ReadonlyMap<ChainStep, string>, carrierOf: (row: string) => string, cues: CueSink,
+    o: { record?: Marks; wants?: Readonly<Record<string, KitWants>> } = {}
+): ChainStep[] {
     const last = new Map<string, ChainStep>();
     for (const s of chain) {
         const row = rows.get(s);
         if (row !== undefined) last.set(carrierOf(row), s);
     }
     const finals = new Set(last.values());
+    const wants = o.wants ?? KIT_WANTS;
     return chain.map(s => {
         const row = rows.get(s);
-        return row === undefined ? s : muleCued(s, row, cues, { final: finals.has(s) });
+        if (row === undefined) return s;
+        const final = { final: finals.has(s) };
+        const kit = KIT_SEGMENTS[row] === s.name ? wants[row] : undefined;
+        return kit ? kitCued(s, row, cues, { wants: kit, partner: carrierOf(row), ...(o.record ? { record: o.record } : {}) }, final) : muleCued(s, row, cues, final);
     });
+}
+
+/**
+ * A kit row's want: whether its segment's own plan still trades anything from `s`. `served`: the row is
+ * recorded served this attempt, so its consumable lines count as met at the serve (segments.ts `consumable`).
+ */
+export type KitWants = (s: BotWorldState, o: { served: boolean }) => boolean;
+
+/** Each KIT_SEGMENTS row's want, the module's own: S05's h4Wants (h4Plan), S15's h12Wants (h12Plan, gtSwap's default bow). */
+export const KIT_WANTS: Readonly<Record<string, KitWants>> = {
+    H4: (s, o) => doricsQuest.h4Wants(s, { served: o.served }),
+    H12: (s, o) => {
+        const opts = { bow: monkeyMadness.DEFAULT_OPTIONS.bow, served: o.served };
+        return monkeyMadness.h12Wants(s, opts);
+    },
+};
+
+/** What kitCued reads of a kit row before its cue. */
+export interface KitRow {
+    wants: KitWants;
+    /** The row's carrier, the segment's trade partner. */
+    partner: string;
+    /** The attempt record's hand-off rows: the row is marked on its trade's 'Accepted trade.' and read before its cue. */
+    record?: Marks;
+}
+
+export type KitCueDecision = { cue: true } | { cue: false; why: string } | { refuse: string };
+
+/**
+ * Whether a kit row's segment opens its cue (and waits for its carrier's readiness): only when the row
+ * is not yet served this attempt and the module's plan wants something. Served, or nothing wanted:
+ * no cue and no wait. Served and still wanting (a kit eaten below its count after the swap): a named
+ * stop before the body, since a carrier serves its row once and a reopened cue would only wait out
+ * READY_MAX_TICKS (attempt 4).
+ */
+export function kitCueDecision(row: string, served: boolean, wants: boolean): KitCueDecision {
+    if (served && wants) return { refuse: `${row} served this attempt and the plan still wants more: a carrier serves its row once, so no cue and no wait` };
+    if (served) return { cue: false, why: `${row} served this attempt: no cue, no wait` };
+    if (!wants) return { cue: false, why: `${row} plan wants nothing: no cue, no wait` };
+    return { cue: true };
+}
+
+/**
+ * Call `mark` once with the tick the server says a trade with `partner` completed: the 'Accepted
+ * trade.' after a confirm screen with it (lib/trade.ts sawTradeAccepted). Returns the unsubscribe.
+ */
+export function markOnAccept(sdk: Pick<StepContext<unknown>['sdk'], 'onStateUpdate'>, partner: string, mark: (tick: number) => void): () => void {
+    let confirmTick = -1;
+    let marked = false;
+    return sdk.onStateUpdate(s => {
+        if (marked) return;
+        const t = tradeOf(s);
+        if (t.isOpen && t.screen === 'confirm' && sameName(t.partner, partner)) {
+            if (confirmTick < 0) confirmTick = s.tick;
+            return;
+        }
+        if (confirmTick >= 0 && sawTradeAccepted(s, confirmTick)) {
+            marked = true;
+            mark(s.tick);
+        }
+    });
+}
+
+/**
+ * A kit row's segment (KIT_SEGMENTS) with its {row, mule} cue as muleCued puts it, decided first by
+ * kitCueDecision: a skipped cue writes one note row naming why, tells the sink (CueSink.skip) and runs
+ * the segment bare. The row is marked served in the attempt record the moment its trade completes,
+ * so a resume after a step that failed past its swap (attempt 4) knows the carrier is done.
+ */
+export function kitCued(step: ChainStep, row: string, cues: CueSink, kit: KitRow, o: { final?: boolean } = {}): ChainStep {
+    const cued = muleCued(step, row, cues, o);
+    const scope = muleScope(row);
+    type Entry = (ctx: StepContext<unknown>) => Promise<void>;
+    const wrap = (withCue: Entry, bare: Entry): Entry => async ctx => {
+        const s = ctx.sdk.getState();
+        const served = !!kit.record?.has(row);
+        const d = kitCueDecision(row, served, s ? kit.wants(s, { served }) : true);
+        if ('refuse' in d) throw new Error(d.refuse);
+        const off = kit.record ? markOnAccept(ctx.sdk, kit.partner, tick => kit.record!.mark(row, tick)) : () => {};
+        try {
+            if (d.cue) return await withCue(ctx);
+            noteRow(ctx, `(cue) ${row} skipped`, { why: d.why, row, segment: step.name });
+            cues.skip?.(scope, { final: o.final ?? false });
+            await bare(ctx);
+        } finally {
+            off();
+        }
+    };
+    return { ...cued, run: wrap(cued.run, step.run), resume: wrap(cued.resume ?? cued.run, step.resume ?? step.run) };
 }
 
 /**
@@ -481,7 +578,7 @@ export const FAMILY_CUES = { S03: { step: 'S03', family: 'fmrow' }, S04: { step:
  */
 export function cueAround(step: ChainStep, scope: CueScope, cues: CueSink, stop: { final?: boolean } = { final: true }): ChainStep {
     const wrap = (f: (ctx: StepContext<unknown>) => Promise<void>) => async (ctx: StepContext<unknown>) => {
-        await cues.open(scope, ctx, { fresh: true });
+        await openGuarded(scope, ctx, cues, { fresh: true });
         try {
             await f(ctx);
         } catch (e) {
@@ -655,6 +752,15 @@ export function missingStep(id: string, name: string, owner: string, quest?: Que
     };
 }
 
+/**
+ * `scope`'s cue opened with SCORED's wait for it (a delivery row's carrier readiness, the beacon frames)
+ * under the wait guard (runner/wait-guard.ts): a death ends it as one, and SCORED eats and cures meanwhile.
+ */
+export function openGuarded(scope: CueScope, ctx: StepContext<unknown>, cues: CueSink, o: { fresh: boolean }): Promise<void> {
+    const during = `waiting for the ${scope.step}/${scope.family} cue`;
+    return guardWait(ctx, during, () => cues.open(scope, ctx, o), loggedActs(ctx, during));
+}
+
 /** `step` with `scope`'s cue opened before `run` (when not open) and before every `resume` (fresh). */
 export function withCue(step: ChainStep, scope: CueScope, cues: CueSink): ChainStep {
     const s = step;
@@ -662,11 +768,11 @@ export function withCue(step: ChainStep, scope: CueScope, cues: CueSink): ChainS
         ...s,
         cue: scope,
         run: async ctx => {
-            await cues.open(scope, ctx, { fresh: false });
+            await openGuarded(scope, ctx, cues, { fresh: false });
             await s.run(ctx);
         },
         resume: async ctx => {
-            await cues.open(scope, ctx, { fresh: true });
+            await openGuarded(scope, ctx, cues, { fresh: true });
             await (s.resume ?? s.run)(ctx);
         },
     };
@@ -917,6 +1023,7 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         dialogue: 'burst',
         eating: monkeyMadness.SEGMENT_EATING,
         ...(h12Givers.length ? { kitFrom: h12Givers[0]! } : {}),
+        ...(o.record ? { kitServed: () => o.record!.handOffs.has('H12') } : {}),
         ...(h12oTopUp(cfg) ? { topUpFrom: h12oTopUp(cfg)! } : {}),
     })).map(s => (s.name === KIT_SEGMENTS.H12 && inLedger.has('H12') ? mule(askedOnTrade(s, handOffFrom(manifest, 'H12'), partner('H12'), muleCueDir(cfg)), 'H12') : s));
     const atM = s15.findIndex(s => s.name.startsWith('S15:M-'));
@@ -982,7 +1089,7 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         ...steps('S03', firemaking.steps({ tiles: cfg.firemakingTiles, supply: 'row' })).map(s => cueAround(s, FAMILY_CUES.S03, o.cues)),
         ...steps('S04', pick('magic', magic.steps({ untilLevel: 59, giver: cfg.rings.giver, ...(cfg.rings.loads ? { loads: cfg.rings.loads } : {}) }), [magic.S04_ID])).map(s => cueAround(s, FAMILY_CUES.S04, o.cues)),
         L('T04-05'),
-        ...steps('S05', doricsQuest.steps(kitFrom('H4'))).map(s => (s.name === KIT_SEGMENTS.H4 ? mule(s, 'H4') : s)),
+        ...steps('S05', doricsQuest.steps({ ...kitFrom('H4'), ...(o.record ? { kitServed: () => o.record!.handOffs.has('H4') } : {}) })).map(s => (s.name === KIT_SEGMENTS.H4 ? mule(s, 'H4') : s)),
         L('T05-06'),
         // Runecraft drives the writer's turns; the run owns its lifetime, including aborts.
         ...steps('S06', pick('runecraft', runecraft.steps({ untilLevel: 44, cueDir: cfg.cueDir, deps: rcDeps }), ['S06 runecraft'])),
@@ -1115,7 +1222,7 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
     }
     const tileOf = startTiles(cfg);
     const h4mLoads = new Set(h4m?.rows ?? []);
-    return cueMuleRows(out, muleRows, partner, o.cues).map(s => (s.kind === 'handoff' && h4mLoads.has(s.id) ? skippedAtPrayer99(s, o.cues) : s)).map(censused).map(s => {
+    return cueMuleRows(out, muleRows, partner, o.cues, o.record ? { record: o.record.handOffs } : {}).map(s => (s.kind === 'handoff' && h4mLoads.has(s.id) ? skippedAtPrayer99(s, o.cues) : s)).map(censused).map(s => {
         const t = tileOf(s.name);
         return t ? { ...s, startTile: t } : s;
     });
