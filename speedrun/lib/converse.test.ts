@@ -504,12 +504,15 @@ const you = (lastDamageTick = -1) => ({ hp: 30, maxHp: 50, combat: { inCombat: f
  * An NPC's talk as the engine runs it: tickServer's paging (at most 5 dialogue clicks a tick, a continue refused at a
  * choice) plus the script's life. Page 0 shows at once (the talk click already went out); an interact (a re-engage)
  * opens page 0 again on the next tick; the click on the last page ends the script, closing the chat and running
- * `done`. Reaching a page index listed in `cuts` (each entry once) closes the chat on that tick instead, with a
- * poison hitsplat unless `hit` is false, and drops the script and the clicks owed to it (Player.closeModal).
+ * `done`. Reaching a page index listed in `cuts` (each entry once) closes the chat on that tick instead and drops
+ * the script and the clicks owed to it (Player.closeModal): the upkeep's eat answering a poison hit `hitLead` (2)
+ * ticks earlier, or with `hit` false some other close. `gaps[i]`: the script closes the chat for that many ticks
+ * before page i (if_close; p_delay), then shows it.
  */
-function npcTalk(sdk: FakeSdk, pages: DialogState[], o: { cuts?: number[]; hit?: boolean; done?: (tick: number) => Partial<BotWorldState> } = {}) {
+function npcTalk(sdk: FakeSdk, pages: DialogState[], o: { cuts?: number[]; hit?: boolean; hitLead?: number; gaps?: Record<number, number>; done?: (tick: number) => Partial<BotWorldState> } = {}) {
     let i = 0;
     let opening = false;
+    let gapLeft = 0;
     const cuts = [...(o.cuts ?? [])];
     const owed: Array<'continue' | 'option'> = [];
     const interacts: number[] = [];
@@ -529,7 +532,13 @@ function npcTalk(sdk: FakeSdk, pages: DialogState[], o: { cuts?: number[]; hit?:
                 await flush();
                 const tick = sdk.state!.tick + 1;
                 let patch: Partial<BotWorldState> = {};
-                if (i < 0) {
+                if (gapLeft > 0) {
+                    owed.length = 0;
+                    if (--gapLeft > 0) {
+                        sdk.tick({ dialog: closed });
+                        continue;
+                    }
+                } else if (i < 0) {
                     owed.length = 0;
                     if (opening) i = 0;
                 } else {
@@ -544,13 +553,17 @@ function npcTalk(sdk: FakeSdk, pages: DialogState[], o: { cuts?: number[]; hit?:
                         } else if (cut >= 0) {
                             cuts.splice(cut, 1);
                             i = -1;
-                            if (o.hit !== false) patch = { ...patch, player: you(tick) };
+                            if (o.hit !== false) patch = { ...patch, player: you(tick - (o.hitLead ?? 2)) };
+                        } else if (o.gaps?.[i]) {
+                            gapLeft = o.gaps[i]!;
+                            owed.length = 0;
+                            break;
                         }
                     }
                     if (i < 0) owed.length = 0;
                 }
                 opening = false;
-                sdk.tick({ ...patch, dialog: i >= 0 ? pages[i]! : closed });
+                sdk.tick({ ...patch, dialog: i >= 0 && gapLeft === 0 ? pages[i]! : closed });
             }
         },
     };
@@ -573,10 +586,10 @@ describe('converse re-engage (a chat closed mid-talk with until unmet)', () => {
         const srv = npcTalk(sdk, narnodeOrders(), { cuts: [2], done: () => ({ inventory: [ORDERS] }) });
         await srv.run(40);
         const r = await p;
-        // Pages 1-2 at ticks 2-3, the hit's close at 4, the re-engage idle (6) ticks on at 10, the replay from 11.
+        // Pages 1-2 at ticks 2-3, the hit at 2, the eat's close at 4, the re-engage idle (6) ticks on at 10, the replay from 11.
         expect(srv.interacts).toEqual([10]);
         expect(r).toMatchObject({ ok: true, opened: true, pages: 2 + 14, reengages: 1, firstTick: 2, endTick: 25, ticks: 24 });
-        expect(r.transcript.filter(l => !/page:/.test(l))).toEqual(['[10] re-engage 1: chat closed at 4 with until unmet (hit at 4)']);
+        expect(r.transcript.filter(l => !/page:/.test(l))).toEqual(['[10] re-engage 1: chat closed at 4 with until unmet (hit at 2)']);
         expect(holdsOrders(sdk.state!)).toBe(true);
     });
 
@@ -663,7 +676,38 @@ describe('converse re-engage (a chat closed mid-talk with until unmet)', () => {
         await npcTalk(sdk, narnodeOrders(), { cuts: [2] }).run(40);
         const r = await p;
         expect(clicks).toBe(2);
-        expect(r).toMatchObject({ ok: false, reengages: 2, reason: 're-engage 2 opened no dialogue in 5 ticks (chat closed at 4, hit at 4)' });
+        expect(r).toMatchObject({ ok: false, reengages: 2, reason: 're-engage 2 opened no dialogue in 5 ticks (chat closed at 4, hit at 2)' });
+    });
+
+    test('a slow until (20 ticks after the close) with a hit at the close and the tick after is no cut: ok, never re-engaged', async () => {
+        // A poison tick waits out the talk (Player.canAccess) and lands as the chat closes; here at 15 and 16.
+        const sdk = new FakeSdk(baseState({ tick: 1, player: you() }));
+        let endedAt = -1;
+        const p = talk(sdk, { idle: 4, until: s => endedAt >= 0 && s.tick >= endedAt + 20 });
+        const srv = npcTalk(sdk, conts('d', 13), { done: tick => { endedAt = tick; return { player: you(tick) }; } });
+        const late = sdk.onStateUpdate(s => { if (endedAt >= 0 && s.tick === endedAt + 1 && s.player!.combat.lastDamageTick !== s.tick) sdk.push({ player: you(s.tick) }); });
+        await srv.run(40);
+        late();
+        expect(await p).toMatchObject({ ok: true, endTick: 35 });
+        expect(srv.interacts).toEqual([]);
+    });
+
+    test('with a shape followed it alone decides: finished, a hit before the close is no cut; a scripted gap after a state page is waited out', async () => {
+        const finished = new FakeSdk(baseState({ tick: 1, player: you() }));
+        let endedAt = -1;
+        const p = talk(finished, { shape: '13c', burst: true, idle: 4, until: s => endedAt >= 0 && s.tick >= endedAt + 20 });
+        const a = npcTalk(finished, conts('d', 13), { done: tick => { endedAt = tick; return { player: you(tick - 1) }; } });
+        await a.run(40);
+        expect(await p).toMatchObject({ ok: true, reengages: undefined });
+        expect(a.interacts).toEqual([]);
+
+        // Alrena (plague-city '3c, state, 3c', idle 1): if_close, p_delay(2) twice, the gas mask, more pages.
+        const alrena = new FakeSdk(baseState({ tick: 1, player: you() }));
+        const q = talk(alrena, { shape: '3c, state, 3c', burst: true, idle: 1 });
+        const b = npcTalk(alrena, [...conts('a', 3), cont('mask'), ...conts('b', 3)], { gaps: { 4: 4 }, done: () => ({ inventory: [ORDERS] }) });
+        await b.run(30);
+        expect(await q).toMatchObject({ ok: true, pages: 7 });
+        expect(b.interacts).toEqual([]);
     });
 
     test('no until, or until held: a closed chat is over as before and never re-engaged', async () => {
