@@ -1238,3 +1238,28 @@ describe('S11a: the gnome course to Agility 25', () => {
         expect(s11a[0]!.postconditions(at(25), {})).toBe(true);
     });
 });
+
+import { s14CannonSteps } from './chain';
+import { cannonSessionStep as s14Plain } from '../skills/ranged';
+
+describe('S14 rehearsal Attack floor (REHEARSAL_S14_MIN_ATTACK)', () => {
+    const attack = (n: number) => ({ ...baseState(), skills: baseState().skills.map(k => (k.name === 'Attack' ? { ...k, baseLevel: n, level: n } : k)) }) as BotWorldState;
+    test('unset: the plain cannon session, same name and preconditions', () => {
+        const [s] = s14CannonSteps({});
+        expect(s!.name).toBe('S14 cannon session');
+        for (const n of [93, 94, 99]) expect(s!.preconditions(attack(n), {} as never)).toEqual(s14Plain().preconditions(attack(n), {} as never));
+    });
+    test('set to 94: the floor is 94, the name unchanged, and a run writes the substitute note first', async () => {
+        const [s] = s14CannonSteps({ REHEARSAL_S14_MIN_ATTACK: '94' });
+        expect(s!.name).toBe('S14 cannon session');
+        for (const n of [93, 94, 99]) expect(s!.preconditions(attack(n), {} as never)).toEqual(s14Plain({ s14MinAttack: 94 }).preconditions(attack(n), {} as never));
+        const rows: any[] = [];
+        const ctx = { sdk: { getState: () => ({ tick: 7 }) }, log: { runId: 'r', append: (r: any) => rows.push(r) }, session: { name: 'x', sessionId: 's' } } as any;
+        await s!.run(ctx).catch(() => {});
+        expect(rows[0]?.step).toBe('(substitute) S14: SUBSTITUTE Attack floor');
+        expect(rows[0]?.meta?.minAttack).toBe(94);
+    });
+    test('an invalid value refuses at chain build', () => {
+        expect(() => s14CannonSteps({ REHEARSAL_S14_MIN_ATTACK: '0' })).toThrow(/1 to 99/);
+    });
+});

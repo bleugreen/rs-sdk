@@ -608,6 +608,11 @@ export async function runSession(sdk: RangedSdk, o: SessionOptions): Promise<Ses
 export interface RangedOptions extends SpecOptions {
     /** S14's target (default 50: the magic shortbow in S15). */
     s14To?: number;
+    /**
+     * S14's Attack floor (default 99: the cannon rolls the wielded scimitar's accuracy, and the run
+     * reaches S14 at Attack 99). Lowered only for a rehearsal, through rehearsalS14MinAttack.
+     */
+    s14MinAttack?: number;
     /** S27's thresholds (default Defence 99, the bow from Ranged 70, Ranged 99, Hitpoints 99). */
     finish?: Partial<FinishThresholds>;
     site?: { x: number; z: number; level: number };
@@ -729,6 +734,17 @@ export function noteSession(ctx: Partial<Pick<StepContext<unknown>, 'log' | 'ses
     });
 }
 
+/**
+ * A rehearsal's S14 Attack floor from REHEARSAL_S14_MIN_ATTACK (an integer 1-99); undefined when unset.
+ * Never set for SCORED's run: a rehearsal that skipped Fight Arena's Attack reward reaches S14 below 99.
+ */
+export function rehearsalS14MinAttack(env: Readonly<Record<string, string | undefined>> = process.env): number | undefined {
+    const v = env.REHEARSAL_S14_MIN_ATTACK;
+    if (v === undefined || v === '') return undefined;
+    if (!/^\d+$/.test(v) || Number(v) < 1 || Number(v) > 99) throw new Error(`REHEARSAL_S14_MIN_ATTACK=${v}: an Attack level from 1 to 99`);
+    return Number(v);
+}
+
 export function cannonSessionStep(opts: RangedOptions = {}): Step<any> {
     const to = opts.s14To ?? 50;
     const site = opts.site ?? SPIDERS;
@@ -747,7 +763,8 @@ export function cannonSessionStep(opts: RangedOptions = {}): Step<any> {
             if (!s.inGame || !s.player) return 'not in game';
             if (!questDone('mcannon')(s)) return 'Dwarf Cannon is not complete (the quest tab does not show it complete)';
             if (!nearSite(s, site)) return `not at the poison spiders (at ${pos(s).x},${pos(s).z}; the leg T13-14 ends at ${site.x},${site.z})`;
-            if (baseLevel(s, 'Attack') < 99) return `Attack ${baseLevel(s, 'Attack')}: the cannon's accuracy is the scimitar's at Attack 99`;
+            const minAttack = opts.s14MinAttack ?? 99;
+            if (baseLevel(s, 'Attack') < minAttack) return `Attack ${baseLevel(s, 'Attack')}: the cannon's accuracy is the scimitar's at Attack ${minAttack}`;
             if (!held(s, opts.scimitar ?? SCIMITAR)) return `no ${(opts.scimitar ?? SCIMITAR).source.replace(/[\^$]/g, '')}`;
             return cannonReason(s, minBalls) ?? prayerReason(s, prayers) ?? slotReason(s, { pickUp: opts.pickUp?.s14 ?? true, bowAhead: false, scimitar: opts.scimitar }) ?? true;
         },

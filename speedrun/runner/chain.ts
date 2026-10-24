@@ -427,6 +427,28 @@ export function tag(id: string, kind: ChainKind, s: AnyStep, extra: Partial<Chai
     return { ...bound(s), id, kind, ...extra };
 }
 
+/**
+ * S14's cannon session. With REHEARSAL_S14_MIN_ATTACK set (a rehearsal only), its Attack floor is that
+ * level and each run first writes a `(substitute) S14` note row; unset, exactly ranged.steps' step.
+ */
+export function s14CannonSteps(env: Readonly<Record<string, string | undefined>> = process.env): Step<any>[] {
+    const min = ranged.rehearsalS14MinAttack(env);
+    const ss = ranged.steps({ which: 'cannonSession', ...(min !== undefined ? { s14MinAttack: min } : {}) });
+    if (min === undefined) return ss;
+    const note = (ctx: StepContext<any>) => noteRow(ctx, '(substitute) S14: SUBSTITUTE Attack floor', { substitute: `REHEARSAL_S14_MIN_ATTACK=${min}`, minAttack: min });
+    return ss.map(s => {
+        const run = async (ctx: StepContext<any>) => {
+            note(ctx);
+            await s.run(ctx);
+        };
+        const resume = s.resume ? async (ctx: StepContext<any>) => {
+            note(ctx);
+            await s.resume!(ctx);
+        } : run;
+        return { ...s, run, resume };
+    });
+}
+
 /** A 0-tick `note` row in the step's log. */
 export function noteRow(ctx: Pick<StepContext<unknown>, 'log' | 'session' | 'sdk'>, step: string, meta: Record<string, unknown>): void {
     const tick = ctx.sdk.getState()?.tick ?? -1;
@@ -783,7 +805,7 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         ...legWith('T12-13'),
         ...steps('S13', dwarfCannon.steps()),
         ...legWith('T13-14'),
-        ...cued(s14, steps('S14', ranged.steps({ which: 'cannonSession' }))),
+        ...cued(s14, steps('S14', s14CannonSteps())),
         ...legWith('T14-15', [cueStop(s14, o.cues)]),
         ...before('S15'),
         ...s15.slice(0, atM),

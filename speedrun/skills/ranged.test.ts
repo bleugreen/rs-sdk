@@ -5,7 +5,7 @@ import { IF_RETALIATE_OFF, IF_RETALIATE_ON } from '../lib/session';
 import { TickLog } from '../lib/ticks';
 import { Observation, resolveResume } from '../runner/resume';
 import {
-    cannonSessionStep, chooseConsume, combatFinishStep, FINISH, gearClick, IMMUNITY, noteConsume, noteSession, otherItems, phaseFor, pickTarget, resipAt, runSession,
+    cannonSessionStep, rehearsalS14MinAttack, chooseConsume, combatFinishStep, FINISH, gearClick, IMMUNITY, noteConsume, noteSession, otherItems, phaseFor, pickTarget, resipAt, runSession,
     slotNeed, specFor, SPIDERS, type ConsumeMemory, type RangedSdk,
 } from './ranged';
 
@@ -244,6 +244,20 @@ describe('steps: gates and resume', () => {
         expect(pre(step, s14Ready({ equipment: [] }))).toMatch(/mithril scimitar/);
         expect(pre(step, s14Ready({ skills: skills({ Attack: 98, Prayer: 43 }) }))).toMatch(/Attack 98/);
         expect(pre(step, s14Ready({ skills: skills({ Attack: 99, Prayer: 40 }) }))).toMatch(/Prayer 40/);
+    });
+
+    test('S14 Attack floor: 99 by default; s14MinAttack lowers it (a rehearsal only)', () => {
+        const at = (attack: number) => s14Ready({ skills: skills({ Attack: attack, Prayer: 43, Hitpoints: 42, Ranged: 1 }) });
+        expect(pre(cannonSessionStep(), at(94))).toBe("Attack 94: the cannon's accuracy is the scimitar's at Attack 99");
+        expect(pre(cannonSessionStep({ s14MinAttack: 94 }), at(94))).toBe(true);
+        expect(pre(cannonSessionStep({ s14MinAttack: 94 }), at(93))).toBe("Attack 93: the cannon's accuracy is the scimitar's at Attack 94");
+    });
+
+    test('REHEARSAL_S14_MIN_ATTACK: unset is undefined; 1-99 is taken; anything else refuses', () => {
+        expect(rehearsalS14MinAttack({})).toBeUndefined();
+        expect(rehearsalS14MinAttack({ REHEARSAL_S14_MIN_ATTACK: '' })).toBeUndefined();
+        expect(rehearsalS14MinAttack({ REHEARSAL_S14_MIN_ATTACK: '94' })).toBe(94);
+        for (const v of ['0', '100', '9.5', 'abc', '-1', ' 94']) expect(() => rehearsalS14MinAttack({ REHEARSAL_S14_MIN_ATTACK: v })).toThrow(/1 to 99/);
     });
 
     test('S14 done and in progress from levels', () => {
