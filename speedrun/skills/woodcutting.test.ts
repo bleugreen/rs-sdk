@@ -279,10 +279,12 @@ describe('woodcutting: preconditions', () => {
         expect(pre('woodcutting:willow-73-99', s, group)).toBe(true);
         expect(pre('woodcutting:willow-73-99', s, { bury: true, bones: { giver: 'g' } })).toBe(true);
         expect(pre('woodcutting:willow-73-99', s, { bury: true })).toBe(true);
+        // the census's oak log is room (rs/635: carried in from the oak band, dropped at the willow band's start); with nothing to bury there is no room for a load
         const noBones = state({ level: 73, items: census, fill: 23, prayer: 53 });
-        expect(pre('woodcutting:willow-73-99', noBones, group)).toBe('1 free inventory slots and 0 bones to bury, 2 needed');
+        expect(pre('woodcutting:willow-73-99', noBones, group)).toBe('2 free slots and 0 bones: no room for a 23-bone load and the log');
         // without bury the bones are only items
-        expect(pre('woodcutting:willow-73-99', s)).toBe('1 free inventory slots, 2 needed');
+        const potNotOak = state({ level: 73, items: ['Rune axe', 'Knife', 'Logs', 'Pot'], bones: 23, prayer: 53 });
+        expect(pre('woodcutting:willow-73-99', potNotOak)).toBe('1 free inventory slots, 2 needed');
     });
 
     test('bury: bones or a giver, and room for a load and the log', () => {
