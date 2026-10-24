@@ -37,13 +37,11 @@ import {
     tickMs,
     waitUntil,
 } from './wait';
-import { onTutorialIsland } from './world';
+import { COMBAT_LOGOUT_TICKS, inCombatWindow, onTutorialIsland } from './world';
 import { DeathWatch, type Death, type HeldLogout } from '../runner/death';
 
 export const ROOT = join(import.meta.dir, '..', '..');
 export const LOGOUT_BUTTON = 2458; // logout:try_logout
-/** p_preventlogout(..., 16) after combat (logout.rs2). */
-export const COMBAT_LOGOUT_TICKS = 16;
 /** Longest wait between the SDK's reconnect attempts to our gateway. */
 export const GATEWAY_RECONNECT_MAX_MS = 2_000;
 
@@ -953,7 +951,7 @@ async function clickOut(session: Session, s: BotWorldState, t0: number, opts: { 
     // lastDamageTick is -1 when the player was never hit (sdk/types.ts): no combat window to wait out.
     const lastHit = s.player?.combat?.lastDamageTick ?? -1;
     const combatTick = lastHit < 0 ? -Infinity : lastHit;
-    if (s.player?.combat?.inCombat || s.tick - combatTick <= COMBAT_LOGOUT_TICKS) {
+    if (inCombatWindow(s)) {
         watch.holding = true;
         const until = Math.max(s.tick, combatTick) + COMBAT_LOGOUT_TICKS + 1;
         await waitUntil(sdk, st => st.tick >= until && !st.player?.combat?.inCombat, { maxTicks: COMBAT_LOGOUT_TICKS + 30 });
