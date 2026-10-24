@@ -21,6 +21,11 @@
 // refused when the row is planned, so a launch dry-run names it rather than the trade's confirm.
 // The drop is idempotent: what a restart finds already gone is not dropped again.
 //
+// An `out`'s count: `xN` gives exactly N, `all` gives everything held and refuses when none is (a
+// kit hand-back or cannon part that must be there), and `any` gives everything held or, with none
+// held, nothing (dead stock a step before may have used up). resolvePlan turns each `any` into `all`
+// or no entry as the pack stands, so a row whose gives are all `any` and none held only receives.
+//
 // The partner (an account name, fleet staging, rs/41's) stands on the hand-off tile before SCORED
 // arrives; the step does not wait for it or walk (the legs carry the travel). preconditions refuse
 // with a reason when the partner is not in view, when SCORED does not hold what it gives, or when

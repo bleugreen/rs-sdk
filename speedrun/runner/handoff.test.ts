@@ -363,6 +363,14 @@ describe("an `any` count gives or drops whatever is held, and none held is nothi
                 expect(resolvePlan(state([...kit, ...exhaustible]), row).give.filter(g => ANY_GIVES[id]!.includes(g.name)).map(g => g.count)).toEqual(ANY_GIVES[id]!.map(() => 'all'));
             });
         }
+
+        test("H11r keeps `all`: the cannon set without its cannonballs still refuses, because a missing cannon is a real loss", () => {
+            const row = loadHandOff('H11r');
+            expect(row.give.map(g => [g.name, g.count])).toEqual([['cannon base', 1], ['cannon stand', 1], ['cannon barrels', 1], ['cannon furnace', 1], ['cannonball', 'all']]);
+            const parts = mustHave(row).filter(g => g.name !== 'cannonball').map((g, slot) => heldOf(g, slot, 1));
+            expect(handOffPre(state(parts), row, PARTNER)).toMatch(/H11r: holds no cannonball to give/);
+            expect(handOffPre(state([...parts, heldOf(row.give[4]!, 4, 30)]), row, PARTNER)).toBe(true);
+        });
     });
 });
 
