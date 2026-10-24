@@ -2724,7 +2724,8 @@ and a tool started any other way refuses before it logs in.
 
 **What the wrapper does**, in order (`speedrun/tools/oneoff.ts` has the detail):
 
-1. It refuses, starting nothing (exit 9), in any of these cases: run.ts is running, 7781 is taken,
+1. It refuses, starting nothing (exit 9), in any of these cases: the tool is not in
+   `speedrun/tools/oneoff/` (or, with `--adhoc`, fails the checks below), run.ts is running, 7781 is taken,
    `bots/host-oneoff/` is left over from an earlier one-off, SCORED's `bot.env` or
    `~/rs-run/.scored-account` is missing, or the run gateway's log (`~/rs-run/gateway.log`, which
    `up` writes) is missing.
@@ -2780,9 +2781,25 @@ receive with a want-list, an optional teleport and a walk) is not in the repo ye
 most likely one-off after a death. A new kind of one-off becomes a file in `speedrun/tools/oneoff/` on
 `runOneoff`. The wrapper runs nothing else, and only a tool on the machine's `RUN_COMMIT` exists
 there. Attempt 4 needed two tools written inside the hold window, so the flags above are meant to
-cover those cases without new code. Whether a run-night escape for an uncommitted tool is allowed
-(host's proposal: `--adhoc=<path>`, only under `<run dir>/oneoff-adhoc/`, with a loud `ADHOC` ledger
-line) is main's decision; until main allows it, there is none.
+cover those cases without new code.
+
+**The run-night escape: `--adhoc=FILE`** (main's decision, 2026-10-24). When no committed tool fits,
+write a new one and give it to the wrapper with `--adhoc=FILE` in place of the tool name. The tool's
+arguments follow as usual. It is still the wrapper, with the same gateway, alias, counts and
+teardown, because an escape inside the wrapper beats a hand-rolled bypass outside it. The wrapper
+refuses the file (exit 9, nothing raised) unless all of these hold:
+
+- it is a `.ts` file whose real path, with symlinks resolved, is inside `<run dir>/oneoff-adhoc/`. A
+  relative `FILE` is taken from that directory;
+- it calls `runOneoff`, so its session gets the same isolation refusals as every committed tool. Copy
+  the nearest tool in `speedrun/tools/oneoff/`, and import the helper by the checkout's absolute
+  path, since the file is outside it (`import { runOneoff } from '/home/ubuntu/rs-sdk/speedrun/lib/oneoff';`).
+
+Before anything is raised, the wrapper prints `ADHOC: running the uncommitted tool
+oneoff-adhoc/<file> (sha256 <12 hex>), not on RUN_COMMIT` and writes an `ADHOC` line to the ledger
+with the file's full sha256. The `wrapper` line repeats the path and hash. Dry-run it without `--go`
+like any other tool. After the run, copy the file into the run's record beside its ledger lines, and
+commit it to `speedrun/tools/oneoff/` if it will be needed again.
 
 **The ledger** is `<run dir>/oneoff-drop.jsonl` (`--run-dir`, by default run.ts's `run-machine`).
 It holds one JSON line per event, `{t, one_off, k, v}`, with SCORED's name replaced by `SCORED`. `k` is
