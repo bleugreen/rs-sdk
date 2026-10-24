@@ -17,7 +17,8 @@
  *
  * `--thieving=N` and `--hp-level=N` set the staged knights' levels by `::setstat` (the knights-crowding lab: the
  * runner's own stages then go straight to admission, the ship and the knights). `--warmup=N` sets the ramp's
- * `warmupMinutes` (0 measures each hold the way the runner did before it had one).
+ * `warmupMinutes` (0 measures each hold the way the runner did before it had one); `--drop-pct=N` its `dropPct`
+ * (default 10; a large one keeps the ramp going so every step is measured, its ratio still in the ledger).
  *
  * `--fresh=1` stages nobody: every account starts on Tutorial Island and the runner's own stages do everything (the
  * Hitpoints-site lab). `--min-free-mb=N` (default 1200) stops the run with SIGINT when the host's available memory
@@ -62,6 +63,7 @@ const minFreeMb = count('min-free-mb', 1200);
 const thieving = count('thieving', 0);
 const hpLevel = count('hp-level', 0);
 const warmup = arg('warmup', '');
+const dropPct = count('drop-pct', 10);
 
 const server = loadBotEnv(labBot).SERVER ?? '';
 if (!/^(localhost|127\.)/.test(server)) {
@@ -174,7 +176,7 @@ log('staging done', { knights: staged.length, fresh: accounts.length - staged.le
 const plan = {
     accounts,
     loginSpacingMs: 2000,
-    ramp: { steps, holdMinutes: hold, dropPct: 10, admitTimeoutMinutes: 30, ...(warmup !== '' ? { warmupMinutes: Number(warmup) } : {}) },
+    ramp: { steps, holdMinutes: hold, dropPct, admitTimeoutMinutes: 30, ...(warmup !== '' ? { warmupMinutes: Number(warmup) } : {}) },
     ledger: { everyTicks: 50, bookMinutes: 5 }
 };
 const planPath = join(out, 'plan.json');
