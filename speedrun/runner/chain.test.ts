@@ -27,6 +27,7 @@ import * as woodcutting from '../skills/woodcutting';
 import {
     ALTERNATIVES, anvilAnnounce, CANNON_ROWS, cueAround, cueMuleRows, FAMILY_CUES, KIT_PARTNER_ROWS, KIT_SEGMENTS, buildChain, CENSUS_STEP, chainIds, chainProbes, chainSeams, ledgerCoverage, ledgerRows, missingOnPath, missingStep, MULE_ROWS, muleCued, muleCueDir, muleMeeting, muleScope, s07PrayerTo, S07_PRAYER_TO, s07Woodcutting, S09_MINING, parseStepTable, PLACEMENT, resolveFrom, sliceUntil, tag,
     whenNeeded, withCue, askedOnTrade, h12oLogin, h12oLoginRefusal, h12oTopUp, H12O_LOGIN, type ChainStep, type CueSink, type RunConfig,
+    KIT_WANTS, kitCueDecision, markOnAccept,
 } from './chain';
 import { DeliveryOwner, deliveryRows } from './delivery-owner';
 import { chainPartners, H4M_BONES, H4M_MIN_PRAYER, H4M_ROW, H4M_TRADE_TILE, S09_PRAYER_TO, type ChainOptions } from './chain';
@@ -1707,5 +1708,107 @@ describe('H4m: S07 closes below 99 and S09 buries the rest', () => {
         // every load recorded and none held: the band resumes
         for (const row of LOADS) h.handOffs.mark(row, 200);
         expect(await where(zoo())).toEqual(['mining.iron-63', 'resume']);
+    });
+});
+
+describe("a kit row's cue: no cue and no readiness wait when the row is served this attempt or its plan wants nothing", () => {
+    const marks = (...served: string[]) => {
+        const set = new Set(served);
+        return { set, has: (k: string) => set.has(k), mark: (k: string) => void set.add(k) };
+    };
+    /** The kit segment `name` cued for `row` by cueMuleRows, entered through `resume` (attempt 4's --from at S15:A). */
+    const resumeKit = (row: string, name: string, o: { served: boolean; wants: boolean }) => {
+        const r = recorder();
+        const skipped: CueScope[] = [];
+        const cues: CueSink = { ...r.cues, skip: scope => void skipped.push(scope) };
+        let body = 0;
+        const s: ChainStep = { id: name.split(':')[0]!, kind: 'step', name, logoutSafe: true, preconditions: () => true, postconditions: () => true, run: async () => void body++ };
+        const record = marks(...(o.served ? [row] : []));
+        const [c] = cueMuleRows([s], new Map([[s, row]]), () => 'h55', cues, { record, wants: { [row]: () => o.wants } });
+        const log = TickLog.memory('kit');
+        return { ran: c!.resume!(ctxFor(new FakeSdk(), log)), r, skipped, body: () => body, log, step: c! };
+    };
+
+    for (const [row, name] of Object.entries(KIT_SEGMENTS)) {
+        test(`${name}: ${row} recorded served opens no cue, waits for nothing, writes one note row and runs the body`, async () => {
+            const k = resumeKit(row, name, { served: true, wants: false });
+            await k.ran;
+            expect(k.r.opened).toEqual([]);
+            expect(k.r.stopped).toEqual([]);
+            expect(k.skipped).toEqual([muleScope(row)]);
+            expect(k.body()).toBe(1);
+            expect(k.log.rows.map(x => [x.step, x.meta?.why])).toEqual([[`(cue) ${row} skipped`, `${row} served this attempt: no cue, no wait`]]);
+            // Still the row's mule cue as the chain sees it (its stop's finality is unchanged).
+            expect(k.step.cue).toEqual(muleScope(row));
+        });
+
+        test(`${name}: ${row} not recorded but its plan wants nothing: no cue, no wait, the body runs`, async () => {
+            const k = resumeKit(row, name, { served: false, wants: false });
+            await k.ran;
+            expect([k.r.opened, k.skipped, k.body()]).toEqual([[], [muleScope(row)], 1]);
+            expect(k.log.rows.map(x => x.meta?.why)).toEqual([`${row} plan wants nothing: no cue, no wait`]);
+        });
+
+        test(`${name}: ${row} recorded served while its plan still wants (a kit eaten under its count): a named stop before the body, no cue, no wait`, async () => {
+            const k = resumeKit(row, name, { served: true, wants: true });
+            await expect(k.ran).rejects.toThrow(`${row} served this attempt and the plan still wants more: a carrier serves its row once, so no cue and no wait`);
+            expect([k.r.opened, k.skipped, k.body()]).toEqual([[], [], 0]);
+        });
+
+        test(`${name}: ${row} not served and wanted: the cue opens fresh and stops as before`, async () => {
+            const k = resumeKit(row, name, { served: false, wants: true });
+            await k.ran;
+            expect(k.r.opened).toEqual([{ scope: muleScope(row), fresh: true }]);
+            expect(k.r.stopped).toEqual([muleScope(row)]);
+            expect([k.skipped, k.body(), k.log.rows]).toEqual([[], 1, []]);
+        });
+    }
+
+    test('kitCueDecision: the four cases', () => {
+        expect(kitCueDecision('H12', false, true)).toEqual({ cue: true });
+        expect(kitCueDecision('H12', true, false)).toEqual({ cue: false, why: 'H12 served this attempt: no cue, no wait' });
+        expect(kitCueDecision('H4', false, false)).toEqual({ cue: false, why: 'H4 plan wants nothing: no cue, no wait' });
+        expect('refuse' in kitCueDecision('H4', true, true)).toBe(true);
+    });
+
+    test("the row is marked served on the server's 'Accepted trade.' after a confirm screen with its carrier, whatever the step does after", () => {
+        const sdk = new FakeSdk(baseState({ tick: 500 }));
+        const marked: number[] = [];
+        const off = markOnAccept(sdk, 'h55', t => void marked.push(t));
+        const confirm = (partner: string) => ({ isOpen: true, screen: 'confirm' as const, partner, myOffer: [], theirOffer: [], myAccepted: true, partnerAccepted: true });
+        const accepted = (tick: number) => [{ type: 0, text: 'Accepted trade.', tick, sender: '', fromSelf: false }];
+        // Another player's trade completing is not this row's.
+        sdk.tick({ trade: confirm('someone else') });
+        sdk.tick(s => ({ trade: undefined, gameMessages: accepted(s.tick) }));
+        expect(marked).toEqual([]);
+        sdk.tick({ trade: confirm('h55'), gameMessages: [] });
+        const done = sdk.tick(s => ({ trade: undefined, gameMessages: accepted(s.tick) })).tick;
+        sdk.tick();
+        expect(marked).toEqual([done]);
+        off();
+    });
+
+    test("a cued kit segment whose trade completes marks the row in the attempt record's hand-off rows, even when the step then fails", async () => {
+        const r = recorder();
+        const sdk = new FakeSdk(baseState({ tick: 900 }));
+        const s: ChainStep = { id: 'S15', kind: 'step', name: KIT_SEGMENTS.H12!, logoutSafe: true, preconditions: () => true, postconditions: () => true, run: async () => {
+            sdk.tick({ trade: { isOpen: true, screen: 'confirm', partner: 'h55', myOffer: [], theirOffer: [], myAccepted: true, partnerAccepted: true } });
+            sdk.tick(st => ({ trade: undefined, gameMessages: [{ type: 0, text: 'Accepted trade.', tick: st.tick, sender: '', fromSelf: false }] }));
+            throw new Error('after the swap the kit still lacks 1 ^Shark$');
+        } };
+        const record = marks();
+        const [c] = cueMuleRows([s], new Map([[s, 'H12']]), () => 'h55', r.cues, { record, wants: { H12: () => true } });
+        await expect(c!.run(ctxFor(sdk))).rejects.toThrow('kit still lacks');
+        expect(record.set.has('H12')).toBe(true);
+    });
+
+    test("KIT_WANTS reads each module's own plan: H12 wants nothing with its kit held and one shark short wants again; H4 wants on an empty pack", () => {
+        const item = (slot: number, name: string, count = 1, id = 9000 + slot) => ({ slot, id, name, count, optionsWithIndex: [] });
+        const bow = monkeyMadness.DEFAULT_OPTIONS.bow;
+        const kit = monkeyMadness.h12Kit(bow).map((k, i) => item(i, k.name.source.replace(/[\^$\\]/g, ''), k.n, k.id));
+        const held = (inv: typeof kit) => baseState({ inventory: inv as never });
+        expect(KIT_WANTS.H12!(held(kit))).toBe(false);
+        expect(KIT_WANTS.H12!(held(kit.map(i => (i.name === 'Shark' ? { ...i, count: monkeyMadness.H12_SHARKS - 1 } : i))))).toBe(true);
+        expect(KIT_WANTS.H4!(baseState())).toBe(true);
     });
 });
