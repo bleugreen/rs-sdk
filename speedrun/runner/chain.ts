@@ -706,14 +706,14 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
     const s21Opts: runecraft.RunecraftOptions = { s21Altar: 'body', cueDir: cfg.cueDir, deps: rcDeps, ...(cfg.s21Givers ? { s21Givers: cfg.s21Givers } : {}) };
     const runecraftS21 = pick('runecraft', runecraft.steps(s21Opts), ['S21 runecraft']);
     const relogs = o.relogs ?? new RelogBudget(join(cfg.cueDir, '..'));
-    // S15 (rs/185's options): fixed dialogue, the ruled per-segment eating, the H12 kit from its partner
+    // S15 (rs/185's options): burst dialogue, the ruled per-segment eating, the H12 kit from its partner
     // (segment A's gtSwap, on its {H12, mule} cue with its shark ask), and both H12o legs from h45;
     // h45's login trigger goes in at segment M's start.
     const h12Rows = ALTERNATIVES[0]!.find(g => g.every(id => inLedger.has(id))) ?? [];
     const h12Givers = [...new Set(h12Rows.map(partner))];
     if (h12Givers.length > 1) throw new Error(`S15's gtSwap trades ${h12Rows.join(' + ')} in one swap: the run config names ${h12Givers.join(', ')}, not one partner for both`);
     const s15 = steps('S15', monkeyMadness.steps({
-        dialogue: 'fixed',
+        dialogue: 'burst',
         eating: monkeyMadness.SEGMENT_EATING,
         ...(h12Givers.length ? { kitFrom: h12Givers[0]! } : {}),
         ...(h12oTopUp(cfg) ? { topUpFrom: h12oTopUp(cfg)! } : {}),
