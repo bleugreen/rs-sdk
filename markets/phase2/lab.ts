@@ -29,6 +29,8 @@
  *
  * Memory (docs/markets/phase2.md 'Memory'): `--heap=1` preloads `heap-probe.ts` into the runner, which samples its
  * memory every minute into memory.jsonl in --out and writes heap snapshots at the minutes in PHASE2_HEAP_SNAPSHOTS.
+ * `--bank-at=N` sets the knights' `bankAt` (a bank trip every N coins carried) and `--shark-ask=N` the sharks the
+ * Exchange check's maker offers (default 300), so a run can compress hours of banking, buying and sailing.
  *
  * `--fresh=1` stages nobody: every account starts on Tutorial Island and the runner's own stages do everything (the
  * Hitpoints-site lab). `--min-free-mb=N` (default 1200) stops the run with SIGINT when the host's available memory
@@ -96,6 +98,9 @@ const rampOn = arg('ramp', '1') === '1';
 const park = arg('park', '0') === '1';
 const warmup = arg('warmup', '');
 const dropPct = count('drop-pct', 10);
+const bankAt = arg('bank-at', '');
+/** Sharks the Exchange check's maker offers at 600, for the purchases and rebuys to fill. */
+const sharkAsk = count('shark-ask', 300);
 
 const server = loadBotEnv(labBot).SERVER ?? '';
 if (!/^(localhost|127\.)/.test(server)) {
@@ -181,12 +186,12 @@ async function exchangeCheck(): Promise<void> {
     await withSession(maker, async (sdk, bot) => {
         await mustTele(sdk, VARROCK_WEST_BANK.x, VARROCK_WEST_BANK.z);
         await cheat(sdk, `give coins ${ironBid * 100}`);
-        await cheat(sdk, 'give cert_shark 300');
+        await cheat(sdk, `give cert_shark ${sharkAsk}`);
         await waitUntil(sdk, s => s.inventory.some(i => /^shark$/i.test(i.name)), { maxTicks: 10 });
         const g = await bot.openGE();
         if (!g.success) throw new Error(`openGE: ${g.message}`);
         const bid = await bot.placeGEOffer({ item: IRON_ORE.id, side: 'buy', quantity: ironBid, price: 100 });
-        const ask = await bot.placeGEOffer({ item: SHARK_ID, side: 'sell', quantity: 300, price: 600 });
+        const ask = await bot.placeGEOffer({ item: SHARK_ID, side: 'sell', quantity: sharkAsk, price: 600 });
         log('maker offers', { bid: bid.message, ask: ask.message });
         await bot.closeInterface().catch(() => undefined);
     });
@@ -274,6 +279,7 @@ const plan = {
         ? { sharks: { source: 'buy', perAccount: count('per-account', 20), minimum: count('minimum', 5), rebuyMinSharks: count('rebuy-min', 5), ceiling: count('ceiling', 650), fillMinutes: 1 }, foodFallbackMix: { guards: 1 } }
         : {}),
     ...(park ? { foodFallback: 'park' } : {}),
+    ...(bankAt !== '' ? { options: { knights: { bankAt: Number(bankAt) } } } : {}),
     ...(sell ? { sell: { enabled: true, cap: 500, everyMinutes: sellEvery, floors: { 'Iron ore': ironFloor }, fillMinutes: 1 } } : {})
 };
 const planPath = join(out, 'plan.json');
