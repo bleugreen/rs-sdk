@@ -41,16 +41,20 @@ import { tickMs } from '../../speedrun/lib/wait';
 import { writerExclusion } from '../lib/accounts.ts';
 import { Gentle } from '../lib/demo.ts';
 import { DemoMarket, type MarketQuote } from '../lib/market.ts';
+import { role as coinsRole } from '../../speedrun/helpers/coins';
+import { chooseSite } from '../methods/hp-model.ts';
+import { TargetClaims, type SiteId } from '../methods/hp-train.ts';
 import { numberFlag, parseArgs } from '../methods/probe-sampler.ts';
 import { debugNameOf } from '../methods/trips.ts';
 import { costOf } from '../methods/value.ts';
 import { buySharks, sellAtExchange, type BookReader } from './errands.ts';
 import { DEFAULT_POLICY, LoginGate } from './gate.ts';
+import { HpSites } from './hp-sites.ts';
 import { accountLine, COINS_ID, totalsLine, type AccountSnapshot, type Stack, type Valuer } from './ledger.ts';
 import { aliasOf, nameScrubber, scrubRecord, unlistedAccounts } from './names.ts';
 import { NEEDS, nextFallback, parsePlan, PlanError, roleOptions, SALE_ROUTE, sequenceFor, type AccountPlan, type MethodId, type Plan } from './plan.ts';
 import { KnightsRamp, rateBetween } from './ramp.ts';
-import { runStage, stageDone, type StageCtx, type StageHooks } from './stages.ts';
+import { runRoleUntil, runStage, stageDone, type StageCtx, type StageHooks } from './stages.ts';
 
 const USAGE = 'usage: bun markets/phase2/run.ts <plan.json> [--out DIR] [--minutes N] [--run-ended] [--placeholder-data]';
 const BOOLEAN_FLAGS = ['--run-ended', '--placeholder-data'];
@@ -101,6 +105,13 @@ class Worker {
     shortSessions = 0;
     thieving = 1;
     logout: Record<string, unknown> | null = null;
+    /** The first login of this run and the first tick seen after it: the Hitpoints line counts from here. */
+    firstLoginAt: number | null = null;
+    firstTick: number | null = null;
+    hpSite: SiteId | null = null;
+    hpStartAt: number | null = null;
+    hpQueuedAt: number | null = null;
+    hpLogged = false;
     /** First tick of this session and when it was seen: the session's observed ms a tick. */
     private tick0: { tick: number; at: number } | null = null;
 
@@ -160,6 +171,9 @@ export class Runner {
     private readonly valuer: Valuer;
     private readonly scrub: (text: string) => string;
     private readonly tickMs = tickMs();
+    private readonly hpSites: HpSites;
+    /** One npc per bot at the Hitpoints sites, across every account of this process. */
+    private readonly claims = new TargetClaims();
 
     constructor(
         readonly plan: Plan,
@@ -173,6 +187,7 @@ export class Runner {
         this.book = { item: id => this.market.item(id).then(q => (this.quotes.set(id, q), q)) };
         this.valuer = { cost: s => costOf(debugNameOf(s.id)), quote: id => this.quotes.get(id) };
         this.scrub = nameScrubber(workers.map(w => w.plan.account));
+        this.hpSites = new HpSites(plan.hpSites);
         mkdirSync(o.out, { recursive: true });
     }
 
@@ -200,6 +215,8 @@ export class Runner {
             placeholder: this.o.placeholder,
             accounts: Object.fromEntries(this.workers.map(w => [w.alias, w.method])),
             maxSessions: this.plan.maxSessions,
+            hp: this.plan.hp,
+            hpSites: this.plan.hpSites,
             ramp: this.plan.ramp,
             sharks: this.plan.sharks,
             sell: { ...this.plan.sell, enabled: this.plan.sell.enabled },
@@ -263,6 +280,7 @@ export class Runner {
         const acct = w.plan.account;
         w.newSession();
         const t0 = Date.now();
+        w.firstLoginAt ??= t0;
         this.event(w, 'login', { session: w.sessionNo }, true);
         let session: DirectSession;
         try {
@@ -388,6 +406,7 @@ export class Runner {
             w.stageCtl = stageCtl;
             try {
                 if (st.do === 'method' && w.saleDue) await this.sale(w, x);
+                else if (st.do === 'hp' && !this.hpSite(w, x, st.to)) await this.hpQueue(w, x);
                 else {
                     await runStage(st, x, w.method);
                     if (st.do === 'method') await sdk.waitForTicks(5).catch(() => undefined);
@@ -402,8 +421,40 @@ export class Runner {
             } finally {
                 signal.removeEventListener('abort', onAbort);
                 w.stageCtl = null;
+                if (st.do === 'hp') this.hpSites.release(w.plan.account);
             }
         }
+    }
+
+    // ------------------------------------------------------------ Hitpoints sites
+
+    /**
+     * The account's Hitpoints site for this stage, into `x.hp`; false when every low site is at its cap. A target
+     * above the cows' range trains on the crabs route (hp-model chooseSite), which the caps do not cover.
+     */
+    private hpSite(w: Worker, x: StageCtx, to: number): boolean {
+        const site = chooseSite(to) === 'cows' ? this.hpSites.take(w.plan.account) : 'crabs';
+        if (!site) return false;
+        x.hp = { site, claims: this.claims };
+        if (w.hpSite !== site) {
+            w.hpSite = site;
+            w.hpStartAt ??= Date.now();
+            const queuedMinutes = w.hpQueuedAt === null ? 0 : Math.round((Date.now() - w.hpQueuedAt) / 6_000) / 10;
+            this.ledger({ kind: 'hp-site', account: w.alias, site, queuedMinutes, occupancy: this.hpSites.occupancy() });
+            this.event(w, `Hitpoints on ${site}`, { occupancy: this.hpSites.occupancy() }, true);
+        }
+        return true;
+    }
+
+    /** Every low site is full: earn on the coins earner (Thieving, which knights and guards need anyway) until one has room. */
+    private async hpQueue(w: Worker, x: StageCtx): Promise<void> {
+        w.stage = 'hp-queue';
+        if (w.hpQueuedAt === null) {
+            w.hpQueuedAt = Date.now();
+            this.ledger({ kind: 'hp-queue', account: w.alias, occupancy: this.hpSites.occupancy(), capacity: this.hpSites.capacity() });
+            this.event(w, 'every Hitpoints site is full: earning until one has room', {}, true);
+        }
+        await runRoleUntil(x, coinsRole, { target: 'auto', guardLevel: 40 }, () => (this.hpSites.hasRoom() ? 'a Hitpoints site has room' : null));
     }
 
     // ------------------------------------------------------------ redirects
@@ -512,6 +563,25 @@ export class Runner {
             w.bankTick = s.tick;
         }
         w.thieving = s.skills.find(k => k.name === 'Thieving')?.baseLevel ?? w.thieving;
+        w.firstTick ??= s.tick;
+        if (w.hpStartAt !== null && !w.hpLogged) {
+            const level = s.skills.find(k => k.name === 'Hitpoints')?.baseLevel ?? 0;
+            if (level >= (w.plan.hp ?? this.plan.hp)) {
+                w.hpLogged = true;
+                const now = Date.now();
+                const min = (ms: number) => Math.round(ms / 6_000) / 10;
+                this.ledger({
+                    kind: 'hp',
+                    account: w.alias,
+                    level,
+                    site: w.hpSite,
+                    minutesFromLogin: min(now - (w.firstLoginAt ?? now)),
+                    ticksFromLogin: s.tick - w.firstTick,
+                    minutesTraining: min(now - w.hpStartAt),
+                    queuedMinutes: w.hpQueuedAt === null ? 0 : min(w.hpStartAt - w.hpQueuedAt)
+                });
+            }
+        }
         const msPerTick = w.msPerTick(s);
         if (w.nextLedgerTick >= 0 && s.tick < w.nextLedgerTick) return;
         w.nextLedgerTick = s.tick + this.plan.ledger.everyTicks;
