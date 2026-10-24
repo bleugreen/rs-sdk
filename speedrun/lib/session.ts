@@ -38,6 +38,7 @@ import {
     waitUntil,
 } from './wait';
 import { onTutorialIsland } from './world';
+import { DeathWatch, type Death, type HeldLogout } from '../runner/death';
 
 export const ROOT = join(import.meta.dir, '..', '..');
 export const LOGOUT_BUTTON = 2458; // logout:try_logout
@@ -281,6 +282,12 @@ export interface Session {
      * which openSession makes): run.ts's tick preflight. A throw refuses the login.
      */
     beforeLogin?: () => Promise<void>;
+    /**
+     * The first death seen on this session: by a logout while it held (logoutClean), or by a leg
+     * (runner/legs.ts runLeg). Once set, nothing logs the account back in on its own: the watchdog
+     * leaves it out after its logout and relog refuses.
+     */
+    died?: Death;
 }
 
 export interface OpenOptions {
@@ -833,6 +840,10 @@ export interface LogoutResult {
      * the logout belongs to the old one, so it stopped and nothing more was sent. Not a failed logout.
      */
     superseded?: boolean;
+    /** Set when the logout waited before its click (the post-combat window, a refused click's retry): what the wait held. */
+    held?: HeldLogout;
+    /** Set when the account died while the logout held (runner/death.ts DeathWatch). `ok` still says only whether it got out. */
+    death?: Death;
 }
 
 /** Whether the SDK's socket to the gateway is up (not reconnecting or closed). */
@@ -903,14 +914,31 @@ export const ABANDON_TIMEOUT_MS = 90_000;
  *
  * The logout belongs to the game session it began in: once a newer one begins (an adopt, a launch,
  * an in-page login) it stops, sends nothing more, and reports `superseded`.
+ *
+ * Every state from the call to the account's leaving is watched (runner/death.ts DeathWatch): a
+ * death while the logout held rides on the result (`death`) and on `session.died`; a wait before the
+ * click on it as `held`. A logout with neither returns what it always did.
  */
 export async function logoutClean(session: Session, opts: { timeoutMs?: number } = {}): Promise<LogoutResult> {
-    const { sdk } = session;
-    const gen = session.sessionId;
     session.watchdog?.pause();
     const t0 = Date.now();
-    const s = sdk.getState();
+    const s = session.sdk.getState();
     if (!s?.inGame) return { ok: false, clickTick: -1, lastInWorldTick: session.lastInWorldTick, latencyTicks: 0, wallMs: 0, reason: 'not in game' };
+    const watch = new DeathWatch(s, 'before the logout landed');
+    const unwatch = session.sdk.onStateUpdate(st => watch.see(st));
+    try {
+        const r = await clickOut(session, s, t0, opts, watch);
+        const death = watch.death();
+        if (death) session.died ??= death;
+        return { ...r, ...(watch.holding ? { held: watch.held(r.clickTick) } : {}), ...(death ? { death } : {}) };
+    } finally {
+        unwatch();
+    }
+}
+
+async function clickOut(session: Session, s: BotWorldState, t0: number, opts: { timeoutMs?: number }, watch: DeathWatch): Promise<LogoutResult> {
+    const { sdk } = session;
+    const gen = session.sessionId;
     const superseded = (clickTick: number, sends: number): LogoutResult => ({
         ok: false,
         clickTick,
@@ -926,6 +954,7 @@ export async function logoutClean(session: Session, opts: { timeoutMs?: number }
     const lastHit = s.player?.combat?.lastDamageTick ?? -1;
     const combatTick = lastHit < 0 ? -Infinity : lastHit;
     if (s.player?.combat?.inCombat || s.tick - combatTick <= COMBAT_LOGOUT_TICKS) {
+        watch.holding = true;
         const until = Math.max(s.tick, combatTick) + COMBAT_LOGOUT_TICKS + 1;
         await waitUntil(sdk, st => st.tick >= until && !st.player?.combat?.inCombat, { maxTicks: COMBAT_LOGOUT_TICKS + 30 });
     }
@@ -940,6 +969,7 @@ export async function logoutClean(session: Session, opts: { timeoutMs?: number }
         const out = w.out;
         if (out === 'superseded') return superseded(clickTick, sends);
         if (out === 'refused' && attempt === 0) {
+            watch.holding = true;
             await waitUntil(sdk, () => false, { maxTicks: COMBAT_LOGOUT_TICKS + 1 });
             continue;
         }
@@ -1267,6 +1297,8 @@ export interface RelogResult {
 export async function relog(session: Session, opts: { offlineMs?: number; loginTimeoutMs?: number; inPage?: boolean } = {}): Promise<RelogResult> {
     const logout = await logoutClean(session);
     if (!logout.ok) throw new Error(`${session.name}: logout failed: ${logout.reason}`);
+    // Logging back in would carry on from the respawn as if nothing happened.
+    if (logout.death) throw new Error(`${session.name}: no relog after a death: ${logout.death.reason}`);
     if (opts.offlineMs ?? 2_000) await sleep(opts.offlineMs ?? 2_000);
     const before = Date.now();
     let first: number | null = null;
@@ -1674,6 +1706,11 @@ export function startWatchdog(session: Session, opts: WatchdogOptions = {}): Wat
                 }
                 emit(verdict, `logged out: last in-world tick ${out.lastInWorldTick}, ${out.latencyTicks} tick(s) after the click`);
                 if (verdict === 'stop') return; // stay out, paused; the bot is not driving
+                if (out.death) {
+                    // A login now would carry the chain on from the respawn as if nothing happened.
+                    emit('stop', `${out.death.reason}: left out for R8's recovery`);
+                    return;
+                }
                 try {
                     await actions.login(session);
                     emit('relaunch', `logged back in (session ${session.sessionId})`);
