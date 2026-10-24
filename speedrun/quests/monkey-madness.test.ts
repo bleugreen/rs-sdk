@@ -1517,14 +1517,14 @@ describe("the Grand Tree swap leaves the kit complete, however low SCORED arrive
         });
 
         test('started, no seal, 1 free slot: A is admitted and picks the lost-seal option', () => {
-            const s = started(atDoor(13));
+            const s = started(atDoor(14));
             expect(28 - s.inventory.length).toBe(1);
             expect(narnodeTalk(s)).toEqual({ choices: [LOST_SEAL, expect.any(RegExp)], start: false });
             expect(a().preconditions(s, {} as MmContext)).toBe(true);
         });
 
         test("started, no seal, 0 free: the named refusal, from A's precondition and from narnodeTalk (run's check after the swap)", () => {
-            const s = started(atDoor(14));
+            const s = started(atDoor(15));
             expect(narnodeTalk(s)).toBe("S15:A needs 1 free slot for Narnode's spare seal (0 free)");
             expect(a().preconditions(s, {} as MmContext)).toBe("S15:A needs 1 free slot for Narnode's spare seal (0 free)");
         });
