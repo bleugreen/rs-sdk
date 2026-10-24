@@ -246,6 +246,13 @@ describe('steps: gates and resume', () => {
         expect(pre(step, s14Ready({ skills: skills({ Attack: 99, Prayer: 40 }) }))).toMatch(/Prayer 40/);
     });
 
+    test('S14 Attack floor: 99 by default; s14MinAttack lowers it (the twin rehearsal only)', () => {
+        const at = (attack: number) => s14Ready({ skills: skills({ Attack: attack, Prayer: 43, Hitpoints: 42, Ranged: 1 }) });
+        expect(pre(cannonSessionStep(), at(94))).toBe("Attack 94: the cannon's accuracy is the scimitar's at Attack 99");
+        expect(pre(cannonSessionStep({ s14MinAttack: 94 }), at(94))).toBe(true);
+        expect(pre(cannonSessionStep({ s14MinAttack: 94 }), at(93))).toBe("Attack 93: the cannon's accuracy is the scimitar's at Attack 94");
+    });
+
     test('S14 done and in progress from levels', () => {
         const step = cannonSessionStep();
         expect(isDone(step, s14Ready({ skills: skills({ Attack: 99, Ranged: 50 }) }))).toBe(true);

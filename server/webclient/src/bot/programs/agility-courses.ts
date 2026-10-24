@@ -25,10 +25,11 @@ export interface AgilityCourse {
     resume?: Record<string, string>;
     /**
      * Where each step is taken from, as boxes [x0, z0, x1, z1] (inclusive, first
-     * match wins): `stepFromPosition` picks the step a resumed run starts with.
-     * Tiles outside every box start at the first step.
+     * match wins), on `plane` when given (else any plane): `stepFromPosition` picks
+     * the step a resumed run starts with. Tiles outside every box start at the first
+     * step. A zone naming the first step is where a lap closes and the next begins.
      */
-    zones?: Array<{ step: string; box: Box }>;
+    zones?: Array<{ step: string; box: Box; plane?: number }>;
     /** The lap path and its pits: a player inside is another course user, not an approach. */
     lapArea?: Box[];
     /** The pit's ladder [id, x, z], clicked when the scene list does not show it yet (right after the fall). */
@@ -41,15 +42,35 @@ export function inBox(b: Box, x: number, z: number): boolean {
     return x >= b[0] && x <= b[2] && z >= b[1] && z <= b[3];
 }
 
+/** The step whose zone holds tile (x, z) on `plane`, or undefined off every zone. */
+export function zoneAt(course: AgilityCourse, x: number, z: number, plane = 0): string | undefined {
+    return course.zones?.find(zn => (zn.plane === undefined || zn.plane === plane) && inBox(zn.box, x, z))?.step;
+}
+
 /** The step to take next from tile (x, z): a resumed band picks up mid-lap. */
-export function stepFromPosition(course: AgilityCourse, x: number, z: number): string {
-    return course.zones?.find(zn => inBox(zn.box, x, z))?.step ?? course.steps[0]!.name;
+export function stepFromPosition(course: AgilityCourse, x: number, z: number, plane = 0): string {
+    return zoneAt(course, x, z, plane) ?? course.steps[0]!.name;
 }
 
 export const AGILITY_COURSES: Record<string, AgilityCourse> = {
     gnome: {
         start: [2474, 3436, 0],
         lapBonus: 39,
+        // Landing tiles from gnome_course.rs2: the log ends at (2474,3429), the net on
+        // plane 1 two tiles south, the branch on plane 2 at (2473,3420), the rope at
+        // (2483,3420) still on plane 2, the tree-down on the ground at (2487,3420), the
+        // second net two tiles north of where it is climbed, and the pipes at (2484,3437)
+        // and (2487,3437), the lap start's row.
+        zones: [
+            { step: 'branch', plane: 1, box: [2465, 3410, 2495, 3445] },
+            { step: 'rope', plane: 2, box: [2465, 3410, 2477, 3445] },
+            { step: 'tree-down', plane: 2, box: [2478, 3410, 2495, 3445] },
+            { step: 'pipe', plane: 0, box: [2484, 3431, 2487, 3436] },
+            { step: 'pipe', plane: 0, box: [2479, 3426, 2495, 3430] },
+            { step: 'net2', plane: 0, box: [2479, 3410, 2495, 3425] },
+            { step: 'net', plane: 0, box: [2465, 3426, 2478, 3430] },
+            { step: 'log', plane: 0, box: [2465, 3431, 2495, 3445] }
+        ],
         steps: [
             { name: 'log', locs: [[2295, 2474, 3435]], xp: 7.5 },
             { name: 'net', locs: [[2285, 2473, 3425], [2285, 2475, 3425], [2285, 2471, 3425]], xp: 7.5 },

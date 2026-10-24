@@ -6,7 +6,7 @@ import type { BotState, BotAction, BotWorldState } from './types.js';
 import { BotStateCollector } from './StateCollector.js';
 import { ActionExecutor, formatAction } from './ActionExecutor.js';
 import { formatBotState } from './formatters.js';
-import { GatewayConnection, type GatewayMessageHandler } from './GatewayConnection.js';
+import { GatewayConnection, getLaunchId, type GatewayMessageHandler } from './GatewayConnection.js';
 import { OverlayUI } from './OverlayUI.js';
 import { BotActionQueue, type QueuedBotAction } from './ActionQueue.js';
 import type { ActionResult } from './ActionExecutor.js';
@@ -56,6 +56,9 @@ export class BotOverlay implements GatewayMessageHandler {
 
     // Server tick counter - advances by one per decoded PLAYER_INFO (one per server tick)
     private serverTick: number = 0;
+
+    /** The page's ?launch= id, echoed in every published state (GatewayConnection getLaunchId). */
+    private readonly launch: string | null = getLaunchId();
 
     /**
      * Most queued actions run in one pass, whether on arrival or in the game
@@ -437,7 +440,8 @@ export class BotOverlay implements GatewayMessageHandler {
             },
             modalOpen: this.client.isModalOpen(),
             modalInterface: this.client.getModalInterface(),
-            program: this.programs.status()
+            program: this.programs.status(),
+            ...(this.launch ? { launch: this.launch } : {})
         };
     }
 

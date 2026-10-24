@@ -189,6 +189,70 @@ export async function pageLoginState(cdpOrigin: string, botName: string): Promis
     return out ? out.value : null;
 }
 
+/**
+ * A launched page as the controller judges its login: the `?launch=` id its URL carries (the token
+ * leaves the URL, the launch id stays), whether it has a client yet, and the client's own login
+ * flags. `autoLoginAttempted` is the title screen's one auto-login (Client.botAutoLoginAttempted),
+ * which starts once `loadingComplete` holds; a page that has made it and is neither in game nor
+ * logging in has had its login end without getting in, or has dropped out of the game since.
+ */
+export interface PageLaunchState {
+    launch: string | null;
+    hasClient: boolean;
+    loadingComplete: boolean;
+    autoLoginAttempted: boolean;
+    inGame: boolean;
+    loginInProgress: boolean;
+    message: string;
+}
+
+const LAUNCH_STATE_EXPRESSION = `(() => {
+    let launch = null;
+    try { launch = new URL(location.href).searchParams.get('launch'); } catch (e) {}
+    const c = window.gameClient;
+    if (!c) return { launch, hasClient: false, loadingComplete: false, autoLoginAttempted: false, inGame: false, loginInProgress: false, message: '' };
+    return {
+        launch,
+        hasClient: true,
+        loadingComplete: !!c.loadingComplete,
+        autoLoginAttempted: !!c.botAutoLoginAttempted,
+        inGame: !!c.ingame,
+        loginInProgress: !!c.loginInProgress,
+        message: [c.loginMes1, c.loginMes2].filter(Boolean).join(' ')
+    };
+})()`;
+
+/** The bot's page as PageLaunchState, or null when there is no tab for it. */
+export async function pageLaunchState(cdpOrigin: string, botName: string): Promise<PageLaunchState | null> {
+    const out = await evaluateInTab<PageLaunchState>(cdpOrigin, botName, LAUNCH_STATE_EXPRESSION);
+    return out ? out.value : null;
+}
+
+/** What the page answered to pageClickComponent. */
+export interface PageClick {
+    sent: boolean;
+    reason?: string;
+}
+
+/**
+ * Click interface component `componentId` from inside the page and put it on the wire at once
+ * (Client.clickComponent, then flushNow): the IF_BUTTON packet goes straight down the page's game
+ * socket, so it lands with our gateway down or the page's gateway socket closed. Null when there is
+ * no tab for the bot.
+ */
+export async function pageClickComponent(cdpOrigin: string, botName: string, componentId: number): Promise<PageClick | null> {
+    const expression = `(() => {
+    const c = window.gameClient;
+    if (!c || typeof c.clickComponent !== 'function') return { sent: false, reason: 'no game client on the page' };
+    if (!c.ingame) return { sent: false, reason: 'not in game' };
+    if (!c.clickComponent(${Number(componentId)})) return { sent: false, reason: 'the client refused the click' };
+    if (typeof c.flushNow === 'function') c.flushNow();
+    return { sent: true };
+})()`;
+    const out = await evaluateInTab<PageClick>(cdpOrigin, botName, expression);
+    return out ? out.value : null;
+}
+
 /** Close the overlay's gateway socket for good (no auto-reconnect); true when there was one. */
 export const RELEASE_GATEWAY_EXPRESSION = `(() => {
     const g = window.gameClient && window.gameClient.botOverlay && window.gameClient.botOverlay.gateway;

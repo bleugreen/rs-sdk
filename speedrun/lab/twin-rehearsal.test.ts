@@ -14,6 +14,7 @@ import { baseState, FakeSdk, flush, withRunes } from '../lib/fake-sdk';
 import { TickLog, type TickRow } from '../lib/ticks';
 import { h4PlanOf } from '../quests/dorics-quest';
 import { tradeKind } from '../runner/handoff';
+import { cannonSessionStep } from '../skills/ranged';
 import { applyLedgerSubs, assertBoneDelivery, castXpTeleport, formatRehearsalReport, kitCheckWithout, labelSubstituteRows, observeFirstAirWalk, rehearsalReport, SUBSTITUTE, substitutedChain, substituteRefusal, strikeUpperBound, teleportFor, teleportPlan, TELEPORT_XP, type Substitutions } from './twin-rehearsal';
 
 const manifest = readFileSync(MANIFEST, 'utf8');
@@ -125,6 +126,30 @@ describe('substitutedChain', () => {
     });
     test('no substitution: the plain chain', () => {
         expect(substitutedChain(cfg, cues, {}, manifest).map(s => s.name)).toEqual(buildChain(cfg, { cues, manifest }).map(s => s.name));
+    });
+});
+
+describe('S14 Attack floor substitution', () => {
+    const plain = buildChain(cfg, { cues, manifest });
+    const sub = substitutedChain(cfg, cues, { S14: { minAttack: 94 } }, manifest);
+    const s14 = (c: ChainStep[]) => c.filter(s => s.id === 'S14');
+    test('only S14 changes: same steps and order, every S14 step marked substituted', () => {
+        expect(sub.map(s => `${s.id} ${s.name.replace(/^SUBSTITUTE /, '')}`)).toEqual(plain.map(s => `${s.id} ${s.name}`));
+        expect(s14(sub).length).toBeGreaterThan(0);
+        expect(s14(sub).every(s => s.name.startsWith(SUBSTITUTE))).toBe(true);
+        expect(sub.filter(s => s.id !== 'S14' && s.name.startsWith(SUBSTITUTE))).toEqual([]);
+    });
+    test("the substituted session's preconditions are ranged.ts's at minAttack 94; the plain chain keeps the default (ranged.test.ts pins both)", () => {
+        const session = (c: ChainStep[]) => c.find(s => s.id === 'S14' && s.name.endsWith('S14 cannon session'))!;
+        const attack = (n: number) => ({ ...baseState(), skills: baseState().skills.map(k => (k.name === 'Attack' ? { ...k, baseLevel: n, level: n } : k)) }) as BotWorldState;
+        for (const n of [93, 94, 99]) {
+            expect(session(sub).preconditions(attack(n), {} as never)).toEqual(cannonSessionStep({ s14MinAttack: 94 }).preconditions(attack(n), {} as never));
+            expect(session(plain).preconditions(attack(n), {} as never)).toEqual(cannonSessionStep().preconditions(attack(n), {} as never));
+        }
+        expect(session(sub).preconditions).not.toBe(session(plain).preconditions);
+    });
+    test('a minAttack that is not a level is refused', () => {
+        expect(() => substitutedChain(cfg, cues, { S14: { minAttack: 0 } }, manifest)).toThrow(/not a level/);
     });
 });
 

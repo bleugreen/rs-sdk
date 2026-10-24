@@ -58,7 +58,7 @@ import { claimBin, claimOwner, EXIT_HOST_RESERVED, readReservation, ReservationW
 import { programStatus } from './lib/programs';
 import { describePreflight, feedUrl, readFeedHello, tickPreflight, type TickPreflight } from './lib/feed-hello';
 import { checkRunFloor, gitIn, type FloorCheck, type TickMsParse } from './lib/run-floor';
-import { type ClientKind, cdpUrl, closeSession, loadBotEnv, logoutClean, type LogoutResult, openSession, pageWorld, ROOT, type Session, startWatchdog } from './lib/session';
+import { abandonClient, abandonFailed, type AbandonResult, type ClientKind, cdpUrl, closeSession, describeAbandon, loadBotEnv, logoutClean, type LogoutResult, openSession, pageWorld, ROOT, type Session, startWatchdog, type TakeoverGate } from './lib/session';
 import { pageInGame, pageLoginState, type PageLoginState } from './lib/tab';
 import { tickMs } from './lib/wait';
 import { returnExtrasFromLedger, serveDrift, serveFromLedger } from './helpers/cannon-receiver';
@@ -618,21 +618,92 @@ async function releaseClaim(owner: string): Promise<string> {
 }
 
 /**
+ * The gate for an abandon's takeover login (session.ts abandonTab): a login SCORED makes, so it
+ * follows the relog rules. It takes the relog lock (refused while the operator's relog holds it) and
+ * is charged as one unplanned relog (refused when they are spent), recorded before the login starts.
+ */
+export function takeoverGate(relogs: RelogBudget, step: string, tick: () => number): TakeoverGate {
+    return async () => {
+        const lock = relogs.tryLock('run');
+        if (!lock.ok) return `the ${lock.holder.by}'s relog (pid ${lock.holder.pid}) holds the relog lock`;
+        const room = relogs.check('unplanned');
+        if (room !== true) {
+            lock.release();
+            return room;
+        }
+        relogs.record({
+            kind: 'unplanned', by: 'run', step, tick: tick(), via: 'page',
+            meta: { reason: 'abandon: the page was out of game with its body still in the world; logged in to take that body over and log it out' },
+        });
+        return lock.release;
+    };
+}
+
+/**
+ * Get SCORED out of the world for a run that is giving its session up (session.ts abandonClient: a
+ * logout through the page, confirmed by the page and the world's player list), with any takeover
+ * login under the relog rules (takeoverGate), and log how it went.
+ */
+export async function abandonScored(session: Session, relogs: RelogBudget, log: TickLog, why: string, abandon: typeof abandonClient = abandonClient): Promise<AbandonResult | null> {
+    const a = await abandon(session, undefined, { takeover: takeoverGate(relogs, why, () => session.lastInWorldTick) }).catch(abandonFailed);
+    if (a) {
+        log.append(annotation(log, session.name, 'note', `(run) SCORED abandoned: ${why}`, { ok: a.ok, meta: { ...a } }));
+        console.log(`[run] SCORED abandoned (${why}): ${describeAbandon(a)}`);
+    }
+    return a;
+}
+
+/**
+ * Run `body` on a logged-in SCORED session, then close it. Whatever ends `body` with the account still
+ * meant to be in the world (a throw before the chain starts, a crash inside it: anything no logout
+ * ran for) abandons it first (abandonScored), so the run never exits leaving SCORED in the world.
+ */
+export async function withScoredSession<T>(
+    session: Session,
+    o: { relogs: RelogBudget; log: TickLog },
+    body: () => Promise<T>,
+    deps: { abandon?: typeof abandonClient; close?: typeof closeSession } = {}
+): Promise<T> {
+    try {
+        return await body();
+    } finally {
+        try {
+            if (session.expectInWorld) await abandonScored(session, o.relogs, o.log, '(exit) the run ended with SCORED still in the world', deps.abandon);
+        } finally {
+            await (deps.close ?? closeSession)(session);
+        }
+    }
+}
+
+/**
  * An open planned S21 relog must attach without launching SCORED. Recheck the givers and finish
  * the login half before the normal in-world resume walk (which needs a scene and player ticks).
+ *
+ * A launch that fails is abandoned by openSession itself (a confirmed logout through the page, its
+ * takeover login gated by takeoverGate) and logged here; a login half that fails once it has started
+ * is abandoned here. A refusal before any login sends nothing.
  */
 export async function openRunSession(bot: string, o: {
     client: ClientKind; chain: readonly ChainStep[]; relogs: RelogBudget; log: TickLog;
     beforeLogin?: () => Promise<void>;
-}, deps: { open?: typeof openSession; close?: typeof closeSession; pageState?: (s: Session) => Promise<PageLoginState | null> } = {}): Promise<Session> {
+}, deps: { open?: typeof openSession; close?: typeof closeSession; pageState?: (s: Session) => Promise<PageLoginState | null>; abandon?: typeof abandonClient } = {}): Promise<Session> {
     const pending = o.relogs.planned(SCORED_RELOG) === 'open';
     const ready = pending ? o.chain.find(s => s.name === 'S21 runecraft:pre-login') : null;
     const loginHalf = pending ? o.chain.find(s => s.name === SCORED_LOGIN) : null;
     if (pending && (!ready || !loginHalf)) throw new Error('open S21 relog requires its giver wait and login half; do not disable or slice past it');
-    const session = await (deps.open ?? openSession)(bot, { client: o.client, launch: !pending, ...(pending ? { awaitInWorld: false as const } : {}) });
+    // No tick is known before the launch's first state.
+    const launch = { launch: true, takeover: takeoverGate(o.relogs, '(startup) the launch failed', () => -1) };
+    let session: Session;
+    try {
+        session = await (deps.open ?? openSession)(bot, { client: o.client, ...(pending ? { launch: false, awaitInWorld: false as const } : launch) });
+    } catch (e) {
+        if (!pending) o.log.append(annotation(o.log, LOG_ACCOUNT, 'note', '(startup) SCORED launch failed', { ok: false, error: e instanceof Error ? e.message : String(e) }));
+        throw e;
+    }
     session.beforeLogin = o.beforeLogin;
     if (!pending) return session;
     const unalias = aliasAccount(o.log, session.name);
+    let loggingIn = false;
     try {
         const state = await (deps.pageState ?? (async (s: Session) => {
             const cdp = s.client === 'browser' ? cdpUrl(s.env) : undefined;
@@ -648,12 +719,17 @@ export async function openRunSession(bot: string, o: {
         session.watchdog?.pause();
         const ctx = { session, sdk: session.sdk, bot: session.bot, c: {}, log: o.log };
         await ready!.run(ctx);
+        loggingIn = true;
         await loginHalf!.run(ctx);
         return session;
     } catch (e) {
         o.log.append(annotation(o.log, session.name, 'note', '(startup) S21 recovery refused', {
             ok: false, error: e instanceof Error ? e.message : String(e),
         }));
+        // The login half may have logged SCORED in before it threw.
+        if (loggingIn) {
+            await abandonScored(session, o.relogs, o.log, '(startup) the S21 login half failed', deps.abandon);
+        }
         await (deps.close ?? closeSession)(session);
         throw e;
     } finally {
@@ -733,42 +809,46 @@ async function main(argv: string[]): Promise<number> {
         console.log(`[gate] ${t.ok ? 'ok     ' : 'REFUSED'} demo tick rate before login: ${describePreflight(t)}`);
     });
     const session = await openRunSession(a.bot, { client: a.client, chain, relogs, log, beforeLogin });
-    const unalias = aliasAccount(log, session.name);
-    log.append(annotation(log, session.name, 'gate', '(gate) start', { meta: { gates, fresh, cueDir: cfg.cueDir, removed, until: a.until ?? null, steps: chain.length, s21Relog: a.s21Relog } }));
-    console.log(`[run] ${LOG_ACCOUNT} on ${a.client}; ${chain.length} steps${a.until ? ` to ${a.until}` : ''}; log ${log.path}`);
+    // SCORED is logged in from here: withScoredSession abandons it on any way out that leaves it in.
+    let unalias = () => {};
     let code = 1;
     let term: Terminated | null = null;
     try {
-        // A signal: SCORED is out, then closeSession still closes the browser before the exit.
-        const ran = await runChainOnSession(session, { log, chain, reservation, cues: keeper, relogs, wholeRun: a.until === undefined, ...(from !== undefined ? { from } : {}) }).catch(e => {
-            if (!(e instanceof Terminated)) throw e;
-            term = e;
-            return null;
+        code = await withScoredSession(session, { relogs, log }, async () => {
+            unalias = aliasAccount(log, session.name);
+            log.append(annotation(log, session.name, 'gate', '(gate) start', { meta: { gates, fresh, cueDir: cfg.cueDir, removed, until: a.until ?? null, steps: chain.length, s21Relog: a.s21Relog } }));
+            console.log(`[run] ${LOG_ACCOUNT} on ${a.client}; ${chain.length} steps${a.until ? ` to ${a.until}` : ''}; log ${log.path}`);
+            // A signal: SCORED is out, then closeSession still closes the browser before the exit.
+            const ran = await runChainOnSession(session, { log, chain, reservation, cues: keeper, relogs, wholeRun: a.until === undefined, ...(from !== undefined ? { from } : {}) }).catch(e => {
+                if (!(e instanceof Terminated)) throw e;
+                term = e;
+                return null;
+            });
+            if (!ran) {
+                const t = term as unknown as Terminated;
+                console.log(`[run] ${t.message}`);
+                return t.exitCode;
+            }
+            const { result, lastState } = ran;
+            let rc = result.code;
+            console.log(`[run] ${result.outcome}`);
+            if (rc === 0 && a.until === undefined) {
+                const total = lastState ? totalLevel(lastState) : null;
+                const ok = total === TARGET_TOTAL && !session.expectInWorld;
+                log.append(annotation(log, session.name, 'note', '(run) total', { ok, meta: { total, target: TARGET_TOTAL, loggedOut: !session.expectInWorld } }));
+                console.log(`[run] total ${total ?? '?'} of ${TARGET_TOTAL}; ${session.expectInWorld ? 'NOT logged out' : 'logged out'}`);
+                if (!ok) rc = 1;
+                if (owner && !session.expectInWorld) console.log(`[run] ${await releaseClaim(owner)}`);
+            }
+            if (rc === EXIT_HOST_RESERVED) console.log(`[run] resume: once ${reservation.path} is gone or expired, run the same command again`);
+            if (rc === 4) console.log('[run] resume: run the same command again (the walk starts from game state)');
+            return rc;
         });
-        if (!ran) {
-            const t = term as unknown as Terminated;
-            code = t.exitCode;
-            console.log(`[run] ${t.message}`);
-            return code;
-        }
-        const { result, lastState } = ran;
-        code = result.code;
-        console.log(`[run] ${result.outcome}`);
-        if (code === 0 && a.until === undefined) {
-            const total = lastState ? totalLevel(lastState) : null;
-            const ok = total === TARGET_TOTAL && !session.expectInWorld;
-            log.append(annotation(log, session.name, 'note', '(run) total', { ok, meta: { total, target: TARGET_TOTAL, loggedOut: !session.expectInWorld } }));
-            console.log(`[run] total ${total ?? '?'} of ${TARGET_TOTAL}; ${session.expectInWorld ? 'NOT logged out' : 'logged out'}`);
-            if (!ok) code = 1;
-            if (owner && !session.expectInWorld) console.log(`[run] ${await releaseClaim(owner)}`);
-        }
-        if (code === EXIT_HOST_RESERVED) console.log(`[run] resume: once ${reservation.path} is gone or expired, run the same command again`);
-        if (code === 4) console.log('[run] resume: run the same command again (the walk starts from game state)');
     } finally {
         unalias();
-        await closeSession(session);
         (term as Terminated | null)?.disarm();
     }
+    if (term) return code;
     console.log('\n' + formatRunReport(runReport([...earlier, ...log.rows], chain, readFileSync(join(ROOT, 'docs/speedrun/RUN-ORDER.md'), 'utf8'))));
     return code;
 }

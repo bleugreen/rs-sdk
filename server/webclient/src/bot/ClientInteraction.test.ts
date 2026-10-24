@@ -1504,3 +1504,28 @@ describe('config lookups outside the table', () => {
             .toThrow(RangeError);
     });
 });
+
+describe("the published state carries the page's launch id (rs/668)", () => {
+    function overlay(launch: string | null) {
+        return Object.assign(Object.create(BotOverlay.prototype), {
+            client: {
+                chatModalId: -1,
+                isViewportInterfaceOpen: () => false,
+                getViewportInterface: () => -1,
+                isDialogOpen: () => false,
+                isWaitingForDialog: () => false,
+                isModalOpen: () => false,
+                getModalInterface: () => -1
+            },
+            collector: { collectState: (tick: number) => ({ tick, inGame: true, dialog: {}, interface: {} }) },
+            programs: { status: () => null },
+            serverTick: 7,
+            launch
+        });
+    }
+
+    test('a page opened with ?launch= puts it on every state; one opened without puts nothing', () => {
+        expect(overlay('0123456789ab').collectWorldState()).toMatchObject({ tick: 7, inGame: true, launch: '0123456789ab' });
+        expect('launch' in overlay(null).collectWorldState()).toBe(false);
+    });
+});

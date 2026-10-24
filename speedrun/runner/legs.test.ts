@@ -1,13 +1,15 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { findDoorsAlongPath, getDoorAt } from '../../sdk/pathfinding';
 import type { BotWorldState, InventoryItem, PlayerState } from '../../sdk/types';
 import { parseLedger, walk, type OutEntry } from '../tools/slot-ledger';
 import { parseTiles, resolveOptions, routeLogs } from '../skills/firemaking';
 import { baseState, drive, FakeSdk, simulateWalking } from '../lib/fake-sdk';
 import { TickLog } from '../lib/ticks';
-import { inArea, SPELLS } from '../lib/travel';
-import { arrived, dropDue, DROPS_PER_TICK, dropsDue, entersWilderness, leg, legById, legPreconditions, LEGS, legsAfter, legsFor, neededBy, netTotal, resumeHop, runLeg, splitLeg, TILES, type LegStep } from './legs';
+import { inArea, SPELLS, type Hop } from '../lib/travel';
+import { arrived, CHURCH_ALTAR, dropDue, DROPS_PER_TICK, dropsDue, entersWilderness, leg, legById, legPreconditions, LEGS, legsAfter, legsFor, neededBy, netTotal, resumeHop, runLeg, splitLeg, TILES, type LegStep, type LegStopRecord } from './legs';
+import { PLACEMENT } from './chain';
 import { Observation, resolveResume } from './resume';
 import type { RunnerSession, Step, StepContext } from './step';
 
@@ -166,12 +168,12 @@ describe('the catalogue', () => {
         expect(unsafe).toEqual(['T13-14', 'T14-15', 'T15-16', 'T26-27', 'T27-17']);
     });
 
-    test('one leg per id, every RUN-ORDER.md section 2 leg, and the order total: 1,382 + T07a 12 + T16-18 8 + T02-03 43 (5 to 48) = 1,445 ticks', () => {
+    test("one leg per id, every RUN-ORDER.md section 2 leg, and the order total: 1,382 + T07a 12 + T16-18 8 + T02-03 43 (5 to 48) + T14-15 at its measured 185 (11.5 over 173.5 i) = 1,456.5 ticks", () => {
         const ids = LEGS.map(l => l.def.id);
         expect(new Set(ids).size).toBe(ids.length);
         expect(ids).toContain('T07a');
         expect(ids.filter(i => i.startsWith('L24'))).toEqual(['L24a', 'L24b', 'L24c']);
-        expect(netTotal()).toBe(1445);
+        expect(netTotal()).toBe(1456.5);
     });
 
     test("T02-03 ends on S03's row entry and T04-05 leaves from where S03's 157th log leaves SCORED", () => {
@@ -295,6 +297,14 @@ describe('the catalogue, continued', () => {
         const s = state(TILES.contestDwarf.x, TILES.contestDwarf.z, { inventory: [...FALADOR_RUNES, item(4, 'Body talisman')] });
         expect(legPreconditions(t2021.def, s)).toBe(true);
         expect(legsFor({ s21Altar: 'nature' })).toEqual([...LEGS]);
+    });
+
+    test("T25-26 ends on exactly (3191,3365), with no door on it or beside it (the guild door is (3191,3363))", () => {
+        const t = legById('T25-26').def;
+        expect(t.dest).toEqual({ x: 3191, z: 3365, tol: 0 });
+        expect(t.hops.at(-1)).toEqual({ kind: 'run', to: { x: 3191, z: 3365, tol: 0, level: 0 } });
+        expect(getDoorAt(0, 3191, 3363)).toBeDefined();
+        expect(findDoorsAlongPath([{ x: t.dest.x, z: t.dest.z, level: 0 }])).toEqual([]);
     });
 
     test('legsAfter interleaves by step id', () => {
@@ -564,5 +574,238 @@ describe('leg drops: the STEP-MANIFEST ledger contract', () => {
     test('the module-exit and pending lists name real ledger drops', () => {
         const real = new Set(legRows.flatMap(r => dropsOn(r.row).map(o => `${r.row} ${o.name}`)));
         expect([...Object.keys(MODULE_EXIT_DROPS), ...Object.keys(PENDING_DROPS)].filter(k => !real.has(k))).toEqual([]);
+    });
+});
+
+// ------------------------------------------------------------------ splits keep the drops
+
+describe("splitLeg keeps the drops: part a makes the whole leg's, part b none", () => {
+    const rows = parseLedger(MANIFEST).rows;
+    const inLedger = new Set(rows.map(r => r.row));
+    /** The splits buildChain makes: each PLACEMENT leg row the ledger in force has. */
+    const chainSplits = Object.entries(PLACEMENT).flatMap(([row, p]) => ('leg' in p && inLedger.has(row) ? [{ row, ...p }] : []));
+    const split = (c: (typeof chainSplits)[number]) => splitLeg(legById(c.leg, IN_FORCE), c.afterHop, c.firstTicks ? { firstTicks: c.firstTicks } : {});
+    const dropSamples = (id: string) => rows.find(r => r.row === id)!.out.filter(o => o.reason === 'drop').map(sampleName);
+    const names = (xs: readonly InventoryItem[]) => xs.map(i => i.name);
+
+    test('the chain splits two dropping legs: T11-12 at H9 and T26-27 at H23', () => {
+        expect(chainSplits.filter(c => legById(c.leg, IN_FORCE).def.drops?.length).map(c => `${c.leg} ${c.row}`)).toEqual(['T11-12 H9', 'T26-27 H23']);
+    });
+
+    test('part a drops, before each of its hops and on its arrival, exactly what the unsplit leg drops there; part b drops nothing', () => {
+        for (const c of chainSplits) {
+            const l = legById(c.leg, IN_FORCE);
+            if (!l.def.drops?.length) continue;
+            const [a, b] = split(c);
+            expect(a.def.drops).toEqual(l.def.drops);
+            expect(b.def.drops).toBeUndefined();
+            const s = state(0, 0, { inventory: [...ARDOUGNE_RUNES, item(2, 'Knife'), item(3, 'Shark', 2), ...dropSamples(c.leg).map((n, i) => item(4 + i, n))] });
+            expect(dropsDue(a.def, s, 0).length).toBeGreaterThan(0);
+            for (let at = 0; at <= c.afterHop; at++) expect(names(dropsDue(a.def, s, at))).toEqual(names(dropsDue(l.def, s, at)));
+            expect(names(dropsDue(a.def, s, a.def.hops.length))).toEqual(names(dropsDue(l.def, s, c.afterHop + 1)));
+            expect(dropsDue(b.def, s, 0)).toEqual([]);
+        }
+    });
+
+    test('in the chain, T11-12a drops the five Grand Tree leftovers before its cast, and T11-12b, after H9, drops nothing', async () => {
+        const [a, b] = split(chainSplits.find(c => c.leg === 'T11-12')!);
+        const left = ['Translation book', "Hazelmere's scroll", "Glough's journal", 'Lumber order', "Glough's key"];
+        const sdk = new FakeSdk(state(TILES.narnodeRoots.x, TILES.narnodeRoots.z, { inventory: [...ARDOUGNE_RUNES, ...left.map((n, i) => item(2 + i, n))] }));
+        const drops = serveDrops(sdk);
+        const held = serveTeleport(sdk, SPELLS.ardougne.landing);
+        simulateWalking(sdk);
+        await drive(sdk, a.run(ctxFor(sdk)));
+        expect(drops.map(d => d.slot)).toEqual([2, 3, 4, 5, 6]);
+        expect(kinds(sdk).slice(0, 2)).toEqual(['sendDropItem', 'sendClickComponent']);
+        expect(held[0]).toEqual(['Water rune', 'Law rune']);
+        expect(a.postconditions(sdk.state!, undefined)).toBe(true);
+        // Whatever H9 hands over at the landing stays: part b has no drops.
+        sdk.state = { ...sdk.state!, inventory: [item(7, 'Translation book')] };
+        const sent = sdk.sent.length;
+        await drive(sdk, b.run(ctxFor(sdk)));
+        expect(sdk.sent.slice(sent).some(x => x.method === 'sendDropItem')).toBe(false);
+        expect(inArea(sdk.state!, TILES.ladyServil)).toBe(true);
+    });
+
+    test('a split whose part b needs what a drop takes is refused: a rune for its spell, an item it uses on a loc', () => {
+        const fal: Hop = { kind: 'teleport', spell: 'falador' };
+        const toRuins: Hop = { kind: 'run', to: { x: 2984, z: 3293, tol: 2 } };
+        const opts = (drops: RegExp[]) => ({ after: 'A', before: 'B', method: 'm', drops, expected: { ticks: 20, label: 'i' as const, source: 'test', net: 20 } });
+        const twice = leg('TX', TILES.doric, TILES.airAltar, [fal, toRuins, fal, toRuins], opts([/^air rune$/i]));
+        expect(() => splitLeg(twice, 0)).toThrow('TX: cannot split after hop 0: /^air rune$/i takes the Air rune part b needs');
+        const talisman: Hop = { kind: 'item-on-loc', item: /^air talisman$/i, loc: { id: 2452 }, arrive: TILES.airAltar };
+        expect(() => splitLeg(leg('TY', TILES.doric, TILES.airAltar, [fal, toRuins, talisman], opts([/talisman$/i])), 0)).toThrow('/talisman$/i takes the air talisman part b needs');
+        // A drop part b does not need splits as before, and part a keeps what part b needs (keepFor).
+        const [a] = splitLeg(leg('TZ', TILES.doric, TILES.airAltar, [fal, toRuins, talisman], opts([/^air rune$/i])), 0);
+        expect(a.def.keepFor).toEqual([toRuins, talisman]);
+    });
+
+    test('no drop a split leg makes takes what the hand-off between its parts brings (a resumed part a drops what is held)', () => {
+        const problems: string[] = [];
+        for (const c of chainSplits) {
+            const brought = rows.find(r => r.row === c.row)!.in.map(e => (e.family ? `${e.name}(2)` : e.name));
+            for (const p of legById(c.leg, IN_FORCE).def.drops ?? []) for (const n of brought) if (p.test(n)) problems.push(`${c.leg} ${p} takes ${c.row}'s ${n}`);
+        }
+        expect(problems).toEqual([]);
+    });
+
+    test('every field of a split leg reaches one of its parts (a new LegDef field must be carried by splitLeg)', () => {
+        const own = new Set(['id', 'start', 'dest', 'hops', 'after', 'before', 'method', 'expected']);
+        for (const c of chainSplits) {
+            const l = legById(c.leg, IN_FORCE);
+            const [a, b] = split(c);
+            const carried = new Set([...Object.keys(a.def), ...Object.keys(b.def)]);
+            expect([c.leg, Object.keys(l.def).filter(k => !own.has(k) && !carried.has(k))]).toEqual([c.leg, []]);
+        }
+    });
+});
+
+// ------------------------------------------------------------------ T14-15's church altar
+
+describe("T14-15 prays at the East Ardougne church altar when Prayer points are short (main's R2)", () => {
+    const T1415 = () => legById('T14-15');
+    const H11R = { firstTicks: 70 };
+    const prayers = (points: number, level = 99) => ({ activePrayers: [] as boolean[], prayerPoints: points, prayerLevel: level });
+    /** loc 409 `altar` (skill_prayer/configs/altars.loc: op1 Pray-at), at (2617,3309) on map m40_51. */
+    const ALTAR = { id: 409, x: 2617, z: 3309, level: 0, name: 'Altar', distance: 5, options: ['Pray-at'], optionsWithIndex: [{ text: 'Pray-at', opIndex: 1 }] };
+    const DOOR_AT = { x: 2650, z: 3308 };
+    const door = (open: boolean) => ({ id: 1530, ...DOOR_AT, level: 0, name: 'Door', distance: 3, options: [open ? 'Close' : 'Open'], optionsWithIndex: [{ text: open ? 'Close' : 'Open', opIndex: 1 }] });
+    /** T14-15b's first hop (the run to the Khazard tree) with its stop: the leg from the landing, as the chain runs it after H11r. */
+    const fromLanding = () => {
+        const [, b] = splitLeg(T1415(), 1, H11R);
+        return leg('T14-15b', SPELLS.ardougne.landing, TILES.khazardTree, [b.def.hops[0]!], {
+            after: 'H11r', before: 'S15', method: 'test', stops: b.def.stops, expected: { ticks: 100, label: 'i', source: 'test', net: 100 },
+        });
+    };
+    /** The altar's script: a Pray-at sets the points to the level on the next tick. Records each op's tick. */
+    const serveAltar = (sdk: FakeSdk): number[] => {
+        const prayed: number[] = [];
+        const prev = sdk.onSend;
+        sdk.onSend = (a, f) => {
+            prev(a, f);
+            if (a.method !== 'sendInteractLoc' || a.args[2] !== 409) return;
+            prayed.push(f.state!.tick);
+            queueMicrotask(() => f.tick(s => ({ prayers: { ...s.prayers, prayerPoints: s.prayers.prayerLevel } })));
+        };
+        return prayed;
+    };
+    const landing = (points: number, more: Partial<BotWorldState> = {}) =>
+        state(SPELLS.ardougne.landing.x, SPELLS.ardougne.landing.z, { prayers: prayers(points), nearbyLocs: [ALTAR] as never, ...more });
+    const stopsOf = (ctx: StepContext<unknown>) => (ctx.log.rows.find(r => r.kind === 'travel')!.meta as { stops?: LegStopRecord[] }).stops;
+    const inChurch = (c: { x: number; z: number }) => c.x >= 2613 && c.x <= 2621 && c.z >= 3304 && c.z <= 3310;
+
+    test('the stop: loc 409 Pray-at from the aisle head (2617,3308), before hop 2; the hops, checkpoints and Khazard arrival are as before', () => {
+        const d = T1415().def;
+        expect(d.stops).toHaveLength(1);
+        expect(d.stops![0]).toMatchObject({ before: 2, label: 'East Ardougne church altar', loc: { id: 409, x: 2617, z: 3309 } });
+        expect(String(d.stops![0]!.op)).toBe(String(/^pray-at$/i));
+        expect(d.stops![0]!.hops).toEqual([{ kind: 'run', to: { x: 2617, z: 3308, tol: 1, level: 0 } }]);
+        expect(d.hops.map(h => h.kind)).toEqual(['run', 'teleport', 'run', 'tree', 'tree', 'run']);
+        expect(d.hops[2]).toEqual({ kind: 'run', to: { x: 2555, z: 3259, tol: 1, level: 0 } });
+        expect(d.checkpoints!.map(c => c.after)).toEqual([3, 4]);
+        expect(d.method).toMatch(/church altar/);
+        expect(d.expected).toMatchObject({ ticks: 185, label: 'm', net: 185 });
+        expect(CHURCH_ALTAR.wanted(landing(20))).toBe(true);
+        expect(CHURCH_ALTAR.wanted(landing(99))).toBe(false);
+    });
+
+    test('the checkpoints still place a restart: the landing and the church resume at hop 2 (where the stop asks again), the trees after them', () => {
+        const d = T1415().def;
+        expect(resumeHop(d, landing(20))).toBe(2);
+        expect(resumeHop(d, state(2617, 3308))).toBe(2);
+        expect(resumeHop(d, state(2580, 3280))).toBe(2);
+        expect(resumeHop(d, state(2540, 3170))).toBe(4);
+        expect(resumeHop(d, state(2460, 3440))).toBe(5);
+    });
+
+    test("H11r's split puts the stop in part b at its hop 0, never in part a (which ends at the landing)", () => {
+        const [a, b] = splitLeg(T1415(), 1, H11R);
+        expect(a.def.stops).toBeUndefined();
+        expect(b.def.stops!.map(st => st.before)).toEqual([0]);
+        expect(b.def.checkpoints!.map(c => c.after)).toEqual([1, 2]);
+    });
+
+    test('part a, drained, runs from Wilderness 20 and teleports: no altar op, no walk to the church', async () => {
+        const [a] = splitLeg(T1415(), 1, H11R);
+        const sdk = new FakeSdk(state(3288, 3660, { prayers: prayers(20), nearbyLocs: [ALTAR] as never, inventory: [...ARDOUGNE_RUNES, item(3, 'Shark', 2)] }));
+        serveTeleport(sdk, SPELLS.ardougne.landing);
+        const sim = simulateWalking(sdk);
+        await drive(sdk, a.run(ctxFor(sdk)));
+        expect(arrived(a.def, sdk.state!)).toBe(true);
+        expect(sdk.sent.some(x => x.method === 'sendInteractLoc')).toBe(false);
+        expect(sim.clicks.filter(inChurch)).toEqual([]);
+        expect(sdk.state!.prayers.prayerPoints).toBe(20);
+    });
+
+    test('prayer drained: the leg walks into the church, prays, and runs on to the Khazard tree with the points at the level', async () => {
+        const l = fromLanding();
+        const sdk = new FakeSdk(landing(20));
+        const prayed = serveAltar(sdk);
+        simulateWalking(sdk);
+        const ctx = ctxFor(sdk);
+        await drive(sdk, l.run(ctx));
+        expect(prayed).toHaveLength(1);
+        expect(sdk.sent.find(x => x.method === 'sendInteractLoc')!.args).toEqual([2617, 3309, 409, 1]);
+        expect(sdk.state!.prayers.prayerPoints).toBe(99);
+        expect(inArea(sdk.state!, TILES.khazardTree)).toBe(true);
+        // The altar op went out from the aisle head, and the walk to the tree only after it.
+        const op = sdk.sent.findIndex(x => x.method === 'sendInteractLoc');
+        expect(sdk.sent.slice(op + 1).some(x => x.method === 'sendWalk')).toBe(true);
+        const [rec] = stopsOf(ctx)!;
+        expect(rec).toMatchObject({ at: 0, label: 'East Ardougne church altar', made: true, ok: true, before: 'Prayer 20 of 99', after: 'Prayer 99 of 99' });
+        expect(rec!.ticks).toBeGreaterThan(0);
+    });
+
+    test('prayer full: no altar steps at all, 0 ticks, the first click straight for the tree', async () => {
+        const l = fromLanding();
+        const sdk = new FakeSdk(landing(99));
+        const prayed = serveAltar(sdk);
+        const sim = simulateWalking(sdk);
+        const ctx = ctxFor(sdk);
+        await drive(sdk, l.run(ctx));
+        expect(prayed).toEqual([]);
+        expect(sdk.sent.some(x => x.method === 'sendInteractLoc')).toBe(false);
+        expect(sim.clicks.filter(inChurch)).toEqual([]);
+        expect(sim.clicks[0]!.tick).toBe(100);
+        expect(inArea(sdk.state!, TILES.khazardTree)).toBe(true);
+        expect(stopsOf(ctx)).toEqual([{ at: 0, label: 'East Ardougne church altar', made: false, ok: true, ticks: 0, before: 'Prayer 99 of 99' }]);
+    });
+
+    test('a door shut on the way to the altar is opened by the walk, then the leg prays', async () => {
+        const l = fromLanding();
+        const sdk = new FakeSdk(landing(20, { nearbyLocs: [ALTAR, door(false)] as never }));
+        let open = false;
+        const prev = sdk.onSend;
+        sdk.onSend = (a, f) => {
+            prev(a, f);
+            if (a.method === 'sendInteractLoc' && a.args[2] === 1530) {
+                open = true;
+                queueMicrotask(() => f.tick(s => ({ nearbyLocs: s.nearbyLocs.map(x => (x.id === 1530 ? door(true) : x)) as never })));
+            }
+        };
+        const prayed = serveAltar(sdk);
+        simulateWalking(sdk, { blocked: (x, z) => !open && x === DOOR_AT.x && z === DOOR_AT.z });
+        const ctx = ctxFor(sdk);
+        await drive(sdk, l.run(ctx));
+        const ops = sdk.sent.filter(x => x.method === 'sendInteractLoc').map(x => x.args[2]);
+        expect(ops[0]).toBe(1530);
+        expect(ops.at(-1)).toBe(409);
+        expect(prayed).toHaveLength(1);
+        expect(sdk.state!.prayers.prayerPoints).toBe(99);
+        expect(inArea(sdk.state!, TILES.khazardTree)).toBe(true);
+        expect(stopsOf(ctx)![0]!.doors).toMatchObject([{ x: DOOR_AT.x, z: DOOR_AT.z, id: 1530, state: 'closed' }]);
+    });
+
+    test('an altar that never refills fails the leg, naming the altar and the points', async () => {
+        const l = fromLanding();
+        const sdk = new FakeSdk(landing(20));
+        simulateWalking(sdk);
+        await expect(drive(sdk, l.run(ctxFor(sdk)))).rejects.toThrow(/^T14-15b: East Ardougne church altar: Altar at 2617,3309 left Prayer 20 of 99 after 20 ticks$/);
+    });
+
+    test('a stop must come before one of the leg hops', () => {
+        expect(() => leg('TX', TILES.doric, TILES.doric, [{ kind: 'run', to: TILES.doric }], {
+            after: 'A', before: 'B', method: 'm', stops: [{ ...CHURCH_ALTAR, before: 1 }], expected: { ticks: 1, label: 'i', source: 'test', net: 1 },
+        })).toThrow("TX: stop 'East Ardougne church altar' comes before hop 1 of 1");
     });
 });

@@ -379,7 +379,7 @@ describe('deliverable runtime configurations', () => {
         // The package payload fingerprint is independent of account partitioning.
         const unchangedPackages = [...artifact.rows, ...artifact.onRequest].map(row => packages.find(p => p.scope!.step === row));
         expect(createHash('sha256').update(JSON.stringify(unchangedPackages)).digest('hex'))
-            .toBe('a4031c7eb00d4a805981e044a3b2765b954828a2821984cbfc1c2ada01f4dbfc');
+            .toBe('fd8c7f58463fafefd48b9f1e600935621ec97b2a63af54370e0c00ed699266eb');
         expect(artifact.deliveryRun).toBe('rs529-production-lab-20261023');
         expect(artifact.receiver).toEqual({ name: 'mdr529production', kind: 'anonymous lab receiver; not scored credentials' });
         expect(artifact.cueRoot).toBe('/tmp/rs529-production-lab-20261023/cues');

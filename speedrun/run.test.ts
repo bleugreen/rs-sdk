@@ -1,4 +1,6 @@
-import { fakeCdp } from './lib/fake-cdp';
+import { fakeCdp, fakeWorld } from './lib/fake-cdp';
+import { FakeSdk } from './lib/fake-sdk';
+import { TickPeriod } from './lib/wait';
 import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
@@ -7,8 +9,8 @@ import { TickLog } from './lib/ticks';
 import { MANIFEST } from './tools/slot-ledger';
 import { returnExtrasFromLedger } from './helpers/cannon-receiver';
 import { readFileSync } from 'fs';
-import { aliasAccount, attemptOf, openRunSession, cannonServeDrift, chainOrRefusal, type GateIO, LOG_ACCOUNT, loadRunConfig, parseArgs, signalShutdown, type SignalDeps, startGates, TARGET_TOTAL, Terminated, tickBeforeLogin, totalLevel, untilTerminated, UsageError } from './run';
-import type { OpenOptions, Session } from './lib/session';
+import { aliasAccount, attemptOf, openRunSession, cannonServeDrift, chainOrRefusal, type GateIO, LOG_ACCOUNT, loadRunConfig, parseArgs, signalShutdown, type SignalDeps, startGates, takeoverGate, TARGET_TOTAL, Terminated, tickBeforeLogin, totalLevel, untilTerminated, UsageError, withScoredSession } from './run';
+import { LOGOUT_BUTTON, type AbandonResult, type OpenOptions, type Session } from './lib/session';
 import { RelogBudget } from './runner/relog-budget';
 import { exitStopIsFinal } from './runner/cue-keeper';
 import { SCORED_LOGIN, SCORED_RELOG } from './runner/scored-relog';
@@ -315,6 +317,115 @@ describe('startup during the planned S21 logout', () => {
             beforeLogin: async () => { await Promise.resolve(); note('tick gate'); } }, t.deps);
         expect(t.log.rows.map(r => r.step)).toEqual(['S21 runecraft:pre-login', SCORED_LOGIN, 'tick gate']);
         expect(t.log.rows.map(r => r.account)).toEqual([LOG_ACCOUNT, LOG_ACCOUNT, LOG_ACCOUNT]);
+    });
+
+    test('a login half that throws once it has started is abandoned, then closed (rs/668)', async () => {
+        const t = setup('open');
+        t.chain[1]!.run = async () => {
+            t.trace.push('login');
+            throw new Error('page login failed mid-way');
+        };
+        const abandon = async (s: Session): Promise<AbandonResult> => {
+            t.trace.push('abandon');
+            s.expectInWorld = false;
+            return { ok: true, sends: 1, takeovers: 0, wallMs: 5 };
+        };
+        await expect(openRunSession('lab', { client: 'browser', chain: t.chain, relogs: t.relogs, log: t.log }, { ...t.deps, abandon })).rejects.toThrow('page login failed');
+        expect(t.trace).toEqual(['open launch=false awaitInWorld=false', 'ready', 'login', 'abandon', 'close']);
+        expect(t.log.rows.map(r => [r.account, r.step, r.ok])).toEqual([
+            [LOG_ACCOUNT, '(startup) S21 recovery refused', false],
+            [LOG_ACCOUNT, '(run) SCORED abandoned: (startup) the S21 login half failed', true],
+        ]);
+    });
+});
+
+describe('startup failures leave SCORED logged out (rs/668)', () => {
+    const budget = (alive: (pid: number) => boolean = () => true) => new RelogBudget(mkdtempSync(join(tmpdir(), 'run-abandon-')), undefined, alive);
+
+    /** A browser session on a fake tab, in game, whose world lists it; the logout button takes it out of both. */
+    function inGame() {
+        const cdp = fakeCdp('srtest', 'x');
+        const world = fakeWorld();
+        world.players.add('srtest');
+        cdp.hooks.onClickComponent = id => {
+            if (id !== LOGOUT_BUTTON) return;
+            cdp.client.ingame = false;
+            world.players.delete('srtest');
+        };
+        const session = {
+            name: 'srtest', client: 'browser', sdk: new FakeSdk(), sessionId: 1, launchTag: null, expectInWorld: true,
+            period: new TickPeriod(), watchdog: null, logPath: '/dev/null', lastInWorldTick: 100,
+            env: { BOT_USERNAME: 'srtest', PASSWORD: 'x', CDP_URL: cdp.origin, CLIENT_URL: `${cdp.origin}/bot?server=${world.host}` },
+        } as unknown as Session;
+        return { cdp, world, session, stop: () => (cdp.stop(), world.stop()) };
+    }
+
+    test('a throw before the chain, after the page login: the account ends confirmed logged out, logged, then closed', async () => {
+        const t = inGame();
+        const log = TickLog.memory('t');
+        const closed: string[] = [];
+        try {
+            const err = await withScoredSession(t.session, { relogs: budget(), log }, async () => {
+                throw new Error('chainProbes: nothing provides the S03 probe');
+            }, { close: async () => void closed.push('close') }).catch((e: Error) => e);
+            expect((err as Error).message).toBe('chainProbes: nothing provides the S03 probe');
+            expect(t.cdp.page.clicks).toEqual([LOGOUT_BUTTON]);
+            expect(t.world.players.has('srtest')).toBe(false);
+            expect(t.session.expectInWorld).toBe(false);
+            expect(closed).toEqual(['close']);
+            expect(log.rows).toHaveLength(1);
+            expect(log.rows[0]).toMatchObject({ step: '(run) SCORED abandoned: (exit) the run ended with SCORED still in the world', ok: true, meta: { ok: true, sends: 1, takeovers: 0 } });
+        } finally {
+            t.stop();
+        }
+    });
+
+    test('a run that logged out leaves nothing to abandon', async () => {
+        const calls: string[] = [];
+        const session = { name: 'srtest', expectInWorld: true } as unknown as Session;
+        const out = await withScoredSession(session, { relogs: budget(), log: TickLog.memory('t') }, async () => {
+            session.expectInWorld = false;
+            return 0;
+        }, { abandon: async () => (calls.push('abandon'), null), close: async () => void calls.push('close') });
+        expect([out, calls]).toEqual([0, ['close']]);
+    });
+
+    test("a failed launch is logged as SCORED's, and openSession was given the relog rules' takeover gate", async () => {
+        const relogs = budget();
+        const log = TickLog.memory('t');
+        let given: OpenOptions | null = null;
+        const open = async (_bot: string, o: OpenOptions = {}): Promise<Session> => {
+            given = o;
+            throw new Error('lab: refusing launch 0123456789ab: the page\'s login ended; logged out, confirmed (1 logout click(s), 1 takeover login(s), 4100 ms)');
+        };
+        await expect(openRunSession('lab', { client: 'browser', chain: [], relogs, log }, { open })).rejects.toThrow('refusing launch');
+        expect((given as OpenOptions | null)?.launch).toBe(true);
+        expect(typeof (given as OpenOptions | null)?.takeover).toBe('function');
+        expect(log.rows).toHaveLength(1);
+        expect(log.rows[0]).toMatchObject({ account: LOG_ACCOUNT, step: '(startup) SCORED launch failed', ok: false });
+        expect(log.rows[0]!.error).toContain('logged out, confirmed');
+    });
+
+    test("takeoverGate: the relog lock and one unplanned relog, recorded before the login; refused while the operator's relog holds the lock or the budget is spent", async () => {
+        const relogs = budget();
+        const go = await takeoverGate(relogs, '(startup) the launch failed', () => 42)();
+        expect(typeof go).toBe('function');
+        expect(relogs.holder()).toMatchObject({ by: 'run' });
+        expect(relogs.entries()).toMatchObject([{ kind: 'unplanned', by: 'run', step: '(startup) the launch failed', tick: 42, via: 'page' }]);
+        (go as () => void)();
+        expect(relogs.holder()).toBeNull();
+
+        const operator = new RelogBudget(relogs.dir, undefined, () => true, 99_999);
+        const held = operator.tryLock('operator');
+        expect(held.ok).toBe(true);
+        expect(await takeoverGate(relogs, 'x', () => 0)()).toMatch(/the operator's relog \(pid 99999\) holds the relog lock/);
+        if (held.ok) held.release();
+        expect(relogs.entries()).toHaveLength(1);
+
+        relogs.record({ kind: 'unplanned', by: 'run', step: 'S05', tick: 1, via: 'page' });
+        relogs.record({ kind: 'manual', by: 'operator', step: 'S09', tick: 2, via: 'page' });
+        expect(await takeoverGate(relogs, 'x', () => 0)()).toMatch(/relog budget spent: 3\/3/);
+        expect(relogs.holder()).toBeNull();
     });
 });
 
