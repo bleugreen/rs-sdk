@@ -2738,11 +2738,12 @@ export const yRoom: Check<MmContext> = (s, c) => {
  */
 export const EXIT_DROPS: readonly number[] = [MM_OBJ.royalSeal, MM_OBJ.amuletMould, MM_OBJ.sigil];
 
-/** S15's exit: Daero's training xp, and none of EXIT_DROPS held or worn. */
+/** S15's exit: Daero's training xp, none of EXIT_DROPS held or worn, and the M'speak amulet worn (the ledger's, S15 to H22). */
 export const exitState: Check<MmContext> = s => {
     if (skillXp(s, 'Strength') < DAERO_STRENGTH_XP) return `Strength xp ${skillXp(s, 'Strength')} is below Daero's ${DAERO_STRENGTH_XP}`;
     const kept = EXIT_DROPS.filter(id => holds(s, id));
-    return kept.length === 0 || `still holding ${kept.join(', ')} (S15's exit drops)`;
+    if (kept.length) return `still holding ${kept.join(', ')} (S15's exit drops)`;
+    return wearing(s, MM_OBJ.amulet) || `the M'speak amulet is not worn (the inventory ledger has it worn from S15 to H22)`;
 };
 
 /** Drop every held `id` (no-op if none), confirmed from the published inventory. */
@@ -2757,9 +2758,11 @@ async function dropHeld(sdk: Sdk, id: number): Promise<void> {
 /**
  * Drop EXIT_DROPS, each pass in one tick (a drop is a 0-tick inventory op while the player stands still). The sigil
  * needs a free slot to come off, and the atoll top-ups can leave the pack full at Z, so the pack's drops go first; if
- * the pack is still full, one shark goes too (sigilRoom: HP is at Daero's reward maximum by then).
+ * the pack is still full, one shark goes too (sigilRoom: HP is at Daero's reward maximum by then). Once the sigil is
+ * off, the M'speak amulet goes back on: both are neck items (quest_mm.obj wearpos=front), so the demon fight's sigil
+ * pushed it into the pack, and the inventory ledger has it worn, not a pack slot, from S15 to H22.
  */
-async function dropDead(sdk: Sdk, note: (line: string) => void = stepNote): Promise<void> {
+export async function dropDead(sdk: Sdk, note: (line: string) => void = stepNote): Promise<void> {
     const dropAll = async () => {
         for (let i = 0; i < 3 && EXIT_DROPS.some(id => invCount(sdk, id) > 0); i++) {
             for (const it of sdk.getState()!.inventory.filter(x => EXIT_DROPS.includes(x.id))) void sdk.sendDropItem(it.slot);
@@ -2779,6 +2782,10 @@ async function dropDead(sdk: Sdk, note: (line: string) => void = stepNote): Prom
     }
     const left = EXIT_DROPS.filter(id => holds(sdk.getState()!, id));
     if (left.length) throw new Error(`could not drop ${left.join(', ')}`);
+    if (invCount(sdk, MM_OBJ.amulet) > 0) {
+        const w = await wield(sdk, MM_OBJ.amulet, { maxTicks: 6 });
+        if (!w.ok) throw new Error(`the M'speak amulet did not go back on after the sigil: ${w.reason}`);
+    }
 }
 
 /**

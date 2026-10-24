@@ -11,7 +11,9 @@
 // at arrival (default 40: S15's demon leaves 30-50 of 94, m, rs/201; i for the chain); --potion=0 drops
 // the magic potion from the kit (acceptance (a)); --blood=N stages N blood runes and lowers the kit to
 // match (default H13's 90; ~20 forces the Fire Blast fallback mid-fight); --death=N the death runes
-// behind it (default H13's 25); --trace=N.
+// behind it (default H13's 25); --prayerpots=4,2 stages the prayer potions at those doses in place of
+// the four (4)s (rs/764's S16 entry); --trace=N. After each run an EXIT line lists the pack and the worn
+// set, the S16 exit drops' evidence (no prayer potion or vial past the ledger's T16-18 row).
 //
 // Fixtures stage SCORED's S16 inventory from STEP-MANIFEST.md's inventory ledger after H13 (the
 // slot-ledger walk, 21/28 with the gree-gree): water 8, law 7, air 756, blood 70, prayer potion(4)
@@ -40,6 +42,9 @@ const MAGIC = XP_AT ? levelForXp(baseToXp(XP_AT)) : Number(arg('magic', '76'));
 const PRAYER_AT = Number(arg('prayer', '40'));
 const POTION = arg('potion', '1') !== '0';
 const FROM = arg('from', 'A');
+const PRAYER_POTS = arg('prayerpots', '4,4,4,4').split(',').map(Number);
+if (PRAYER_POTS.some(d => !(d >= 1 && d <= 4))) throw new Error(`--prayerpots=${PRAYER_POTS}: doses 1-4`);
+const prayerPots = PRAYER_POTS.reduce<Record<string, number>>((m, d) => ({ ...m, [`${d}doseprayerrestore`]: (m[`${d}doseprayerrestore`] ?? 0) + 1 }), {});
 
 /** SCORED after S15 (i: MM's reward on S15's arrival levels), Magic at the arrival under test. */
 export const LEVELS: Readonly<Record<string, number>> = {
@@ -50,7 +55,7 @@ export const LEVELS: Readonly<Record<string, number>> = {
 const PACK: Record<string, number> = {
     staff_of_fire: 1, mm_amulet_of_monkey_speak: 1,
     waterrune: 8, lawrune: 7, airrune: 756,
-    '4doseprayerrestore': 4, ...(POTION ? { '4dose1magic': 1 } : {}), shark: 9, knife: 1,
+    ...prayerPots, ...(POTION ? { '4dose1magic': 1 } : {}), shark: 9, knife: 1,
 };
 const SPELL_RUNE_OBJ: Record<KolodionSpell, string> = { fire_wave: 'bloodrune', fire_blast: 'deathrune' };
 /** Fire Blast's pricing carries death runes well past any fight, so the count is the measurement, not the kit. */
@@ -162,6 +167,8 @@ const lab: LabQuest<Options> = {
     },
     check(session) {
         const s = session.sdk.getState()!;
+        const left = s.inventory.filter(i => /^prayer potion|^vial$/i.test(i.name)).map(i => i.name);
+        console.log(`EXIT pack ${s.inventory.length}/28 (${28 - s.inventory.length} free): ${s.inventory.map(i => (i.count > 1 ? `${i.name} x${i.count}` : i.name)).join(', ')}; worn: ${s.equipment.map(i => i.name).join(', ')}; prayer ${s.prayers?.prayerPoints}/${s.prayers?.prayerLevel}; potions or vials left: ${left.length ? left.join(', ') : 'none'}`);
         if (tally.ticks > 0) {
             const row = { ...structuredClone(tally), exit: exitMagic(s), ok: true };
             fights.push(row);

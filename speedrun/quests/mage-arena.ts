@@ -152,10 +152,14 @@ export const QUEST_ITEMS: readonly QuestItem[] = [
  * S16's exit drops, the inventory ledger's T16-18 row done at F's end (as Dwarf Cannon drops its tool
  * kit and Monkey Madness its seal inside their steps): the god staff (untradeable) and the god cape
  * are dead once %magearena is 8, which the staff's handing-over sets (chamber_guardian.rs2:15);
- * Charge needs neither (charge.rs2 checks the stage). The sharks go down to S18's 2. The vials are
- * what the exit's prayer drink (drinkForElvarg) empties.
+ * Charge needs neither (charge.rs2 checks the stage). The sharks go down to S18's 2. The prayer
+ * potions are the ledger's S16 `prayer potion(*) all (drop)`: the exit's drink (drinkForElvarg) stops at
+ * full points, so a part-drunk potion can remain, and no later row takes one back (H14 gives only the
+ * knife). They match by name at the drop, whatever dose the drink left, as do the vials it emptied. The
+ * magic potion is not a drop: S18's Charge sip reads it (stunPack.sipForCharge).
  */
-export const EXIT_DROPS: readonly RegExp[] = [GOD_STAFF, GOD_CAPE, /^vial$/i];
+export const PRAYER_POTION = /^prayer potion\(\d\)$/i;
+export const EXIT_DROPS: readonly RegExp[] = [GOD_STAFF, GOD_CAPE, PRAYER_POTION, /^vial$/i];
 export const KEEP_SHARKS = 2;
 
 /** The inventory items the exit drops: every EXIT_DROPS item, and the sharks after the first `keepSharks`. */
@@ -769,15 +773,19 @@ async function guardianSegment(sdk: Sdk, opts: Options | undefined, memo: RunMem
 }
 
 /**
- * The exit drinks every held prayer dose toward full before H14 takes the potions back: nothing
+ * The exit drinks the held prayer doses toward full before the exit drops the potions: nothing
  * recharges the pool between here and Elvarg (S26 L: 51-65 points under its three prayers, rs/687's
- * budget), so a dose is worth more drunk now than returned. The emptied vials go with the exit drops.
+ * budget), so a dose is worth more drunk now than dropped. What the drink leaves, part-drunk potions
+ * and emptied vials, goes with the exit drops.
  */
 export async function drinkForElvarg(sdk: Sdk): Promise<number> {
     return drinkPrayerTo(sdk, prayerLevelOf(sdk.getState()!));
 }
 
-/** Drop exitDropItems in one tick (a drop is a 0-tick op standing still), then check none is left. */
+/**
+ * Drop exitDropItems in one tick (a drop is a 0-tick op standing still), then check none is left. Each pass
+ * reads the pack as it stands, after the drink, so a dose's new name is what is matched.
+ */
 async function exitDrop(sdk: Sdk, keepSharks: number): Promise<void> {
     for (let i = 0; i < 3; i++) {
         const pick = new Set<object>(exitDropItems(sdk.getState()!, keepSharks));
