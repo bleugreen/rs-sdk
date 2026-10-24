@@ -1325,7 +1325,7 @@ describe('H4m: S07 closes below 99 and S09 buries the rest', () => {
         // the delivery preflight's partners: every load is H4m's carrier
         const partners = chainPartners(H4M, c);
         expect(LOADS.map(row => partners[row])).toEqual(Array(10).fill('p_h4m'));
-        expect(partners.H4p).toBe(PARTNERS.H4p);
+        expect(partners.H4p).toBe(PARTNERS.H4p!);
         // S07's willow band closes at 98
         const willow = c.find(s => s.id === 'S07' && s.name === 'woodcutting:willow-73-99')!;
         const wc = (prayer: number) => baseState({
@@ -1374,7 +1374,7 @@ describe('H4m: S07 closes below 99 and S09 buries the rest', () => {
         // already on the stay: no walk
         walks.length = 0;
         const there = new FakeSdk(zoo({ x: 2605, z: 3234 }));
-        await expect(load.run({ ...ctx, sdk: there, session: { ...ctx.session, sdk: there } } as StepContext<unknown>)).rejects.toThrow('did not come into sight');
+        await expect(load.run({ ...ctx, sdk: there, session: { ...ctx.session, sdk: there } } as unknown as StepContext<unknown>)).rejects.toThrow('did not come into sight');
         expect(walks).toEqual([]);
     });
 
