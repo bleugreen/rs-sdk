@@ -400,7 +400,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 | The Grand Tree's tree-door crossing around the 6-tick open race (rs/536, rs/521 dfae255a63), its test and lab driver | 8 (S11b) | **on main, 36d29bf9 (#436)**, inside the run-commit floor (fold-in 36) | a start condition, met (fold-in 35) |
 | Docs snapshot 25: fold-in 34's documents (rs/573, rs/158's 32ef05d6) | - | on main, merge e64c864e (#461) | docs only, not a floor move (fold-in 36) |
 | rs/560's resume-gap fixes (rs/572, via rs/185 be4f9a60): Dwarf Cannon's cast() landing radius (K), the Grand Tree's M inProgress, Fishing Contest's M Camelot radius, `lab/quests/resume-gap.ts` | 12 (S13), 8 (S11b), 23 (S20) | **on main, 4ec69af6 (#463)**, inside the run-commit floor (fold-in 36) | each window now a manual restart (fold-in 35) |
-| A: a placed hand-off's `done` stays true once the band after it consumes what it brought (rs/562 A, rs/576), with rs/546's run.ts signal shutdown; 7 files from rs/186 @8289e389 | 33 (every hand-off), 0 (run.ts) | **on main, 11353fbe (#462)**, inside the run-commit floor (fold-in 36) | a start condition, met (fold-in 35); `HandOffRecord` and `handoffs.json` with it |
+| A: a placed hand-off's `done` stays true once the band after it consumes what it brought (rs/562 A, rs/576), with rs/546's run.ts signal shutdown; 7 files from rs/186 @8289e389 | 33 (every hand-off), 0 (run.ts) | **on main, 11353fbe (#462)**, inside the run-commit floor (fold-in 36) | a start condition, met (fold-in 35); the record it kept is now `AttemptRecord` in `<run dir>/attempt-record.json` (`runner/attempt-record.ts`, #597, ee12f778, rs/728), which replaced `HandOffRecord` and `handoffs.json` |
 | The socket-drop recovery (rs/511 via rs/547, rs/580) and `cueStop(S27)` above T27-17 (rs/562 C), with `tools/relog-now.ts`; 16 files from rs/186 @34d0ecf4 | 0 (every drop and relog), 7 (S27), 11 (T27-17) | **on main, 86e7aa37 (#466)**, inside the run-commit floor (fold-in 36) | floor items, met (fold-in 35); the ~24-25-tick dropped-session line current |
 | Monkey Madness follow-ups (c) and (d) (rs/575, rs/185 f9ce39fa, byte-identical): T's minder re-pick and cage let-out, U and N's resume, the browser landing-frame scans | 2 (S15) | **on main, ee2d92b6 (#467)**, inside the run-commit floor (fold-in 36) | the S15 module condition fully met; T ~+9 / ~+28 and N's landing ~+120 priced (fold-in 35) |
 | H13's drop mode and the plan-time untradeable refusal (#441's bcf83f52) re-derived on main ee2d92b6, `slotPlan` inside `handOffRoom` (rs/567), with this manifest's H13 `drop` rows and `out` grammar sentence | 33 (H13), 19 (S16's kit) | **on main, fb8265e5 (#470)**, inside the run-commit floor (fold-in 36) | the last code start condition, met; R51 closed; H13 at 8.7 m (rs/567's lab, bgsrv-mac, 400 ms, 3 of 3, 8 / 8 / 8 on both clients) |
@@ -2667,25 +2667,35 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   S01's H1 at Lumbridge (3222,3222), the out-and-back rows H13, H16, H18, H22 and H23 (rs/318's
   rulings 5 to 7), and any later H row. `run.ts` puts one `handOff(id, {partner, supersededBy})`
   Step per row between the skill and quest steps.
-- **A walking carrier late to its tile throws the step** (rs/598's lab run 1, main 12:35Z; the
-  mechanics rs/186's, via rs/158; fold-in 37): `runner/handoff.ts:284` checks 'partner in view' on
-  the resume walker before the cue's bounded ready wait (at the run commit 233d0f34, not reordered by #487, which adds only a `beforeTrade` hook; a
-  cue-served partner skips it, :585-586; rs/598's lab run refused at H4k), so a carrier not at its stand when SCORED reaches the row
-  makes the step refuse and run.ts end. A refusal is a thrown step: the re-run is RUN-HOST's
-  whole-launcher relaunch, one SCORED login, ~11.7 ticks (m, rs/595) plus re-entry, not
-  attempt-ending. Doric's H4 is not exposed: it waits inside its segment (302 measured). rs/598's reorder (main pre-approved) is not in the run commit, so the cliff stands for attempt 1. **Exposure by row: the carrier's route against SCORED's chain since that carrier's previous
-  row, flagged when the route is at least half the chain** (i, rs/158's, the windows confirmed by
-  rs/186; routes from the run commit's audit table, `docs/speedrun/helpers/mule-delivery.md:183-206`
-  at 38902b56, rs/41's per-row figures matching; the chain from RUN-ORDER.md's rows; unsummed notes):
-  - **flagged, H4k**, only after a whole-launcher relaunch landing between H4's serve and H4k (S05's
-    remainder through T06-07), which loses the carry-ahead: the bank-return route 132 against a chain
-    of ~210; with the carry-ahead, 44, it is clear, and a relaunch before H4's serve re-stages both
-    carriers with the full chain ahead. Priced as the cheap manual restart; RUN-HOST's relaunch step
-    waits for H4k's ready status in that case;
-  - **flagged, H16**: 172 (its one measured profile) against ~351, priced as exposed;
-  - **unmeasured route, an exposed cliff until rs/41's measured bank-to-stand ticks arrive** (rs/551's
-    route proofs and its timing lab, by 14:30Z; main 13:00Z): H14, H15, H19 (only its initial
-    bank-to-ready, 110, is measured; the H18-to-H19 transition is not) and H22;
+- **A late carrier is waited for, bounded; past the bound it throws the step** (rs/603 on main as
+  498f5fb0, #604, rs/738; fold-in 42b; before it, rs/598's lab run 1 refused at H4k on 'partner in
+  view', main 12:35Z, fold-in 37). A mule row's preconditions no longer ask for the carrier in view:
+  SCORED must stand within `PRE_REQUEST_TILES` = 12 tiles (Chebyshev, on its level) of the row's fixed
+  stand (`helpers/mule-readiness.ts`; the stand from `helpers/mule-itinerary.ts` `muleDelivery`, never
+  the carrier's live position; `runner/handoff.ts` `Meeting.within`). Inside the run, run.ts then waits
+  up to `READY_MAX_TICKS` = 600 observed ticks for the carrier to read ready (`runner/delivery-owner.ts`
+  `awaitReady`) and, once it is ready, up to `SIGHT_TICKS` = 10 for it to come into sight at the stand
+  (`handoff.ts` `partnerInSight`). Either expiry throws out of the step's run (a `StepError`, phase
+  'run'): not ready names the carrier and its status line, with no cue written; ready but not in sight
+  writes the row's stop non-final, `failed`, so the carrier stands down. The re-run re-enters the same
+  row (nothing traded, so not done) and waits again; only if SCORED has left the 12-tile radius does
+  the walk go down to the leg before it. **The 600-tick bound is never reached on measured routes:**
+  every measured carrier is ready before SCORED arrives, and after a relaunch a late carrier costs at
+  most ~330 ticks, a login (~10) plus its whole move from the previous stand (rs/41). A standing
+  partner (an account name) keeps 'partner in view'. **H18's stand is S22's fishing tile**: a resume
+  tells 'waiting for H18' from 'already fishing' by H18's delivered items being held. **The possible
+  waits by row: the carrier's move against SCORED's chain since that carrier's previous row** (rs/658's
+  moves via rs/41, lab engine, 400 ms, every trade exact by id; routes from
+  `docs/speedrun/helpers/mule-delivery.md`; the chain from RUN-ORDER.md's rows; unsummed notes):
+  - **H4k**, only after a whole-launcher relaunch landing between H4's serve and H4k (S05's remainder
+    through T06-07), which loses the carry-ahead: the bank-return route 132 against a chain of ~210,
+    a wait of 0 with ~78 to spare; mule1 makes H4k inside H4's measured move (308 / 264), so a relaunch
+    costs at most that; with the carry-ahead, 44, it is clear;
+  - **H16**: 172 (3 runs) against ~351, margin ~173, the tightest;
+  - **measured, ready before SCORED arrives**: H14 81 (margin 270), H22 68 after H21d (margin 467,
+    mule1 on (3191,3366), the trade opening 9-10 ticks after SCORED's arrival);
+  - **unmeasured, inside the bound by rs/41's ~330 worst case**: H15 and H19's H18-to-H19 transition
+    (H19's initial bank-to-ready, 110, is measured);
   - **prepared before the leg, not a cliff by timing: H20 (h03)** (rs/41's correction and rs/186's
     code read via rs/158): run.ts prepares each carrier's first row still ahead at the start, after
     its gates and before SCORED logs in (`run.ts:659-664`, `runner/delivery-owner.ts:80`, at the run commit 233d0f34 (#487)), and each later
@@ -2695,8 +2705,8 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
     3.2 h proof, bgsrv-mac, 3c8524df, the h03-observed profile; repeated by re-run 1 at ed2124a6). The
     cost: h03 stands ready there for most of the run (keep-alive, on a helper's clock, not SCORED's).
     The old chained design's '147 against 12' is retired;
-  - **unmeasured, window long, likely clear (i)**: H13 (after H12, through S15's ~4,790) and H18 (from
-    H4k through S21);
+  - **long windows, measured**: H13 (after H12, through S15's ~4,790; its move 245, margin thousands)
+    and H18 (from H4k through S21; H4k to Draynor bank to H18, 318);
   - **clear**: H6, H4p, H7, H8, H9, H10, H12 and H21d.
 - **Parameters:** the row id and the partner's account name. The row is the data: its `in` is what
   SCORED receives, its `out` (reason `swap` or `trade`) what it gives, its `equip` what it wears
@@ -2707,8 +2717,10 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   receives. Both open on an observed-tick bound and re-send a dropped click after `DROPPED_TICKS`,
   since the partner stands beside SCORED. `swap()` offers only the inventory, so a worn item the
   row gives is taken off first.
-- **Preconditions:** the partner in view (it is on the tile before SCORED arrives, rs/41's rule for
-  every helper); SCORED holds exactly what it gives; what it receives fits the free slots, counting
+- **Preconditions:** for a standing partner, the partner in view (it is on the tile before SCORED
+  arrives, rs/41's rule); for a mule row, SCORED within 12 tiles of the row's fixed stand, the
+  carrier's readiness (600 ticks) and sight (10) then waited for inside the run (the late-carrier
+  bullet above; rs/603, 498f5fb0); SCORED holds exactly what it gives; what it receives fits the free slots, counting
   the slots the given items free (the server counts an offered item as freed, `trade.rs2`) and the
   slot each unequip takes first. A received stack takes a slot only when none is in the pack.
 - **Postconditions and `done`:** the post-hand-off state: every `in` at its count, every given item
