@@ -4,15 +4,16 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { relogNow, type PageRead, type RelogNowIO } from '../tools/relog-now';
 import { fakeCdp, type FakeCdp } from '../lib/fake-cdp';
-import { ALREADY_LOGGED_IN, LoginRefused, LoginTimedOut, type Session } from '../lib/session';
+import { baseState, FakeSdk } from '../lib/fake-sdk';
+import { ALREADY_LOGGED_IN, LoginRefused, LoginTimedOut, startWatchdog, type LogoutResult, type Session, type WatchdogEvent } from '../lib/session';
 import { closeBotTabs } from '../lib/tab';
-import { tickMs } from '../lib/wait';
+import { TickPeriod, tickMs } from '../lib/wait';
 import {
-    ADOPT_WAIT_TICKS, ALREADY_IN_BOUND_MS, ALREADY_IN_RETRY_MS, CLOSE_SETTLE_MS, liveDropDeps, MAX_FALLS, RECHECK_TICKS, readPage, recoverDrop, type DropRelogDeps, type PageAnswer,
+    ADOPT_WAIT_TICKS, ALREADY_IN_BOUND_MS, ALREADY_IN_RETRY_MS, CLOSE_SETTLE_MS, linkPage, liveDropDeps, MAX_FALLS, RECHECK_TICKS, readPage, recoverDrop, recoveryStandDown, type DropRelogDeps, type PageAnswer,
 } from './drop-relog';
-import type { Link } from './resume';
+import { sessionLink, type Link } from './resume';
 import { NO_DATA_TIMEOUT_MS } from '../../server/webclient/src/client/NoDataTimeout';
-import { PAGE_HOLD_MARGIN_MS, pageHoldTicks } from './page-hold';
+import { PAGE_HOLD_MARGIN_MS, PAGE_HOLD_MS, pageHoldTicks } from './page-hold';
 import { RelogBudget, RelogBudgetSpent } from './relog-budget';
 
 const AT = { step: 'S07 woodcutting:oak-15-73', tick: 812 };
@@ -757,6 +758,88 @@ describe('a gone page (rs/752): an absent tab or a crashed or hung renderer is c
         } finally {
             cdp.stop();
             if (saved !== undefined) process.env.SPEEDRUN_CDP_URL = saved;
+        }
+    });
+});
+
+describe("a gone page reaches the recovery: the lab's renderer kill (fedora, 2026-10-24) stopped the run 'already logged out', exit 4, before any recovery", () => {
+    const BOT = 'scored';
+    const gone = { gone: 'its renderer did not answer (CDP Runtime.evaluate: Target crashed)' };
+    const at = (verdict: 'logout' | 'relaunch' | 'stop', msSinceAdvance: number) => ({ verdict, msSinceAdvance });
+
+    test('the link reads a gone page as out of the world; an answer passes through', async () => {
+        for (const [p, want] of [[gone, false], [true, true], [false, false], [null, null]] as const) expect(await linkPage(async () => p)()).toBe(want);
+    });
+
+    test('the watchdog never logs out a gone page, inside the hold window or past it; a relaunch only past it', async () => {
+        const read = async () => gone;
+        for (const ms of [400, 60_000, PAGE_HOLD_MS + 60_000]) {
+            expect(await recoveryStandDown(at('logout', ms), read, () => false)).toMatch(/^the page is gone \(its renderer did not answer .*\): the drop recovery closes what is left of its tab/);
+            expect(await recoveryStandDown(at('stop', ms), read, () => false)).not.toBeNull();
+        }
+        expect(await recoveryStandDown(at('relaunch', 60_000), read, () => false)).not.toBeNull();
+        expect(await recoveryStandDown(at('relaunch', PAGE_HOLD_MS + 1), read, () => false)).toBeNull();
+    });
+
+    test('an answering page keeps the stand-down it had: an out page held only while a recovery runs, an in-game one by the page hold', async () => {
+        expect(await recoveryStandDown(at('logout', 20_000), async () => false, () => true)).toBe('the page is out of the world: the running drop recovery relogs it in page');
+        expect(await recoveryStandDown(at('logout', 20_000), async () => false, () => false)).toBeNull();
+        expect(await recoveryStandDown(at('logout', 20_000), async () => true, () => false)).toMatch(/^the page still says in game/);
+        expect(await recoveryStandDown(at('logout', PAGE_HOLD_MS + 1), async () => true, () => false)).toBeNull();
+    });
+
+    test("end to end on the kill's shape: our gateway reads the bot dead, the watchdog's logout is held on one bounded read, expectInWorld stays on, the link declares the drop, and the recovery relogs on a fresh tab", async () => {
+        const cdp = fakeCdp(BOT);
+        try {
+            cdp.page.renderer = 'hung';
+            // The renderer's gateway socket closed with it: our gateway reads the bot dead 0.4 s after its last tick.
+            const sdk = Object.assign(new FakeSdk(baseState({ tick: 53 })), { checkBotStatus: async () => ({ status: 'dead', inGame: false }) });
+            const now = Date.now();
+            const session = {
+                name: BOT, client: 'browser', env: { BOT_USERNAME: BOT, PASSWORD: 'x' }, sdk, bot: null, sessionId: 1, launchId: 1, expectInWorld: true, child: null, childExit: null,
+                lastInWorldTick: 53, lastAdvanceAt: now - 400, period: new TickPeriod(), launchedAt: now - 60_000, ticksSinceProgress: 0, watchdog: null, logPath: '/dev/null',
+            } as unknown as Session;
+            const read = () => readPage(cdp.origin, BOT, 150);
+            const sent: string[] = [];
+            const events: WatchdogEvent[] = [];
+            const out: LogoutResult = { ok: true, clickTick: 53, lastInWorldTick: 53, latencyTicks: 0, wallMs: 300 };
+            const wd = startWatchdog(session, {
+                timer: false, staleTicks: 27, onEvent: e => events.push(e),
+                actions: {
+                    logout: async s => (sent.push('logout'), (s.expectInWorld = false), out),
+                    login: async () => void sent.push('login'),
+                    relaunch: async () => void sent.push('relaunch'),
+                    reconnect: async () => void sent.push('reconnect'),
+                },
+                standDown: a => recoveryStandDown(a, read, () => false),
+            });
+            const t0 = Date.now();
+            await wd.check();
+            // One bounded read (150 ms here, PAGE_READ_TIMEOUT_MS live), never the old 5 s CDP wait.
+            expect(Date.now() - t0).toBeLessThan(1_000);
+            expect(sent).toEqual([]);
+            expect(session.expectInWorld).toBe(true);
+            expect(events.map(e => e.verdict)).toEqual(['wait']);
+            expect(events[0]!.reason).toMatch(/^logout held: the page is gone \(its renderer did not answer \(CDP Runtime\.evaluate: no reply in 150 ms\)\)/);
+            wd.stop();
+
+            // The tick has stood past PAGE_CHECK_TICKS: the link asks the page and declares the drop, before its stale bound.
+            session.lastAdvanceAt = Date.now() - 2_000;
+            const link = sessionLink(session, { pageInGame: linkPage(read), pollMs: 5 });
+            expect(await link.lost(new AbortController().signal)).toBe('page out of game');
+
+            // And the recovery that runResumable then runs takes the close-first route.
+            const budget = new RelogBudget(dir());
+            const w = world({ page: true, advanced: () => false, backAt: Infinity });
+            w.deps.pageInGame = read;
+            w.deps.closeTab = async () => `${(await closeBotTabs(cdp.origin, BOT, 1_000, { blankIfLast: true })).closed} tab(s) closed`;
+            const r = await recoverDrop(budget, w.deps, 'page out of game', AT);
+            expect(r.outcome).toBe('relogged');
+            expect(named(w.calls)).toEqual(['pause watchdog', 'relaunch']);
+            expect(cdp.page.closed).toEqual(['t1']);
+            expect(budget.used()).toEqual({ planned: 0, unplanned: 1 });
+        } finally {
+            cdp.stop();
         }
     });
 });
