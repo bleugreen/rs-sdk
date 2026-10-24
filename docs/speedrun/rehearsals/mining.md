@@ -285,3 +285,33 @@ Code: `speedrun/skills/mining.ts` (`ContestWatch`, `CONTEST_RETRIES`, `CONTEST_W
 - **Scale (i):** a rival on one lap rock for all of S09's ~1,047 ores (section 10) would cost about +4,700 without the fallback, against about +110 with it. Section 10's real group (7-10 players on the cluster) is the worse case.
 
 **Open.** SCORED's combat at S09 (43 needed for `'auto'` to have a site; below it the band mines the zoo with the fallback unavailable; rs/158). The lab rival is one account on one rock; a group on several rocks trips the switch sooner (three events arrive faster) and hasn't been measured. ardougneNorth has its own group (section 10, incident 1), and a second contested site fails the band after `MAX_SWITCHES`.
+
+## 12. Bones on the `stay2` lap: H4m (rs/701)
+
+Attempt 4's H4m variant (main, 10-24 04:5xZ) closes S07 below Prayer 99. The run config's `s07PrayerTo` is 98, and S09 buries the rest: babydragon bones (main's ruling, 06:5xZ) from H4m's carrier (cairn_h55), 20 at a time. `knife-mine`'s `bury` on the `stay2` lap (#159, rs/182) costs the lap at most +0.021 ticks an ore, against 1-3.9 ticks a bone anywhere else. This section covers the step side. The lab is still to come.
+
+**The module (`mining.ts` `bury`, `buryLoads`, `buryPrayerTo`).** `bury` adds one step per load, `mining.bury: load k`, between the iron bands. Each step works like this:
+
+1. With bones held, Prayer below `buryPrayerTo` and Mining below `to`, it runs the band on `BURY_LAP` with knife-mine's `bury`. The band stops on the frame that shows the last bone gone, so the next load's trade follows at once.
+2. Whatever the lap could not bury, it buries by hand with prayer.ts `buryHeld` (rs/700's one bury primitive, 2 ticks a bone). This covers Mining reaching `to` mid-load, iron respawning over 13 ticks (the stays take no bone), and a contested lap the fallback would leave. With the fallback unavailable at this combat (section 11) a contest leaves the lap burying, as the zoo-only band mines through it. The band never walks to another site with bones held, because the next load is traded at the zoo.
+3. It drops anything held once Prayer is at `buryPrayerTo`.
+4. With no bones held it is a 0-tick pass.
+
+The lap is not in `ROTATIONS`, so respawn never chooses it. While a bury step owes bones, the iron band neither starts nor reads as in progress, so a resume enters the bury step. The exit drops bones a resume walked past. `bury: true` means any bones (`bones$`, as S07's reader); the run passes its row's own bone.
+
+**Slots.** At S09 SCORED holds the knife, 2 logs and the pickaxe, so 24 free. A load is at most 24 - FREE_SLOTS = 20, taken with **no** bone held. A load taken with 1 held leaves 3 free, and the band refuses.
+
+**The chain (`runner/chain.ts` `h4mPlan`, `s09WithH4m`).**
+
+- **The switch.** `s07PrayerTo` below 99 turns H4m on. At 99 (or absent) the chain is today's, step for step.
+- **The loads.** These are the carrier generator's: `h4mLoadRows` over STEP-MANIFEST's fallback row `H4m.1-H4m.N`, so N has one source. The chain refuses whenever the run config and the ledger disagree: P below 99 with no row, or P = 99 with one.
+- **The bone.** It comes from the row's id through one table, `H4M_BONES`: prayer.ts's BONE_TYPES (dragon @536 72 base, babydragon @534 30) and big bones @532 15. The table sets the guard's price and the bury steps' pattern. Any other bone, a noted load, or a top-up refuses.
+- **The other refusals.** P below 94 (S09's combat 43). Loads whose `N x 20 x base` falls short of P's floor to 99: S07 closes the first time Prayer reaches P, so possibly at the floor. The by-hand stop buries only what was traded, so it adds nothing to the guard. At P = 98 the need is 2,675.32 base: 5 babydragon loads (3,000) clear it and 4 (2,400) refuse; in big bones 9 loads (2,700) clear it and 8 refuse. P = 97 needs 173 babydragon. Also a missing hand-off record.
+- **S09's shape.** H4p, then for each load its hand-off H4m.k and its bury step, then the band to 99 and the exit.
+- **Each H4m.k hand-off.** It is its own delivery row (a carrier serves a session once), cue-served. Its precondition is room for 20, not the carrier in view, because the {H4m.k, mule} cue's open waits on the carrier's readiness. SCORED walks onto the east stay (2605,3234), the one tile beside the carrier's stand (2606,3234; rs/705's reach check), then sends the request itself.
+- **Resume.** A bury step is done once the next load is recorded (the last one once its own load is recorded and nothing is held), or at Prayer 99, which also supersedes the loads left.
+- **The postcondition.** The last bury step carries the chain's Prayer 99, read from the level, not the points.
+
+**The fallback stop.** The bury steps are the fallback stop: at the zoo, before T09-10, with the carrier still standing there. Any load traded after Mining 99 is buried by hand there, so Prayer 99 is reached before S10b's first protect fight. Points track the level when unused (Player.ts addXp), so S10b B's 75 is met at 98 or 99.
+
+**Price (i, rs/158 fold-in 42).** About 15 ticks a load (knife stop ~5, trade ~8, restart ~2, the restart waiting for the lap to be live, rs/207), so about +75 for the band with 5 loads.

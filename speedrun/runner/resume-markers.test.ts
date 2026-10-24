@@ -148,7 +148,7 @@ describe('the built chain after a crash-restart', () => {
     test('every cue stop with a done directly follows a step with its own done', () => {
         const d = mkdtempSync(join(tmpdir(), 'markers-chain-'));
         try {
-            const partners = Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS].map(id => [id, 'p_' + id.toLowerCase()]));
+            const partners = Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS, 'H4m'].map(id => [id, 'p_' + id.toLowerCase()]));
             const cfg: RunConfig = { partners, firemakingTiles: '3240,3296;3239,3296;3238,3296', rings: { giver: 'ring_giver' }, bones: { giver: 'bone_giver' }, courier: { giver: 'courier', below: 3 }, anvil: { giver: 'anvil_helper' }, cueDir: d };
             const chain = buildChain(cfg, { cues: new RunCues({ main: d, mule: join(d, 'mule') }, 'Scored') });
             const stops = chain.flatMap((s, i) => (isCueStop(s) && s.done ? [i] : []));

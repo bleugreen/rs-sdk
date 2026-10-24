@@ -13,7 +13,7 @@ import { dropperArmed, dropperGaps, dropperLaunch, DROPPERS, GO_CUE_ID, labCueDr
 /** rs/228's Lumbridge lap (rehearsals/firemaking.md), as a run config's firemakingTiles. */
 const LAP = '3222-3218@3219;3218-3243@3218;3242-3223@3219';
 const FD = Array.from({ length: 6 }, (_, i) => `cairn_fd${i + 1}`);
-const partners = Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS].map(id => [id, 'lab_stub']));
+const partners = Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS, 'H4m'].map(id => [id, 'lab_stub']));
 const chain = buildChain({ partners, firemakingTiles: LAP, rings: { giver: 'r' }, bones: { giver: 'b' }, courier: { giver: 'c', below: 3 }, anvil: { giver: 'a' }, cueDir: '/tmp/x' }, { cues: { open: async () => {}, stop: () => {} } });
 const span = (from: string | undefined, until: string | undefined) => sliceUntil(chain, until).slice(resolveFrom(chain, from) ?? 0);
 const none = { ringers: [], altarGivers: [] };
