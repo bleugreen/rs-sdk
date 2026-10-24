@@ -51,9 +51,14 @@ describe('Hitpoints in the report', () => {
             ev(1_000, 'a03', 'hp-train: target', 8),
             ev(6_000, 'a03', 'hp-train: dropped target', 8),
             ev(7_000, 'a04', 'hp-train: target', 8), // after a03 dropped it
-            ev(40_000, 'a05', 'hp-train: target', 7) // the cow has respawned
+            ev(40_000, 'a05', 'hp-train: target', 7), // the cow has respawned
+            ev(50_000, 'a06', 'hp-train: target', 9),
+            ev(50_400, 'a06', 'hp-train: switched target', 9),
+            ev(53_000, 'a07', 'hp-train: target', 9), // a06 switched away from it
+            ev(53_100, 'a07', 'hp-train: released target', 9),
+            ev(54_000, 'a08', 'hp-train: target', 9) // a07 reached its target and left it
         ]);
-        expect(r.targets).toBe(5);
+        expect(r.targets).toBe(7);
         expect(r.collisions).toEqual([{ index: 7, accounts: ['a01', 'a02'], gapMs: 800, at: new Date(800).toISOString() }]);
     });
     test('times from login, per site, and the queue', () => {
