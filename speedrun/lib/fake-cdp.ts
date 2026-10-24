@@ -61,6 +61,11 @@ export interface FakeCdp {
         /** What Page.captureScreenshot returns, and the page's window size. */
         screenshot: Uint8Array;
         viewport: { innerWidth: number; innerHeight: number; devicePixelRatio: number };
+        /**
+         * The tab's renderer: `crashed` rejects Runtime.evaluate with Chrome's 'Target crashed', `hung`
+         * never answers it. The target stays listed either way, as a crashed tab's does.
+         */
+        renderer: 'live' | 'crashed' | 'hung';
     };
     client: FakeGameClient;
     /**
@@ -136,6 +141,7 @@ export function fakeCdp(bot: string, password = 'x'): FakeCdp {
         opened: [],
         screenshot: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
         viewport: { innerWidth: 1920, innerHeight: 978, devicePixelRatio: 1 },
+        renderer: 'live',
     };
     const client: FakeGameClient = {
         ingame: true,
@@ -264,6 +270,11 @@ export function fakeCdp(bot: string, password = 'x'): FakeCdp {
                     page.evaluations++;
                     const expression = String(msg.params?.expression ?? '');
                     page.expressions.push(expression);
+                    if (page.renderer === 'hung') return;
+                    if (page.renderer === 'crashed') {
+                        ws.send(JSON.stringify({ id: msg.id, error: { code: -32000, message: 'Target crashed' } }));
+                        return;
+                    }
                     ws.send(JSON.stringify({ id: msg.id, result: await evaluate(expression) }));
                     return;
                 }
