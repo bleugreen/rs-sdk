@@ -10,8 +10,12 @@
 // unnotes them. No vials. The module plays whatever mix is banked, the best potion the
 // level allows at each visit.
 //
+// The close stows: once the target shows, one more visit deposits everything held (the last
+// load's unused halves and its potions), so S25c starts at the booth with 28 free.
+//
 // One step: every inventory boundary is safe to log out at, and the program restarts from
-// any inventory (a reset visit), so `inProgress` + `resume` cover a mid-band logout.
+// any inventory (a reset visit), so `inProgress` + `resume` cover a mid-band logout, and a
+// logout between the target and the stow resumes into the stow alone.
 
 import type { BotWorldState, NearbyLoc } from '../../sdk/types';
 import { planRoute, runItemCycle, stockFrom, type Booth, type ItemRecipe, type RoutePlan } from '../lib/item-cycle';
@@ -143,10 +147,20 @@ export function boothFor(s: BotWorldState, booth: Booth = VARROCK_WEST): Booth {
     return op ? { ...booth, option: op } : booth;
 }
 
+function cycleIds(recipes: readonly HerbRecipe[]): Set<number> {
+    return new Set(recipes.flatMap(r => [r.a, r.b!, r.a + 1, r.b! + 1, ...r.products]));
+}
+
 /** Inventory items that are not a recipe input, product or input note: each blocks a working slot. */
 export function otherItems(s: BotWorldState, recipes: readonly HerbRecipe[] = HERB_RECIPES): string[] {
-    const ours = new Set(recipes.flatMap(r => [r.a, r.b!, r.a + 1, r.b! + 1, ...r.products]));
+    const ours = cycleIds(recipes);
     return s.inventory.filter(i => !ours.has(i.id)).map(i => i.name);
+}
+
+/** The cycle's own items held (inputs, their notes, potions): what the stow clears. */
+export function cycleItems(s: BotWorldState, recipes: readonly HerbRecipe[] = HERB_RECIPES): string[] {
+    const ours = cycleIds(recipes);
+    return s.inventory.filter(i => i.count > 0 && ours.has(i.id)).map(i => i.name);
 }
 
 /** The route the visible supplies give: bank plus inventory while the bank is open, else the inventory. */
@@ -163,7 +177,7 @@ export function reached(s: BotWorldState, to = 99): boolean {
 export function preconditions(s: BotWorldState, opts: HerbloreOptions = {}): true | string {
     if (!s.inGame || !s.player) return 'not in game';
     const to = opts.to ?? 99;
-    if (reached(s, to)) return true; // a band already passed is a no-op
+    if (reached(s, to)) return true; // a run past its stop only stows what it holds
     const level = herbloreLevel(s);
     if (level < MIN_LEVEL) return `Herblore ${level} is below ${MIN_LEVEL}: Druidic Ritual first (every potion needs level ${MIN_LEVEL}, brew_potion.param)`;
     if (opts.members === false) return 'not a members world: mixing is members-only (brew_potion.rs2)';
@@ -200,6 +214,8 @@ function describe(plan: RoutePlan): string {
 
 export function herbloreStep(opts: HerbloreOptions = {}): Step<any> {
     const to = opts.to ?? 99;
+    const held = (s: BotWorldState) => cycleItems(s, recipesFor(opts.recipes));
+    const done = (s: BotWorldState) => reached(s, to) && held(s).length === 0;
     const entry = async (ctx: StepContext<any>) => {
         const s = ctx.sdk.getState();
         if (!s) throw new Error('no state');
@@ -212,6 +228,7 @@ export function herbloreStep(opts: HerbloreOptions = {}): Step<any> {
                 booth: boothFor(s, opts.booth ?? VARROCK_WEST),
                 untilLevel: to,
                 ...(opts.maxActions !== undefined ? { maxActions: opts.maxActions } : {}),
+                stow: true,
                 step: STEP_NAME
             }
         );
@@ -221,12 +238,17 @@ export function herbloreStep(opts: HerbloreOptions = {}): Step<any> {
         preconditions: s => preconditions(s, opts),
         run: entry,
         resume: entry,
-        postconditions: s => (reached(s, to) || opts.maxActions !== undefined ? true : `Herblore ${herbloreLevel(s)} < ${to}`),
+        postconditions: s => {
+            const left = held(s);
+            if (left.length) return `the stow left ${[...new Set(left)].join(', ')} in the inventory`;
+            return reached(s, to) || opts.maxActions !== undefined ? true : `Herblore ${herbloreLevel(s)} < ${to}`;
+        },
         logoutSafe: true,
-        done: (o: Observed) => reached(o.state, to),
+        done: (o: Observed) => done(o.state),
         inProgress: (o: Observed) => {
             const s = o.state;
-            return !!s.player && !reached(s, to) && herbloreXp(s) > POST_RITUAL_XP && herbloreXp(s) < xpForLevel(to);
+            if (!s.player || done(s)) return false;
+            return reached(s, to) || (herbloreXp(s) > POST_RITUAL_XP && herbloreXp(s) < xpForLevel(to));
         }
     };
 }
