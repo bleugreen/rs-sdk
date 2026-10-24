@@ -63,7 +63,10 @@ import * as start from '../skills/start';
 import * as thieving from '../skills/thieving';
 import * as woodcutting from '../skills/woodcutting';
 import { MANIFEST, parseLedger, type LedgerRow } from '../tools/slot-ledger';
-import { askFor, handOffFrom, handOffStep, type HandOffPlan, type HandOffRecord } from './handoff';
+import { h4mLoadRows, parseFallbacks } from '../helpers/mule-ledger';
+import { XP_RATE, xpForLevel } from '../lib/xp';
+import { READY_MAX_TICKS } from './delivery-owner';
+import { askFor, handOffFrom, handOffStep, planHandOff, type HandOffCue, type HandOffPlan, type HandOffRecord } from './handoff';
 import { legById, legsFor, splitLeg, type LegStep } from './legs';
 import { type Probe, stepProbes } from './resume';
 import { scoredLoginStep, scoredLogoutStep } from './scored-relog';
@@ -491,6 +494,22 @@ export function askedOnTrade(step: ChainStep, plan: HandOffPlan, partner: string
     return { ...step, run: wrap(step.run), resume: wrap(step.resume ?? step.run) };
 }
 
+/** Where SCORED takes each H4m load: the bone lap's east stay, the one tile beside the carrier's stand (rs/705's reach check). */
+export const H4M_TRADE_TILE = { x: mining.BURY_TRADE_TILE[0], z: mining.BURY_TRADE_TILE[1] };
+
+/** `step` with SCORED walked onto `tile` first, 0 ticks when it stands there: a trade partner reachable only from that tile. */
+export function walkedTo(step: ChainStep, tile: { x: number; z: number }): ChainStep {
+    const wrap = (f: (ctx: StepContext<unknown>) => Promise<void>) => async (ctx: StepContext<unknown>) => {
+        const p = ctx.sdk.getState()?.player;
+        if (p?.worldX !== tile.x || p?.worldZ !== tile.z) {
+            const r = await ctx.bot.walkTo(tile.x, tile.z, 0);
+            if (!r.success) throw new Error(`${step.id}: the walk to ${tile.x},${tile.z} failed: ${r.message}`);
+        }
+        await f(ctx);
+    };
+    return { ...step, run: wrap(step.run), resume: wrap(step.resume ?? step.run) };
+}
+
 /** A copy of `s` whose methods stay bound to `s`, so it survives the runner's object spreads. */
 function bound(s: AnyStep): AnyStep {
     return {
@@ -808,6 +827,35 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
     })).map(s => (s.name === KIT_SEGMENTS.H12 && inLedger.has('H12') ? mule(askedOnTrade(s, handOffFrom(manifest, 'H12'), partner('H12'), muleCueDir(cfg)), 'H12') : s));
     const atM = s15.findIndex(s => s.name.startsWith('S15:M-'));
     if (atM < 0) throw new Error('monkey-madness: emits no segment M step for the H12o login trigger');
+    /**
+     * S09 under H4m: each load's hand-off from H4m's carrier, on the east stay beside its stand, then
+     * its bury step (mining.ts `bury`), then the band to 99 and the exit. A bury step is done once the
+     * next load is recorded (the last once its own is and no bone is held), or at S09_PRAYER_TO, which
+     * also supersedes the loads left; the last carries the chain's Prayer 99.
+     */
+    const s09WithH4m = (h: H4mPlan): Entry[] => {
+        const all = mining.steps({ ...S09_MINING, bury: mining.BIG_BONES, buryLoads: h.rows.length, buryPrayerTo: S09_PRAYER_TO });
+        const record = o.handOffs!;
+        const bones = new RegExp(mining.BIG_BONES, 'i');
+        const reached = (st: BotWorldState) => skillLevel(st, 'prayer') >= S09_PRAYER_TO;
+        const out: Entry[] = [];
+        h.rows.forEach((row, i) => {
+            const last = i === h.rows.length - 1;
+            const bury = tag('S09', 'step', pick('mining', all, [mining.buryStepName(i + 1)])[0]!, {
+                done: ob => reached(ob.state) || (last ? record.has(row) && mining.bonesHeld(ob.state, bones) === 0 : record.has(h.rows[i + 1]!)),
+            });
+            out.push({ kind: 'pending-handoff', row, id: row, plan: { ...h.plan, id: row }, mule: true });
+            out.push(!last ? bury : {
+                ...bury,
+                postconditions: (st, c) => {
+                    const held = bury.postconditions(st, c);
+                    if (held !== true) return held;
+                    return reached(st) ? true : `Prayer ${skillLevel(st, 'prayer')} < ${S09_PRAYER_TO} after H4m's ${h.rows.length} loads (S07 closed at ${s07PrayerTo(cfg)}): the chain's Prayer ${S09_PRAYER_TO}`;
+                },
+            });
+        });
+        return [...out, ...steps('S09', pick('mining', all, ['mining.iron-63', 'mining.exit']))];
+    };
     const preLogin = runecraft.preLoginStep(s21Opts);
     const logout = scoredLogoutStep({ budget: relogs });
     const s21Logout = {
@@ -856,7 +904,7 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         L('T08-09'),
         // H4p, the run's only rune pickaxe, is a placed hand-off (no kitGiver: mining emits no kit step).
         ...before('S09'),
-        ...steps('S09', pick('mining', mining.steps(S09_MINING), ['mining.iron-63', 'mining.exit'])),
+        ...(h4m ? s09WithH4m(h4m) : steps('S09', pick('mining', mining.steps(S09_MINING), ['mining.iron-63', 'mining.exit']))),
         L('T09-10'),
         ...before('S10b'),
         ...steps('S10b', treeGnomeVillage.steps()),
@@ -923,8 +971,8 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         ...before('S25d'),
         ...steps('S25d', crafting.steps()),
         ...steps('S25e', herblore.steps()),
-        // S25b's bones are buried inside S07 (fold-in 23); the booth runs only if Prayer is short.
-        ...prayer.steps().map(s => whenNeeded('S25b-fallback', s, at99('prayer'), 'Prayer 99 inside S07 (fold-in 23)')),
+        // S25b's bones are buried inside S07 (fold-in 23), or S09 under H4m; the booth runs only if Prayer is short.
+        ...prayer.steps().map(s => whenNeeded('S25b-fallback', s, at99('prayer'), h4m ? "Prayer 99 in S09's H4m bury steps" : 'Prayer 99 inside S07 (fold-in 23)')),
         ...steps('S25c', cooking.steps(cfg.wineGiver ? { giver: cfg.wineGiver } : {})),
         L('T25-26'),
         ...before('S26'),
@@ -938,6 +986,12 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         ...steps('S17', pick('agility', agility.steps({ to: 99 }), ['agility:wilderness'])),
     ];
 
+    /**
+     * An H4m load's cue: the step's own mule cue (cueMuleRows opens it fresh around the step, CueKeeper
+     * waiting on the carrier's readiness), so the trade need not see the carrier at its precondition,
+     * only once the cue is open. SCORED sends the request (no standing one is waited for).
+     */
+    const h4mCue = (row: string): HandOffCue => ({ scope: muleScope(row), open: ctx => o.cues.open(muleScope(row), ctx, { fresh: false }), waitTicks: READY_MAX_TICKS, requestTicks: 0 });
     // Hand-offs: each superseded by the next milestone's own `done` (ruling 3), computed here, and
     // done once the attempt's record has it (handoff.ts, Resume).
     const out: ChainStep[] = [];
@@ -950,15 +1004,16 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         // A marker's `done` says nothing about the game (a cue file), so it never supersedes a trade.
         const next = out.find(s => s.done && !s.marker);
         const supersededBy: ObservedCheck<unknown> | undefined = next?.done ? (ob, c) => next.done!(ob, c) : undefined;
-        const plan = handOffFrom(manifest, e.row);
+        const plan = e.plan ?? handOffFrom(manifest, e.row);
         const scope = CANNON_ROWS[e.row];
         // A row with a `to N` entry is served by a standing giver that sizes it from SCORED's ask (mule.ts, rs/429), scoped to the row.
         const ask = !scope && plan.receive.some(r => r.topUp) ? { scope: muleScope(e.row), ask: { dir: muleCueDir(cfg) } } : undefined;
-        const cue = scope ? { scope, open: (ctx: Pick<StepContext<unknown>, 'sdk'>) => o.cues.open(scope, ctx, { fresh: false }) } : ask;
-        const muleRow = !scope && MULE_ROWS.includes(e.row);
+        const cue = scope ? { scope, open: (ctx: Pick<StepContext<unknown>, 'sdk'>) => o.cues.open(scope, ctx, { fresh: false }) } : e.mule ? h4mCue(e.row) : ask;
+        const muleRow = !scope && (e.mule ?? MULE_ROWS.includes(e.row));
         const beforeTrade = muleRow ? { beforeTrade: () => { o.cues.refresh?.(muleScope(e.row)); } } : {};
         const s = tag(e.id, 'handoff', handOffStep(plan, { partner: partner(e.row), ...(supersededBy ? { supersededBy } : {}), ...(o.handOffs ? { record: o.handOffs } : {}), ...(cue ? { cue } : {}), ...beforeTrade }), cue ? { cue: cue.scope } : {});
-        out.unshift(muleRow ? mule(s, e.row) : s);
+        const placed = e.mule ? walkedTo(s, H4M_TRADE_TILE) : s;
+        out.unshift(muleRow ? mule(placed, e.row) : placed);
     }
     return cueMuleRows(out, muleRows, partner, o.cues).map(censused);
 }
