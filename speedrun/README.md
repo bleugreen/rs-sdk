@@ -1318,6 +1318,8 @@ LOCAL_STAFF_LEVEL=4 NODE_TICKRATE=150 LAB_RUNNERS=0 speedrun/lab/lab.sh benchlab
   anvil, H23's cannon holder) get fresh `cairn_<tag><family><run><n>` names per run.
   S04's ring givers and S25c's wine giver need `lab.sh` lite runners, so their flags
   pass through. Hand-offs are staff-supplied unless `--stub` names a stub giver.
+  H12o's h45 is named in the generated config but never logs in (as in rs/764's
+  rehearsal), so S15's top-up legs M and P each wait 30 ticks unanswered and go on.
 - The score is the median over passing runs when all pass; a failure counts as its
   ticks + RUN-ORDER's manual restart + the step's expected again, averaged in, so a
   faster but flaky change loses. A band RUN-ORDER prices only inside its step takes

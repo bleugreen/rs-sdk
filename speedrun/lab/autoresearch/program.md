@@ -62,6 +62,10 @@ LOCAL_STAFF_LEVEL=4 NODE_TICKRATE=150 LAB_RUNNERS=0 speedrun/lab/lab.sh benchlab
   its range across both sides' runs is real); a change to a fight is judged by its
   median at a larger K (10 or more), or by its attack count. The oak band's spread
   (726 to 806) is tree depletion on a near-empty world.
+- S15's segments M and P each hold ~30 ticks the run does not spend: the bench's h45
+  never logs in, so each top-up leg waits `TOPUP_WAIT` unanswered and goes on without
+  its sharks. Treat that wait as fixed, and do not count food or HP after M as the
+  run's.
 - The bench's `SCORE` is still the gate: a segment gain that costs a failure, or moves
   ticks into another segment, is not a gain.
 - The tick rate is part of the evaluation. 150 ms is a lab speed, not the demo's 400:

@@ -3,7 +3,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { ROOT } from '../lib/session';
 import type { TickRow } from '../lib/ticks';
-import { buildChain, KIT_PARTNER_ROWS, PLACEMENT } from '../runner/chain';
+import { buildChain, h12oLoginRefusal, KIT_PARTNER_ROWS, missingOnPath, PLACEMENT } from '../runner/chain';
 import { MANIFEST } from '../tools/slot-ledger';
 import { benchArgs, benchNames, benchScore, failurePrice, formatSegments, helperFlags, segmentTable, labRunConfig, median, resolveTarget, restartTicks, runMetrics, runOrderCells, tsvRow, TSV_COLUMNS, unservedLiteFamilies, type PlanStep } from './bench-step';
 import { familyNeeds, labChain, rehearsalPlan, STAFF, type FamilyNeeds } from './dress-rehearsal';
@@ -79,7 +79,7 @@ describe('resolveTarget', () => {
     test("on the real lab chain: S12 is Fight Arena's steps and the oak band one woodcutting step, both from their own chunk", () => {
         const manifest = readFileSync(MANIFEST, 'utf8');
         const partners = Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS, 'H4m'].map(id => [id, STAFF]));
-        const cfg = { ...(labRunConfig() as object), partners, cueDir: '/tmp/x' } as Parameters<typeof buildChain>[0];
+        const cfg = { ...(labRunConfig('/tmp/x/bench', 'abc') as object), partners, cueDir: '/tmp/x/rc-cue' } as Parameters<typeof buildChain>[0];
         const world = (): LabWorld => ({ staffLevel: '4', server: 'localhost', gateway: 'ws://localhost:8300' });
         const lab = labChain(buildChain(cfg, { cues: { open: async () => {}, stop: () => {} }, manifest }), { manifest, stub: null, world });
         const planned = rehearsalPlan(lab.chain, 0, familyNeeds(lab.chain), [], null).chain;
@@ -89,6 +89,15 @@ describe('resolveTarget', () => {
         expect([...s12.names].every(n => planned.find(s => s.name === n)!.id === 'S12')).toBe(true);
         const oak = resolveTarget(planned, 'woodcutting:oak-15-73');
         expect(oak).toMatchObject({ chunk: 'S07', band: true, ids: ['S07'] });
+        // H12o's login trigger before S15:M runs (an h45 that never logs in), so S15 and later slices can pass.
+        expect(h12oLoginRefusal(cfg)).toBeNull();
+        expect(planned.some(s => s.id === 'H12o login')).toBe(true);
+        expect(missingOnPath(lab.chain).filter(m => m.id === 'H12o login')).toEqual([]);
+    });
+
+    test("the lab config's h12o block: a fresh lab h45 per bench, its two folders under the bench's own directory", () => {
+        expect(labRunConfig('/tmp/b', 'q7z').h12o).toEqual({ account: 'cairn_q7zh45', cueDir: '/tmp/b/h45-cue', loginDir: '/tmp/b/h45-login', leadTicks: 300 });
+        expect(() => labRunConfig('/tmp/b', 'Q7')).toThrow('three of');
     });
 });
 

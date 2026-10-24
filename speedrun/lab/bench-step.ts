@@ -22,7 +22,8 @@
 // S25a's anvil, H23's cannon holder) get fresh cairn_<tag><family><run><n> names per run, launched by
 // dress-rehearsal.ts as it always does. The LAB_HELPERS families (S04's ring givers, S25c's wine giver)
 // need lab.sh's lite runners, so their flags pass through as given. Hand-offs are staff-supplied
-// (`supply: staff`, listed as a cheat) unless --stub names a stub giver.
+// (`supply: staff`, listed as a cheat) unless --stub names a stub giver. H12o's h45 is named in the
+// config but never logs in (labRunConfig), so S15's top-up legs M and P each wait TOPUP_WAIT unanswered.
 //
 // Score (what a loop minimises): over the K runs that ran, a pass counts as the passing runs' median
 // ticks and a failure as the ticks it spent + RUN-ORDER's manual restart + the step again (the restart
@@ -378,9 +379,22 @@ export function unservedLiteFamilies(needs: FamilyNeeds, pass: readonly string[]
     ];
 }
 
-/** A lab run config every row of which is staff-supplied unless a flag names its helper. */
-export function labRunConfig(): Record<string, unknown> {
-    return { partners: { H4m: STAFF }, firemakingTiles: CASTLE_LAP, rings: { giver: STAFF }, bones: { giver: STAFF }, courier: { giver: STAFF, below: 2 }, anvil: { giver: STAFF } };
+/** The h12o block's staging lead: h45 logs in ~300 ticks before the ladder's top (mule.md). Nothing reads it on the lab. */
+export const H12O_LEAD_TICKS = 300;
+
+/**
+ * A lab run config every row of which is staff-supplied unless a flag names its helper. Its h12o block
+ * names a lab h45 (`cairn_<tag>h45`) that never logs in, with its role and login folders under the
+ * bench's `dir`, as rs/764's full-chain rehearsal ran it: the login trigger before S15:M writes a cue
+ * nobody reads, and Monkey Madness's two top-up legs go unanswered (TOPUP_WAIT each, then on). Without
+ * the block the trigger refuses, so no slice that crosses it could pass.
+ */
+export function labRunConfig(dir: string, tag: string): Record<string, unknown> {
+    benchNames(tag, 1);
+    return {
+        partners: { H4m: STAFF }, firemakingTiles: CASTLE_LAP, rings: { giver: STAFF }, bones: { giver: STAFF }, courier: { giver: STAFF, below: 2 }, anvil: { giver: STAFF },
+        h12o: { account: `cairn_${tag}h45`, cueDir: join(dir, 'h45-cue'), loginDir: join(dir, 'h45-login'), leadTicks: H12O_LEAD_TICKS },
+    };
 }
 
 function writeBotEnv(name: string): string {
@@ -515,7 +529,7 @@ async function main(argv: string[]): Promise<number> {
     const dir = join(process.env.LAB_LOG ?? tmpdir(), 'bench', `${a.target.replace(/[^A-Za-z0-9.-]+/g, '_')}-${stamp}-${tag}`);
     mkdirSync(dir, { recursive: true });
     const config = join(dir, 'lab-run.json');
-    writeFileSync(config, JSON.stringify(labRunConfig(), null, 2));
+    writeFileSync(config, JSON.stringify(labRunConfig(dir, tag), null, 2));
     console.log(`[bench] ${a.target} x${a.k} at ${labTick} ms on commit ${commit}; tag ${tag}; files in ${dir}`);
 
     // The chain itself resolves the target, then the slice's own plan names its families.
