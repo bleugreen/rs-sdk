@@ -50,7 +50,7 @@ On this page that is `handoff` (step 7, "The launch dry run", which gives the fo
 rehearsal account with `--rehearsal`) and step 8's attach-and-logout. The scored run's own start,
 run.ts, is rs/186's and not on main, so its line is pending; it is dry-run the same way.
 
-**The run bound is 9 h.** A full run is our row, about 35,300 ticks (RUN-ORDER.md): about 2.9 h of
+**The run bound is 9 h** (14 h by default once rs/680's run-gate `--bound` is on the run commit; step 3: it counts from `up`). A full run is our row, about 35,300 ticks (RUN-ORDER.md): about 2.9 h of
 wall clock at the 300 ms tick the demo ran until 19:56Z on 2026-10-22, and about **3.9 h at the
 400 ms it has run since** ("Measured: the demo's tick period"); at 600 ms, which remains possible,
 about 5.9 h. Steps 3 to 7 take under an hour, so 9 h leaves about four hours of margin at 400 ms
@@ -837,6 +837,8 @@ disconnected. Tenet 11 asked for it connected; tenet 12, which supersedes it, ha
 What does not change: Chrome stays maximised and unobscured on :10 with the throttling flags.
 
 ## 3. Bring up the stack on both machines: `run-gate.ts up`
+
+**The bound counts from `up`** (fold-in 40; RUN-ORDER.md R61): the page server, gateway and live view started here die at their bound measured from this `up`, not from the run's login. On the attempt-3 rehearsal they died 9 h after `up`, mid-S07, with SCORED linkless (a 740-tick outage). The bound must exceed the whole attempt plus margin, counted from `up`: steps 3 to 7, the run (~3.9 h on the row in force at 400 ms, more on a ragged demo) and every resume. rs/680 (cairn://p/rs/680) adds run-gate `--bound` (default 14 h, `--rehearsal` 30 min, printed by `up` and `handoff`); until its snapshot is in the run commit, re-run `up` in the resume recipe well before the 9 h runs out.
 
 **Steps 3, 5, 5a, 6 and 7 are one tool**, rs/247's `speedrun/tools/run-gate.ts` (#216, merge commit
 `b1a2765d`), as rs/440 left it (#350, `d02c094f`: the twin preferred, the gate accounts relabelled,
