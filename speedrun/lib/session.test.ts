@@ -6,6 +6,8 @@ import { IF_RUN_ON, runIsOn } from './run-mode';
 import { sleep, TickPeriod } from './wait';
 import { loginTokenProof } from '../../server/webclient/login-token';
 import type { BotWorldState, PlayerState } from '../../sdk/types';
+import type { Death } from '../runner/death';
+import { RESPAWN } from './travel';
 import {
     ABANDON_SENDS,
     describeAbandon,
@@ -37,9 +39,7 @@ import {
     startWatchdog,
     track,
     watchdogDecision,
-    type LogoutDeath,
     type LogoutResult,
-    RESPAWN,
     type Session,
     type WatchdogEvent,
     type WatchdogInputs,
@@ -483,28 +483,38 @@ describe('logoutClean sees a death while the logout holds', () => {
         expect(r).toMatchObject({ ok: true, clickTick: 267 });
         expect(r.death).toMatchObject({
             from: { x: 3288, z: 3810, level: 0 }, fromTick: 266, to: { x: 3222, z: 3218, level: 0 }, toTick: 267, tick: 263,
-            signs: ['dead', 'respawn-tile', 'respawned', 'message'], hpBefore: 20, hpMin: 0, hpAfter: 42,
+            signs: ['dead', 'respawned', 'message', 'respawn-tile'], hpBefore: 20, hpMin: 0, hpAfter: 42,
         });
-        expect(r.death!.reason).toBe('SCORED died before the logout landed: (3288,3810,0) on tick 266 to (3222,3218,0) on tick 267 (dead, respawn-tile, respawned, message; hp 20 at the logout, lowest 0, 42 after)');
+        expect(r.death!.reason).toBe('SCORED died before the logout landed: (3288,3810,0) on tick 266 to (3222,3218,0) on tick 267 (dead, respawned, message, respawn-tile; hp 20 at the start, lowest 0, 42 after)');
         expect(h.session.died).toEqual(r.death!);
         expect(r.held).toMatchObject({ fromTick: 231, clickTick: 267, ticks: 36, inCombatTicks: 36, lastDamageTick: 262 });
         expect(r.held!.hp[0]).toEqual({ tick: 231, hp: 20 });
         expect(r.held!.hp.slice(-2)).toEqual([{ tick: 263, hp: 0 }, { tick: 267, hp: 42 }]);
     });
 
-    test('any one sign alone is a death: the message, isDead, the client counting a respawn, a jump onto the respawn square', async () => {
+    test('any one sign alone is a death: the message, hp 0, the client counting a respawn, a jump onto the respawn square with hp restored', async () => {
         const cases: [string, (t: number) => Partial<PlayerState>, (t: number) => string[]][] = [
-            ['message', () => ({}), dies],
+            ['message', () => ({}), t => (t === 245 ? ['Oh dear you are dead!'] : [])],
             ['dead', t => (t === 240 ? { hp: 0, isDead: true } : {}), () => []],
+            // A client without isDead: hp 0 of a maxHp is the same sign.
+            ['dead', t => (t === 240 ? { hp: 0 } : {}), () => []],
             ['respawned', t => (t >= 240 ? { lifeId: 2 } : {}), () => []],
-            // A client that publishes none of the rest: hp, isDead and lifeId as they were.
-            ['respawn-tile', t => (t >= 240 ? SPAWN : {}), () => []],
+            // A client that publishes none of the rest and skipped the 0-hp frame: the jump with the full restore.
+            ['respawn-tile', t => (t >= 240 ? { ...SPAWN, hp: 42 } : {}), () => []],
         ];
         for (const [sign, at, say] of cases) {
-            const h = holding({ ...WILD, ...fight(true, 231) }, (t, p) => ({ ...at(t), ...fight(t < 250, 231) }), say);
+            const h = holding({ ...WILD, hp: 20, ...fight(true, 231) }, t => ({ ...at(t), ...fight(t < 250, 231) }), say);
             const r = await h.out();
             expect([sign, r.ok, r.death?.signs]).toEqual([sign, true, [sign]]);
         }
+    });
+
+    test('a forced teleport onto the respawn square, hitpoints as they were, is not a death', async () => {
+        const h = holding({ ...WILD, hp: 20, ...fight(true, 231) }, t => ({ ...(t >= 240 ? SPAWN : {}), ...fight(t < 245, 231) }));
+        const r = await h.out();
+        expect(h.session.sdk.getState()!.player).toMatchObject({ ...SPAWN, hp: 20 });
+        expect(r.death).toBeUndefined();
+        expect(h.session.died).toBeUndefined();
     });
 
     test('a teleport elsewhere while the logout holds is not a death', async () => {
@@ -544,7 +554,7 @@ describe('logoutClean sees a death while the logout holds', () => {
     test("the watchdog's logout that saw a death leaves the account out: no login, a stop naming R8", async () => {
         const { session } = fakeSession({ lastAdvanceAt: Date.now() - 10_000 });
         const rec = recorder(true);
-        const death = { reason: 'SCORED died before the logout landed: (3288,3810,0) on tick 266 to (3222,3218,0) on tick 267 (dead)' } as LogoutDeath;
+        const death = { reason: 'SCORED died before the logout landed: (3288,3810,0) on tick 266 to (3222,3218,0) on tick 267 (dead)' } as Death;
         const events: WatchdogEvent[] = [];
         const wd = startWatchdog(session, { timer: false, actions: { ...rec.actions, logout: async (s: Session) => ({ ...(await rec.actions.logout(s)), death }) }, onEvent: e => events.push(e) });
         await wd.check();
