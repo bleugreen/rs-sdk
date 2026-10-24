@@ -9,8 +9,8 @@ import { Observation, resolveResume } from '../runner/resume';
 import type { Observed, RunnerSession, StepContext } from '../runner/step';
 import { DEFAULT_DIALOGUE, slotNeed } from './segments';
 import {
-    afterMessage, ARRIVAL, CAROLINE_AT, LANDED, LEVEL_UP_TICKS, DEAD_AT_EXIT, DOOR_SCENE_TICKS, DOORS, doorState, inWitchaven, ITEM, LETTERS, observed, offshore, onIsland, onPlatformGround, onPlatformUp,
-    openBridgedDoor, QUEST_ITEMS, quest, stageCeiling, stageFloor, stepId, steps, type BridgedDoor, type DoorOutcome,
+    afterMessage, ARRIVAL, CAROLINE_AT, LANDED, LEVEL_UP_TICKS, DEAD_AT_EXIT, DOOR_SCENE_TICKS, DOORS, doorState, GLASS_AT, GLASS_AT_2, GLASS_SPAWNS, GROUND_RESPAWN_TICKS, inWitchaven, ITEM, LETTERS, LOST_PICKUPS, observed, offshore, onIsland, onPlatformGround, onPlatformUp,
+    openBridgedDoor, QUEST_ITEMS, quest, RESPAWN_WAIT_TICKS, stageCeiling, stageFloor, stepId, steps, STICKS_AT, type BridgedDoor, type DoorOutcome,
 } from './sea-slug';
 
 // ------------------------------------------------------------------ scripted state
@@ -320,6 +320,180 @@ describe('the bridged-door step (act on the loc by tile and id)', () => {
         const s = stateAt(STARTS.E!);
         s.nearbyLocs = [closedLoc(DOORS.kennith)];
         expect(doorState(s, DOORS.kennith)).toBe('unseen');
+    });
+});
+
+// ------------------------------------------------------------------ ground pickups another player can take (E, F)
+
+type Ground = BotWorldState['groundItems'][number];
+type At = { x: number; z: number };
+const ground = (id: number, at: At): Ground => ({ id, name: NAMES[id] ?? `obj ${id}`, count: 1, x: at.x, z: at.z, distance: 1 }) as unknown as Ground;
+const onTile = (g: Ground, id: number, at: At) => g.id === id && g.x === at.x && g.z === at.z;
+
+/**
+ * The platform's server for E and F, as drive's per-tick `each`: a click on a door's closed loc opens
+ * it the next tick; a pickup lands the next tick if the item is still on its tile, and the spawn
+ * returns GROUND_RESPAWN_TICKS later (ObjOps.ts); the first `steal` pickups are lost to another
+ * player instead (the item goes, nothing is held). `respawns` are spawns taken before the segment.
+ */
+function platform(sdk: FakeSdk, o: { steal?: number; respawns?: Array<{ tick: number; id: number; at: At }> } = {}) {
+    let steal = o.steal ?? 0;
+    const respawns = [...(o.respawns ?? [])];
+    const due: Array<(st: BotWorldState) => Partial<BotWorldState>> = [];
+    sdk.onSend = a => {
+        const [x, z, id] = a.args as [number, number, number];
+        if (a.method === 'sendInteractLoc') {
+            const d = [DOORS.glass, DOORS.store].find(d => d.closed.x === x && d.closed.z === z && d.closed.id === id);
+            if (d) due.push(st => (st.nearbyLocs.some(l => l.id === id && l.x === x && l.z === z) ? { nearbyLocs: [...st.nearbyLocs.filter(l => l.id !== id || l.x !== x || l.z !== z), openLoc(d)] } : {}));
+        }
+        if (a.method === 'sendPickup') {
+            due.push(st => {
+                if (!st.groundItems.some(g => onTile(g, id, { x, z }))) return {};
+                respawns.push({ tick: st.tick + GROUND_RESPAWN_TICKS, id, at: { x, z } });
+                const groundItems = st.groundItems.filter(g => !onTile(g, id, { x, z }));
+                if (steal > 0) {
+                    steal--;
+                    return { groundItems };
+                }
+                return { groundItems, inventory: [...st.inventory, item(id)] };
+            });
+        }
+        if (a.method === 'sendUseItemOnItem') due.push(st => ({ inventory: st.inventory.map(i => (i.id === ITEM.damp ? { ...i, id: ITEM.dry, name: 'Dry sticks' } : i)) }));
+    };
+    return (st: BotWorldState): Partial<BotWorldState> => {
+        let cur = st;
+        let out: Partial<BotWorldState> = {};
+        for (const fx of due.splice(0)) {
+            const d = fx(cur);
+            out = { ...out, ...d };
+            cur = { ...cur, ...d };
+        }
+        const back = respawns.filter(r => r.tick <= st.tick);
+        if (back.length) {
+            for (const r of back) respawns.splice(respawns.indexOf(r), 1);
+            out.groundItems = [...cur.groundItems, ...back.map(r => ground(r.id, r.at))];
+        }
+        return out;
+    };
+}
+
+interface PickupNote { pickup: string; path: string; at: number[]; waited: number; ticks: number; lost?: number }
+const pickupNote = (log: TickLog) => log.rows.find(r => r.kind === 'note' && (r.meta as { pickup?: unknown }).pickup)?.meta as PickupNote;
+const tiles = (sdk: FakeSdk, method: string) => sdk.sent.filter(a => a.method === method).map(a => `${a.args[0]},${a.args[1]}`);
+
+/** SCORED on the platform landing at E's start, both doors shut, the glass on the tiles `onGround`. */
+function eStart(onGround: At[]): FakeSdk {
+    const s = stateAt(STARTS.E!);
+    s.nearbyLocs = [closedLoc(DOORS.glass), closedLoc(DOORS.store)];
+    s.groundItems = onGround.map(at => ground(ITEM.glass, at));
+    return new FakeSdk(s);
+}
+
+describe('E: a broken glass another player may have taken', () => {
+    const E = () => byLetter('E');
+    const glassDoor = `${DOORS.glass.closed.x},${DOORS.glass.closed.z}`;
+    const storeDoor = `${DOORS.store.closed.x},${DOORS.store.closed.z}`;
+    const first = `${GLASS_AT.x},${GLASS_AT.z}`;
+    const second = `${GLASS_AT_2.x},${GLASS_AT_2.z}`;
+
+    test('the spawns: the glass room, then the store room behind the twin of its door (maps/m43_51.jm2: loc_1533 shape 0 angle 2 at both)', () => {
+        expect(GLASS_SPAWNS.map(s => [s.at, s.door?.label])).toEqual([[GLASS_AT, DOORS.glass.label], [GLASS_AT_2, DOORS.store.label]]);
+        expect(DOORS.store.closed.id).toBe(DOORS.glass.closed.id);
+        expect(DOORS.store.open).toEqual({ x: 2766, z: 3287, id: DOORS.glass.open.id });
+        expect(RESPAWN_WAIT_TICKS).toBeGreaterThan(GROUND_RESPAWN_TICKS);
+    });
+    test('on its spawn: through the glass room door and taken at once, as before', async () => {
+        const sdk = eStart([GLASS_AT, GLASS_AT_2]);
+        const each = platform(sdk);
+        const { ctx, log } = ctxFor(sdk);
+        await drive(sdk, E().run(ctx) as Promise<unknown>, 40, each);
+        expect(tiles(sdk, 'sendInteractLoc')).toEqual([glassDoor]);
+        expect(tiles(sdk, 'sendPickup')).toEqual([first]);
+        expect(pickupNote(log)).toMatchObject({ pickup: 'the broken glass', path: 'spawn', at: [GLASS_AT.x, GLASS_AT.z], waited: 0 });
+        expect(E().postconditions(sdk.getState()!, {})).toBe(true);
+    });
+    test('taken, with the second spawn holding one: through the store room door for it, the glass room door never clicked', async () => {
+        const sdk = eStart([GLASS_AT_2]);
+        const each = platform(sdk);
+        const { ctx, log } = ctxFor(sdk);
+        await drive(sdk, E().run(ctx) as Promise<unknown>, 40, each);
+        expect(tiles(sdk, 'sendInteractLoc')).toEqual([storeDoor]);
+        expect(tiles(sdk, 'sendPickup')).toEqual([second]);
+        expect(pickupNote(log)).toMatchObject({ path: 'second spawn', at: [GLASS_AT_2.x, GLASS_AT_2.z], waited: 0 });
+        expect(E().postconditions(sdk.getState()!, {})).toBe(true);
+    });
+    test('both taken: waits at the glass room door past the old 60 ticks for the respawn, and takes it', async () => {
+        const sdk = eStart([]);
+        const t = sdk.getState()!.tick;
+        const each = platform(sdk, { respawns: [{ tick: t + 95, id: ITEM.glass, at: GLASS_AT }, { tick: t + 150, id: ITEM.glass, at: GLASS_AT_2 }] });
+        const { ctx, log } = ctxFor(sdk);
+        await drive(sdk, E().run(ctx) as Promise<unknown>, 200, each);
+        expect(tiles(sdk, 'sendInteractLoc')).toEqual([glassDoor]);
+        expect(tiles(sdk, 'sendPickup')).toEqual([first]);
+        const n = pickupNote(log);
+        expect(n).toMatchObject({ path: 'respawn wait', at: [GLASS_AT.x, GLASS_AT.z] });
+        expect(n.waited).toBeGreaterThan(60);
+        expect(n.waited).toBeLessThanOrEqual(95);
+        expect(E().postconditions(sdk.getState()!, {})).toBe(true);
+    });
+    test('both taken, the second back first: takes it through the store room door', async () => {
+        const sdk = eStart([]);
+        const t = sdk.getState()!.tick;
+        const each = platform(sdk, { respawns: [{ tick: t + 40, id: ITEM.glass, at: GLASS_AT_2 }, { tick: t + 90, id: ITEM.glass, at: GLASS_AT }] });
+        const { ctx, log } = ctxFor(sdk);
+        await drive(sdk, E().run(ctx) as Promise<unknown>, 200, each);
+        expect(tiles(sdk, 'sendInteractLoc')).toEqual([glassDoor, storeDoor]);
+        expect(tiles(sdk, 'sendPickup')).toEqual([second]);
+        expect(pickupNote(log)).toMatchObject({ path: 'respawn wait', at: [GLASS_AT_2.x, GLASS_AT_2.z] });
+    });
+    test(`neither back within ${RESPAWN_WAIT_TICKS} ticks: fails, naming the spawns`, async () => {
+        const sdk = eStart([]);
+        const each = platform(sdk);
+        const { ctx } = ctxFor(sdk);
+        await expect(drive(sdk, E().run(ctx) as Promise<unknown>, 200, each)).rejects.toThrow(`S19:E: no the broken glass on its spawn (2765,3278) or (2765,3289) within ${RESPAWN_WAIT_TICKS} ticks`);
+        expect(tiles(sdk, 'sendPickup')).toEqual([]);
+    });
+    test('lost under the click (seen, then taken before the pickup landed): back to the wait, and the respawn taken', async () => {
+        const sdk = eStart([GLASS_AT]);
+        const each = platform(sdk, { steal: 1 });
+        const { ctx, log } = ctxFor(sdk);
+        await drive(sdk, E().run(ctx) as Promise<unknown>, 300, each);
+        expect(pickupNote(log)).toMatchObject({ path: 'respawn wait', at: [GLASS_AT.x, GLASS_AT.z], lost: 1 });
+        expect(E().postconditions(sdk.getState()!, {})).toBe(true);
+    });
+    test(`lost under the click ${LOST_PICKUPS + 1} times: fails as a pickup that did not land`, async () => {
+        const sdk = eStart([GLASS_AT]);
+        const each = platform(sdk, { steal: LOST_PICKUPS + 1 });
+        const { ctx } = ctxFor(sdk);
+        await expect(drive(sdk, E().run(ctx) as Promise<unknown>, 600, each)).rejects.toThrow(/the broken glass was not picked up/);
+    });
+});
+
+describe('F: the damp sticks another player may have taken (one spawn, the same wait)', () => {
+    test('waits for the respawn by the ladder, then takes and dries them', async () => {
+        const s = stateAt(STARTS.F!);
+        s.nearbyLocs = [openLoc(DOORS.glass)];
+        s.groundItems = [];
+        const sdk = new FakeSdk(s);
+        const each = platform(sdk, { respawns: [{ tick: s.tick + 80, id: ITEM.damp, at: STICKS_AT }] });
+        const { ctx, log } = ctxFor(sdk);
+        await drive(sdk, byLetter('F').run(ctx) as Promise<unknown>, 200, each);
+        expect(tiles(sdk, 'sendInteractLoc')).toEqual([]);
+        const n = pickupNote(log);
+        expect(n).toMatchObject({ pickup: 'the damp sticks', path: 'respawn wait', at: [STICKS_AT.x, STICKS_AT.z] });
+        expect(n.waited).toBeGreaterThan(60);
+        expect(byLetter('F').postconditions(sdk.getState()!, {})).toBe(true);
+    });
+    test('on its spawn: taken at once', async () => {
+        const s = stateAt(STARTS.F!);
+        s.nearbyLocs = [openLoc(DOORS.glass)];
+        s.groundItems = [ground(ITEM.damp, STICKS_AT)];
+        const sdk = new FakeSdk(s);
+        const each = platform(sdk);
+        const { ctx, log } = ctxFor(sdk);
+        await drive(sdk, byLetter('F').run(ctx) as Promise<unknown>, 40, each);
+        expect(pickupNote(log)).toMatchObject({ path: 'spawn', waited: 0 });
+        expect(byLetter('F').postconditions(sdk.getState()!, {})).toBe(true);
     });
 });
 
