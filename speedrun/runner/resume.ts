@@ -15,6 +15,16 @@
 //    skipped when the state already shows their effect.
 // 3. Nothing qualifies: stop for the operator with every candidate's reason.
 //
+// A step with `logoutSafe: false` (a fight, a queued completion) is never re-entered mid-step
+// through `run` from the top. A dropped player stays in the world for 500 ticks, so a relogin
+// inside that window is a session takeover that lands on the same tile with the fight still on
+// (World.ts TIMEOUT_NO_CONNECTION). For such a step the walk enters through `resume` when
+// `inProgress` holds and the step has one; when `inProgress` holds without `resume`, or when
+// `run` would start it in combat (lib/world.ts inCombatWindow, the server's logout rule) and the
+// step does not declare `startsInCombat`, the walk stops there with a MidStepError instead of
+// walking further back. runResumable waits, bounded, for the combat to end, observes again and
+// walks again; still mid-step, the run stops for the operator naming the step and the reason.
+//
 // Probes (a bank-open probe, a quest-journal read) cost ticks, so they run only
 // when a step the walk evaluates declares them, once per walk.
 //
@@ -54,6 +64,7 @@ import {
 } from '../lib/wait';
 import { Fence } from './fence';
 import { journalProbeNamed } from '../lib/quests';
+import { COMBAT_LOGOUT_TICKS, inCombatWindow } from '../lib/world';
 import { resolveStart, runSteps, type Observed, type RunnerSession, type RunStepsOptions, type RunStepsResult, type Step } from './step';
 
 export type Probe = (session: RunnerSession) => Promise<unknown>;
@@ -75,6 +86,23 @@ export class ResumeError extends Error {
         super(`no step can start from the observed state (last done milestone #${lastDone}, first undone #${firstUndone}): ${candidates.map(c => `${c.step}: ${c.why}`).join('; ')}`);
         this.name = 'ResumeError';
     }
+}
+
+/**
+ * A logoutSafe:false step the walk would re-enter mid-step (see the file comment). `combat`: the
+ * observed state is in the combat window, so a wait for the fight to end may change the answer.
+ */
+export class MidStepError extends ResumeError {
+    constructor(readonly index: number, readonly step: string, readonly why: string, readonly combat: boolean, lastDone: number, firstUndone: number) {
+        super([{ step, why }], lastDone, firstUndone);
+        this.message = `${step} cannot be re-entered mid-step (logoutSafe: false): ${why}`;
+    }
+}
+
+function combatWhy(s: BotWorldState): string {
+    const c = s.player?.combat;
+    const hit = c && c.lastDamageTick >= 0 ? `hit ${s.tick - c.lastDamageTick} ticks ago` : 'not hit';
+    return `in combat (${c?.inCombat ? 'engaged' : 'not engaged'}, ${hit}; the window ends ${COMBAT_LOGOUT_TICKS} ticks after the last hit)`;
 }
 
 /**
@@ -147,11 +175,16 @@ export async function resolveResume<C>(steps: ReadonlyArray<Step<C>>, obs: Obser
     for (let j = top; j > lastDone; j--) {
         const s = steps[j]!;
         await obs.ensure(s.probes);
-        if (s.inProgress?.(obs, c)) return point(j, 'resume', `${s.name} is in progress`);
+        if (s.inProgress?.(obs, c)) {
+            if (s.logoutSafe || s.resume) return point(j, 'resume', `${s.name} is in progress`);
+            throw new MidStepError(j, s.name, 'in progress with no resume entry, and run would restart it from the top', inCombatWindow(obs.state), lastDone, firstUndone);
+        }
         const pre = s.preconditions(obs.state, c);
-        if (pre === true && !s.marker) return point(j, 'run', `${s.name} can start`);
-        const at = pre === true ? await markerPlace(steps, j, obs, c) : pre;
-        if (at === true) return point(j, 'run', `${s.name} can start`);
+        const at = pre === true && s.marker ? await markerPlace(steps, j, obs, c) : pre;
+        if (at === true) {
+            if (!s.logoutSafe && !s.marker && !s.startsInCombat && inCombatWindow(obs.state)) throw new MidStepError(j, s.name, combatWhy(obs.state), true, lastDone, firstUndone);
+            return point(j, 'run', `${s.name} can start`);
+        }
         why.push({ step: s.name, why: at });
     }
     throw new ResumeError(why, lastDone, firstUndone);
@@ -305,8 +338,47 @@ export interface ResumableOptions<C> extends Omit<RunStepsOptions<C>, 'from' | '
     onEvent?: (e: ResumeEvent) => void;
     /** Bound on each walk's scene wait (default lib/wait.ts SCENE_READY_MAX_TICKS); past it the walk observes anyway. */
     sceneMaxTicks?: number;
+    /** Bound on each walk's wait for a mid-step combat to end (default MID_STEP_HOLD_TICKS); past it the run stops with the MidStepError. */
+    midStepHoldTicks?: number;
     /** Bound on each walk's wait for a state with the player (default PLAYER_MAX_TICKS); past it the walk observes anyway. */
     playerMaxTicks?: number;
+}
+
+/**
+ * Observed ticks a walk waits for a takeover's fight to end before it refuses: the combat window
+ * (COMBAT_LOGOUT_TICKS after the last hit) plus room for auto-retaliate to finish a quest NPC.
+ * Not measured; nothing eats or prays while it waits.
+ */
+export const MID_STEP_HOLD_TICKS = 100;
+
+export interface MidStepHold {
+    step: string;
+    why: string;
+    ticks: number;
+}
+
+/**
+ * The walk, holding for a mid-step combat (MidStepError with `combat`): wait until the account is
+ * out of the combat window, observe again and walk again. A new hit during the hold, a window that
+ * does not end within the bound, or a second MidStepError stops the run for the operator.
+ */
+async function walkHeld<C>(session: RunnerSession, steps: ReadonlyArray<Step<C>>, obs: Observation, opts: ResumableOptions<C>): Promise<{ point: ResumePoint; hold?: MidStepHold }> {
+    try {
+        return { point: await resolveResume(steps, obs, opts.c) };
+    } catch (e) {
+        if (!(e instanceof MidStepError) || !e.combat) throw e;
+        const t0 = currentTick(session.sdk);
+        const maxTicks = opts.midStepHoldTicks ?? MID_STEP_HOLD_TICKS;
+        // A hit after the walk's observation: something is still attacking SCORED, and idling on is worse than stopping.
+        const lastHit = obs.state.player?.combat?.lastDamageTick ?? -1;
+        const hitAgain = (st: BotWorldState) => (st.player?.combat?.lastDamageTick ?? -1) > lastHit;
+        const w = await waitUntil(session.sdk, st => !inCombatWindow(st) || hitAgain(st), { maxTicks });
+        const s = session.sdk.getState()!;
+        if (hitAgain(s)) throw new MidStepError(e.index, e.step, `${combatWhy(s)}: hit again ${currentTick(session.sdk) - t0} ticks into the hold, so something is still attacking`, true, e.lastDone, e.firstUndone);
+        if (!w.ok) throw new MidStepError(e.index, e.step, `${combatWhy(s)} after a ${maxTicks}-tick wait for the fight to end`, true, e.lastDone, e.firstUndone);
+        const hold = { step: e.step, why: e.why, ticks: currentTick(session.sdk) - t0 };
+        return { point: await resolveResume(steps, new Observation(s, opts.probes, session), opts.c), hold };
+    }
 }
 
 /**
@@ -365,15 +437,16 @@ export async function runResumable<C>(session: RunnerSession, steps: ReadonlyArr
             const state = session.sdk.getState()!;
             const obs = new Observation(state, opts.probes, session);
             let point: ResumePoint;
+            let hold: MidStepHold | undefined;
             if (attempt === 1 && opts.from !== undefined) {
                 const index = resolveStart(steps, opts.from);
                 point = { index, mode: 'run', step: steps[index]?.name ?? null, lastDone: -1, firstUndone: -1, reason: 'operator --from', observed: obs };
             } else {
-                point = await resolveResume(steps, obs, opts.c);
+                ({ point, hold } = await walkHeld(session, steps, obs, opts));
             }
             const { observed: _o, ...summary } = point;
             points.push(summary);
-            row(opts.log, session, RESUME_STEP, startTick, startCounter, t0, { attempt, ...summary, probes: Object.keys(obs.probed), run: runMode, scene, player });
+            row(opts.log, session, RESUME_STEP, startTick, startCounter, t0, { attempt, ...summary, probes: Object.keys(point.observed.probed), run: runMode, scene, player, ...(hold ? { hold } : {}) });
             opts.onEvent?.({ kind: 'resume', attempt, point: summary });
             if (point.mode === 'finished') return { completed: 0, drops, points };
 

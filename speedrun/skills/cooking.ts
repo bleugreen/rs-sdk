@@ -31,6 +31,7 @@ import type { RelogResult, Session } from '../lib/session';
 import { logNote } from '../lib/ticks';
 import { travelTo } from '../lib/toll-gate';
 import { onStates } from '../lib/wait';
+import { COMBAT_LOGOUT_TICKS } from '../lib/world';
 import { xpForLevel, XP_RATE } from '../lib/xp';
 import type { Observed, RunnerSession, Step, StepContext } from '../runner/step';
 import { handoffXpOf, stagedCounts, type StagedGem } from './crafting';
@@ -52,8 +53,6 @@ export const WINE_GIVER = 'cairn_mule2';
 export const WINES = 520;
 /** The first firing's batch: 29 rolls of one wine each (wine.md: 30 rolls as fifteen batches of 2). */
 export const FIRST_BATCH = 29;
-/** A logout waits 16 ticks after a hit (relog-probe.ts), on the scored clock. */
-export const COMBAT_LOGOUT_TICKS = 16;
 
 export const CHISEL = 1755;
 

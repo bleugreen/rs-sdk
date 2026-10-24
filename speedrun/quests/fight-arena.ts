@@ -756,7 +756,8 @@ export function steps(opts?: Options) {
             probes: PROBES,
         },
         {
-            letter: 'G', label: 'ogre', logoutSafe: false,
+            // G, H and I: arenaFight attacks the form fighting SCORED, so a takeover mid-fight re-enters through run.
+            letter: 'G', label: 'ogre', logoutSafe: false, startsInCombat: true,
             preconditions: allOf(started, inArenaCheck, prayerCovers('S12:G for G-J', ARENA_PRAYER)),
             run: ctx => ogre(ctx, opts),
             postconditions: within(CELL, 'the cell'),
@@ -764,14 +765,14 @@ export function steps(opts?: Options) {
             probes: PROBES,
         },
         {
-            letter: 'H', label: 'scorpion', logoutSafe: false,
+            letter: 'H', label: 'scorpion', logoutSafe: false, startsInCombat: true,
             preconditions: allOf(started, s => (inCell(s) || inArena(s) ? true : `not in the cell or the arena: at ${pos(s).x},${pos(s).z}`)),
             run: ctx => scorpion(ctx, opts),
             done: o => complete(o) || atLeast(o, 'defeated_scorpion'),
             probes: PROBES,
         },
         {
-            letter: 'I', label: 'bouncer', logoutSafe: false,
+            letter: 'I', label: 'bouncer', logoutSafe: false, startsInCombat: true,
             preconditions: allOf(started, inArenaCheck),
             run: ctx => bouncer(ctx, opts),
             done: o => complete(o) || atLeast(o, 'freed_servils'),
@@ -779,7 +780,8 @@ export function steps(opts?: Options) {
         },
         {
             // No durable mark: the walk enters it while SCORED is still in the arena at stage 12.
-            letter: 'J', label: 'arena-door', logoutSafe: false,
+            // The General attacks from stage 12: J's own entry is in combat, and walking out is the point.
+            letter: 'J', label: 'arena-door', logoutSafe: false, startsInCombat: true,
             preconditions: allOf(started, inArenaCheck),
             run: ctx => arenaDoor(ctx),
             postconditions: allOf(notInArena, s => (prayerActive(s, 'protect_from_melee') ? 'Protect from Melee still on' : true)),

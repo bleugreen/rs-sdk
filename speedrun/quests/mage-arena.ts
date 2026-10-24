@@ -28,6 +28,8 @@
 //   evidence of a stage is the cape (7) and the staff (8). In the cellar the stage before and after
 //   the fight looks the same; Kolodion's reply tells them apart (kolodion.rs2:15-23: 'You return,
 //   young conjurer' at 1-5, 'You're a tough one' at 6), so segment B is where a resumed run enters.
+//   A run that won the fight remembers it (RunMemo.fought); a fresh runner process does not, and sees
+//   only the kit's spell runes part spent (spentKit). B then only asks Kolodion (askKolodion).
 // - Fire Wave and Charge check the boosted level (magic.rs2:22); Kolodion's start the base level
 //   (kolodion.rs2:6, 60). A magic potion is +4 (consume_effects.dbrow 1magic_consumable_effect).
 
@@ -35,10 +37,10 @@ import { readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState, InventoryItem, NearbyNpc } from '../../sdk/types';
-import { dropItems, opLoc, pickup, talkTo } from '../lib/act';
+import { act, dropItems, opLoc, pickup, talkTo } from '../lib/act';
 import { fight, prayerActive, prayerDoses, setPrayer } from '../lib/combat';
 import { converse, levelUpInterrupt } from '../lib/converse';
-import { pageText } from '../lib/dialogue';
+import { clickContinue, pageText } from '../lib/dialogue';
 import type { ItemPattern } from '../lib/items';
 import { runTo, sumUse, type RuneName, type RuneUse, type RuneUseTable } from '../lib/travel';
 import { currentTick, waitTicks, waitUntil } from '../lib/wait';
@@ -179,12 +181,27 @@ export function exitClean(keepSharks = KEEP_SHARKS): Check<any> {
  * count (the lab's lever for a forced run-out).
  */
 export function kit(spell: KolodionSpell, spellRunes = SPELL_RUNES[spell]): KitItem[] {
+    return [...spellStacks(spell, spellRunes), { item: /^air rune$/i, n: AIR_RUNES }];
+}
+
+/** The kit's spell stacks: the spell's runes and the fallback's. */
+function spellStacks(spell: KolodionSpell, spellRunes = SPELL_RUNES[spell]): KitItem[] {
     const fb = FALLBACK[spell];
-    return [
-        { item: SPELLS[spell].rune, n: spellRunes },
-        ...(fb ? [{ item: SPELLS[fb].rune, n: FALLBACK_RUNES }] : []),
-        { item: /^air rune$/i, n: AIR_RUNES },
-    ];
+    return [{ item: SPELLS[spell].rune, n: spellRunes }, ...(fb ? [{ item: SPELLS[fb].rune, n: FALLBACK_RUNES }] : [])];
+}
+
+/**
+ * The kit's spell stacks part spent: some held, and one stack below H13's count. H13 is the only
+ * source of S16's blood and death runes before it (rs/185, from the ledger), so before A there are
+ * none and after A all of them; a fight spends some (Fire Wave's most is 59 casts of 90, and the Fire
+ * Blast guard spends death once blood runs out). Air is not read: an earlier leg may spend some.
+ */
+export function spentKit(spell: KolodionSpell, spellRunes?: number): (s: BotWorldState) => boolean {
+    const stacks = spellStacks(spell, spellRunes);
+    return s => {
+        const held = stacks.map(k => invCount(s, k.item));
+        return held.some(n => n > 0) && stacks.some((k, i) => held[i]! < (k.n ?? 1));
+    };
 }
 
 // The entry check's categories (mage_arena.rs2:100-138), worn and carried, and the items it
@@ -567,6 +584,7 @@ const HELLO_AGAIN = /are you looking for another staff/i;
 
 /** Shared by the segments of one `steps()` call: what the run has seen that the client cannot show. */
 interface RunMemo {
+    /** The fight seen won by this process: B's talk, C's fight, or B asking Kolodion after a restart. */
     fought: boolean;
     /** %magearena 8 seen: the staff in hand, or the guardian's stage-8 greeting. */
     chargeUnlocked: boolean;
@@ -624,6 +642,42 @@ async function talkKolodion(sdk: Sdk, opts: Options | undefined, memo: RunMemo):
         return;
     }
     if (!r.ok && !inArena(sdk.getState())) throw new Error(`kolodion: no arena teleport (${r.reason ?? 'unknown'}) at ${JSON.stringify(pos(sdk))}`);
+}
+
+/** Kolodion's talk opens with SCORED's 'Hello, Kolodion.' only at %magearena 6 and above (kolodion.rs2:20, :26): the fight won. */
+const WON_OPENING = /hello, kolodion/i;
+/** His reply to it at 6 ('You're a tough one') and above ('Are you enjoying the bloodshed?'). */
+const WON_REPLY = /you're a tough one|enjoying the\s+bloodshed/i;
+
+/**
+ * B on a spent kit: whether the fight is won, from Kolodion, without ever answering a page that leads
+ * to his teleport. At 1-5 his talk opens 'Hi.' and its next page teleports into the arena with no
+ * choice (kolodion.rs2:103-112); closing the chat while a page waits for its continue ends his script
+ * (Player.closeModal), so any opening but 'Hello, Kolodion.' is closed unanswered. Not talkTo: it
+ * continues every page, and a burst would continue blind.
+ */
+async function askKolodion(sdk: Sdk, opts: Options | undefined, memo: RunMemo): Promise<void> {
+    const s0 = sdk.getState()!;
+    const held = spellStacks(opts?.spell ?? DEFAULT_SPELL, opts?.spellRunes).map(k => `${runeName(k.item)} ${invCount(s0, k.item)}`).join(', ');
+    const kol = findNpc(sdk, /^Kolodion$/);
+    if (!kol) throw new Error(`kolodion: not in view at ${JSON.stringify(pos(sdk))}`);
+    const page = (s: BotWorldState) => (s.dialog.isOpen && !s.dialog.isWaiting ? pageText(s.dialog) : '');
+    const opened = await act(sdk, () => sdk.sendInteractNpc(kol.index, opIndex(kol, /^talk-to$/i) ?? 1), s => page(s) !== '', { maxTicks: 30 });
+    const opening = page(sdk.getState()!);
+    let reply = '';
+    if (opened.ok && WON_OPENING.test(opening)) {
+        await clickContinue(sdk);
+        await waitUntil(sdk, s => page(s) !== '' && page(s) !== opening, { maxTicks: 8 });
+        reply = page(sdk.getState()!);
+    }
+    if (sdk.getState()!.dialog.isOpen) {
+        await sdk.sendCloseModal();
+        await waitUntil(sdk, s => !s.dialog.isOpen, { maxTicks: 5 });
+    }
+    if (!WON_REPLY.test(reply)) {
+        throw new Error(`kolodion: kit spent (${held}) and the fight is not won (his talk opened ${JSON.stringify(opening || 'with no page')}${reply ? `, then ${JSON.stringify(reply)}` : ''}): H13 cannot resupply`);
+    }
+    memo.fought = true;
 }
 
 async function fightSegment(sdk: Sdk, opts: Options | undefined, memo: RunMemo): Promise<void> {
@@ -741,6 +795,10 @@ export function steps(opts?: Options) {
     const spell = opts?.spell ?? DEFAULT_SPELL;
     const keepSharks = opts?.keepSharks ?? KEEP_SHARKS;
     const memo: RunMemo = { fought: opts?.fought ?? false, chargeUnlocked: false, leftovers: [] };
+    const ready = fightReady(spell, opts?.spellRunes);
+    const spent = spentKit(spell, opts?.spellRunes);
+    /** In the cellar after a won fight in an earlier process: only the spent kit shows it, and Kolodion's reply. */
+    const asks = (s: BotWorldState) => ready(s, undefined) !== true && spent(s);
     const kitA = kitSegment(opts, kit(spell, opts?.spellRunes), {
         letter: 'A', label: 'kit',
         preconditions: allOf(inCellarCheck, kolodionLevel, fireStaffWorn, protectLevel, entryClean, slots('A')),
@@ -759,8 +817,8 @@ export function steps(opts?: Options) {
         },
         {
             letter: 'B', label: 'kolodion', logoutSafe: false,
-            preconditions: allOf(inCellarCheck, fightReady(spell, opts?.spellRunes)),
-            run: ctx => talkKolodion(ctx.sdk, opts, memo),
+            preconditions: allOf(inCellarCheck, s => (asks(s) ? true : ready(s, undefined))),
+            run: ctx => (asks(ctx.sdk.getState()!) ? askKolodion(ctx.sdk, opts, memo) : talkKolodion(ctx.sdk, opts, memo)),
             postconditions: s => (inArena(s) || memo.fought ? true : `not in the arena after Kolodion's talk: at ${JSON.stringify(pos(s))}`),
         },
         {
@@ -768,8 +826,11 @@ export function steps(opts?: Options) {
             preconditions: s => (inArena(s) || memo.fought ? true : 'not in the arena'),
             run: ctx => fightSegment(ctx.sdk, opts, memo),
             postconditions: allOf(inCellarCheck, noDialog),
-            // A relog in the arena (16 ticks out of combat) lands back in it: the fight goes on.
+            // A relog in the arena (16 ticks out of combat) lands back in it: the fight goes on. A takeover
+            // lands mid-fight, and fightSegment picks it up (the form in view re-targets SCORED): run is the resume entry.
             inProgress: o => inArena(stateOf(o)),
+            resume: ctx => fightSegment(ctx.sdk, opts, memo),
+            startsInCombat: true,
         },
         {
             letter: 'D', label: 'pool', logoutSafe: true,
