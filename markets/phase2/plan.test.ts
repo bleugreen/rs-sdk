@@ -116,6 +116,13 @@ describe('sequenceFor', () => {
         // banked sharks never rebuy, and a plan with no shark eaters has none to strand
         expect(planWarnings(parsePlan({ accounts: knights }))).toEqual([]);
         expect(planWarnings(parsePlan({ accounts: accounts(2, 'guards'), sharks: { source: 'buy' } }))).toEqual([]);
+        // parking is intentional: the iron in the default mix is never used
+        expect(planWarnings(parsePlan({ accounts: knights, sharks: { source: 'buy' }, foodFallback: 'park' }))).toEqual([]);
+    });
+    test('foodFallback is mix by default, or park', () => {
+        expect(parsePlan({ accounts: accounts(1, 'knights') }).foodFallback).toBe('mix');
+        expect(parsePlan({ accounts: accounts(1, 'knights'), foodFallback: 'park' }).foodFallback).toBe('park');
+        expect(problems({ accounts: accounts(1, 'knights'), foodFallback: 'logout' })).toContain("foodFallback must be 'mix' or 'park'");
     });
     test('a bought shark supply adds the purchase before the voyage', () => {
         const buy = parsePlan({ accounts: accounts(1, 'knights'), sharks: { source: 'buy' }, ramp: null });

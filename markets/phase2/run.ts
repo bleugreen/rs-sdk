@@ -16,6 +16,7 @@
  *   `foodFallbackMix`: plan B's low-food methods, guards and iron. With bought sharks it goes back (a `rebuy`
  *   redirect) at the first bank visit where its coins cover `sharks.rebuyMinSharks` at the ceiling: buy-sharks
  *   again, the ship, its method (sharks.ts). A purchase refused for a transient reason is retried with backoff.
+ *   With `foodFallback: 'park'` the account logs out where it stands instead (a `parked` ledger line).
  * - The ledger (ledger.ts) gets a line per account every `ledger.everyTicks` of its ticks and a totals line on the
  *   same cadence, plus the ramp's decisions, redirects, purchases and sales. Accounts appear as aliases
  *   (names.ts); the names file guard (lib/accounts.ts) refuses to start without it, and a run on real accounts
@@ -126,6 +127,8 @@ class Worker {
     redirect: { method: MethodId; reason: string } | null = null;
     /** The shark-eating method the food fallback took this account from, until a rebuy sends it back. */
     foodFrom: MethodId | null = null;
+    /** Why the food fallback parked it (plan `foodFallback: 'park'`): logged out, not logged in again this run. */
+    parked: string | null = null;
     saleDue: { item: { id: number; name: string }; floor: number } | null = null;
     lastSaleAt = Date.now();
     shortSessions = 0;
@@ -449,7 +452,7 @@ export class Runner {
         });
         if (!reason) return false;
         this.foodOut(w, reason);
-        return w.redirect !== null;
+        return w.redirect !== null || w.parked !== null;
     }
 
     /**
@@ -580,12 +583,26 @@ export class Runner {
     }
 
     private foodOut(w: Worker, reason: string): void {
-        if (w.redirect || !NEEDS[w.method].sharks) return;
+        if (w.redirect || w.parked !== null || !NEEDS[w.method].sharks) return;
+        if (this.plan.foodFallback === 'park') return this.park(w, reason);
         const m = nextFallback(this.foodFallback, this.plan.foodFallbackMix);
         if (!m) return;
         this.foodFallback.set(m, (this.foodFallback.get(m) ?? 0) + 1);
         w.foodFrom = w.method;
         this.redirectTo(w, m, reason, 'food', this.plan.sharks.source === 'buy' && !EARNS_COINS[m] ? { rebuy: 'no rebuy: the fallback earns no coins' } : {});
+    }
+
+    /**
+     * Log the account out where it stands and keep it out for the rest of the run, not given up. Every food fallback
+     * but the voyage check comes straight after a bank visit (the method's bank errand, the purchase's), so what it
+     * earned is banked; it walks nowhere to bank.
+     */
+    private park(w: Worker, reason: string): void {
+        w.parked = reason;
+        w.done = true;
+        this.ledger({ kind: 'parked', account: w.alias, method: w.method, reason });
+        this.event(w, `parked: ${reason}`, {}, true);
+        w.ctl?.abort(new Error(`parked: ${reason}`));
     }
 
     // ------------------------------------------------------------ the knights ramp

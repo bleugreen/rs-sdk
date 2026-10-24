@@ -121,6 +121,13 @@ export interface Plan {
     ramp: RampPlan | null;
     /** Where an account goes when the sharks run out: plan B's lower-food methods. */
     foodFallbackMix: Mix;
+    /**
+     * 'mix' (default): the food fallback sends the account to `foodFallbackMix`. 'park': it logs out where it stands
+     * (a `parked` ledger line), is not logged in again this run and is not given up: for the scored run's attempt
+     * windows, when a knight must not walk overland past the speedrun's sites. A parked account earns nothing, so no
+     * rebuy follows.
+     */
+    foodFallback: 'mix' | 'park';
     ledger: { everyTicks: number; bookMinutes: number };
     sell: SellPlan;
     /** Role options per method, merged over the defaults. */
@@ -166,7 +173,7 @@ const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 
 export function parsePlan(raw: unknown): Plan {
     const problems: string[] = [];
     if (!isObj(raw)) throw new PlanError(['the plan must be a JSON object']);
-    const known = ['accounts', 'maxSessions', 'loginSpacingMs', 'hp', 'hpSites', 'sharks', 'ramp', 'foodFallbackMix', 'ledger', 'sell', 'options'];
+    const known = ['accounts', 'maxSessions', 'loginSpacingMs', 'hp', 'hpSites', 'sharks', 'ramp', 'foodFallbackMix', 'foodFallback', 'ledger', 'sell', 'options'];
     for (const k of Object.keys(raw)) if (!known.includes(k)) problems.push(`unknown key '${k}'`);
 
     const num = (where: string, v: unknown, def: number, o: { min?: number; max?: number; integer?: boolean } = {}): number => {
@@ -267,6 +274,8 @@ export function parsePlan(raw: unknown): Plan {
         };
     }
     const foodFallbackMix = mix('foodFallbackMix', raw.foodFallbackMix, LOW_FOOD_MIX);
+    if (raw.foodFallback !== undefined && raw.foodFallback !== 'mix' && raw.foodFallback !== 'park') problems.push("foodFallback must be 'mix' or 'park'");
+    const foodFallback = raw.foodFallback === 'park' ? 'park' : 'mix';
     for (const [where, m] of [['foodFallbackMix', foodFallbackMix], ['ramp.fallbackMix', ramp?.fallbackMix ?? {}]] as const) {
         if ((m.knights ?? 0) > 0) problems.push(`${where} cannot send logins to the knights`);
     }
@@ -338,6 +347,7 @@ export function parsePlan(raw: unknown): Plan {
         sharks,
         ramp,
         foodFallbackMix,
+        foodFallback,
         ledger,
         sell,
         options
@@ -349,8 +359,10 @@ export function parsePlan(raw: unknown): Plan {
  * includes a method that banks no coins (iron, shilo) strands the shark eaters sent there: they never reach the
  * rebuy threshold, and nothing else would say why.
  */
-export function planWarnings(plan: Pick<Plan, 'accounts' | 'sharks' | 'ramp' | 'foodFallbackMix'>): string[] {
+export function planWarnings(plan: Pick<Plan, 'accounts' | 'sharks' | 'ramp' | 'foodFallbackMix' | 'foodFallback'>): string[] {
     const out: string[] = [];
+    // parking is the plan's choice: the mix is not used
+    if (plan.foodFallback === 'park') return out;
     const knights = plan.accounts.some(a => a.method === 'knights');
     const eaters = plan.accounts.some(a => NEEDS[a.method].sharks) || (knights && Object.entries(plan.ramp?.fallbackMix ?? {}).some(([m, n]) => (n ?? 0) > 0 && NEEDS[m as MethodId].sharks));
     if (plan.sharks.source === 'buy' && eaters) {
