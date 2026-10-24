@@ -945,6 +945,8 @@ measured change is Prayer, -555 (BP; rs/141; -605 before fold-in 23's Superheat 
 | (5c) (4) + burst | = (5a) | 35,673.9 | 33,139.8 | 242.1 under | as (5a) | - | under |
 | (1) + burst (for reference) | +255.8 / +128.5 | 35,789.1 | 33,198.9 | 126.9 under | 35,644.8-35,812.5 | - | under |
 
+**The ladder's headline lines** (by script after this fold-in; the generated ladder stands on the row in force, 35,554.9, 361.1 under; a4's stock row is 119.0 above it, the adamantite line): on a4's row, one Monkey Madness rope pin 35,935.2 (**19.2 over**), S13's railings at p90 35,823.9 (92.1 under), both 36,085.2 (169.2 over), and the bad row (every 'yes' line, 8 lines, +476.3) 36,150.2 (**234.2 over**); on the row in force 35,816.2 / 35,704.9 / 35,966.2 / 36,031.2 (115.2 over).
+
 **Sensitivities** (central, while O > 0): **per +50 farmed babydragon: 0** (the table is babydragon-complete with 12 spare and no big bones in N, so a babydragon replaces nothing; the brief's -50 bones assumed big bones in the mix); **per +25 dragon: -35 bones** (25 x 72 = 1,800 base = 60 babydragon), x 2.3 = -80.5 and ~1.5 loads -11.4, **~-92**, up to ~51 more dragon, after which only the loads move (-0.46 a dragon); the brief's -95 bones assumed big bones. **Not counted, 'if it lands' only:** rs/186's Tier-1 child, T18-19's door-free route -18 i + H11's cue at the leg's teleport click -1 to -2 i, ~-20, if on main by the start.
 
 **S05 / S23 / S24, a note, no total** (rs/674 on main, d6819e6e): small-quest talks now open the door to a shut-in NPC: normal +0 (B 6 / C 5 on both clients), shut in +1 to +4 once instead of attempt-ending (lab, fedora, 400 ms, 3 of 3 each).
