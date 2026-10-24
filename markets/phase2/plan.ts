@@ -92,6 +92,11 @@ export interface RampPlan {
     dropPct: number;
     /** A step's hold starts when every admitted login is pickpocketing, or this long after the step opened. */
     admitTimeoutMinutes: number;
+    /**
+     * Minutes a login must have been on the method before it counts as working, and before its rate is measured
+     * (ramp.ts holdRates): its arrival (the walk to the bank for its first food and back) is not the knights' rate.
+     */
+    warmupMinutes: number;
     /** Where the knights logins not yet admitted go when the ramp stops (plan B's mix by default). */
     fallbackMix: Mix;
 }
@@ -150,7 +155,7 @@ export const DEFAULTS = {
     loginSpacingMs: 2_000,
     hp: 40,
     sharks: { source: 'bank', perAccount: 200, perLoginHour: 40, hours: 72, ceiling: 701, minimum: 28, fillMinutes: 10 } satisfies Omit<SharkPlan, 'rebuyMinSharks'>,
-    ramp: { steps: [8, 20, 43], holdMinutes: 15, dropPct: 10, admitTimeoutMinutes: 30, fallbackMix: PLAN_B_MIX } satisfies RampPlan,
+    ramp: { steps: [8, 20, 43], holdMinutes: 15, dropPct: 10, admitTimeoutMinutes: 30, warmupMinutes: 5, fallbackMix: PLAN_B_MIX } satisfies RampPlan,
     ledger: { everyTicks: 50, bookMinutes: 15 },
     sell: { enabled: false, cap: 500, everyMinutes: 120, floors: {}, fillMinutes: 10 } satisfies SellPlan
 };
@@ -276,6 +281,7 @@ export function parsePlan(raw: unknown): Plan {
             holdMinutes: num('ramp.holdMinutes', o.holdMinutes, DEFAULTS.ramp.holdMinutes, { min: 0 }),
             dropPct: num('ramp.dropPct', o.dropPct, DEFAULTS.ramp.dropPct, { min: 0, max: 100 }),
             admitTimeoutMinutes: num('ramp.admitTimeoutMinutes', o.admitTimeoutMinutes, DEFAULTS.ramp.admitTimeoutMinutes, { min: 0 }),
+            warmupMinutes: num('ramp.warmupMinutes', o.warmupMinutes, DEFAULTS.ramp.warmupMinutes, { min: 0 }),
             fallbackMix: mix('ramp.fallbackMix', o.fallbackMix, DEFAULTS.ramp.fallbackMix)
         };
     }
