@@ -17,6 +17,9 @@
 // the whole leg's. --hp=N (::~hit down to N), --poison=SEVERITY (::~poison, cheat_other.rs2) and
 // --sharks=N (in place of a food leg's 6) stage the leg's start after the setup, untimed: the leg
 // upkeep's lab (rs/762: T14-15b poisoned at 20 HP with 3 sharks, hpMin must stay >= 15).
+// --hitlog writes a RESULT hits row: every damage_taken on SCORED during the leg (tick from the leg's
+// start, damage, its hitmark when the client sends one, the source and the attacker's name when in
+// sight), each hitpoints change no event explains, with SCORED's tile and the poison reading (rs/158).
 //
 // --drops=without|with|pair (the leg-row drops, runner/legs.ts `drops`): `without` carries exactly the
 // runes the hops spend and nothing the leg drops; `with` adds the ledger's drop outs (LEDGER_DROPS);
@@ -36,6 +39,7 @@ import type { BotWorldState } from '../../sdk/types';
 import type { BotActions } from '../../sdk/actions';
 import { dropsDue, legById, legsFor, runLeg, splitLeg, TILES, type LegDrops, type LegStart, type LegStep, type S21Altar } from '../runner/legs';
 import { PLACEMENT } from '../runner/chain';
+import { poisoned } from '../quests/segments';
 import { APE_ATOLL_ROOFS, glide, hopNeeds, lumdoBoat, pullLever, sail, travel, type Rune, type Runes, type TravelResult, type TravelSdk } from '../lib/travel';
 import { closeSession, logoutClean, openSession, type ClientKind } from '../lib/session';
 import { TickLog } from '../lib/ticks';
@@ -219,6 +223,47 @@ const numFlag = (k: string): number | null => {
 const stageHp = numFlag('hp');
 const stagePoison = numFlag('poison');
 const sharks = numFlag('sharks');
+const hitlog = rest.includes('--hitlog');
+
+interface HitRow {
+    tick: number;
+    kind: 'hit' | 'hp';
+    hp: number;
+    at: string;
+    poisoned: boolean;
+    damage?: number;
+    hitmark?: number;
+    source?: string;
+    delta?: number;
+}
+
+/** --hitlog: SCORED's damage frame by frame from now until stop() (see the header). */
+function startHitLog(sdk: BotSDK): { stop(): HitRow[] } {
+    const rows: HitRow[] = [];
+    const seen = new Set<string>();
+    const t0 = sdk.getState()?.tick ?? 0;
+    let lastHp = sdk.getState()?.player?.hp ?? null;
+    const off = sdk.onStateUpdate((s: BotWorldState) => {
+        const p = s.player;
+        if (!s.inGame || !p) return;
+        const at = `${p.worldX},${p.worldZ},${p.level}`;
+        const base = { hp: p.hp, at, poisoned: poisoned(s) };
+        let explained = 0;
+        for (const e of s.combatEvents) {
+            if (e.type !== 'damage_taken' || e.targetType !== 'player' || e.tick < t0) continue;
+            const key = `${e.tick}:${e.damage}:${e.sourceType}:${e.sourceIndex}:${e.observationId ?? ''}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            explained += e.damage;
+            const npc = e.sourceType === 'npc' ? s.nearbyNpcs.find(n => n.index === e.sourceIndex) : undefined;
+            const hitmark = (e as { hitmark?: number }).hitmark;
+            rows.push({ tick: e.tick - t0, kind: 'hit', ...base, damage: e.damage, ...(hitmark !== undefined ? { hitmark } : {}), source: npc ? `${npc.name} (npc ${npc.id}, index ${e.sourceIndex})` : `${e.sourceType} ${e.sourceIndex}` });
+        }
+        if (lastHp !== null && p.hp !== lastHp && p.hp - lastHp !== -explained) rows.push({ tick: s.tick - t0, kind: 'hp', ...base, delta: p.hp - lastHp });
+        lastHp = p.hp;
+    });
+    return { stop: () => (off(), rows) };
+}
 const runs = Number(runsArg ?? 2);
 // Diagnostic, not the run's path: --landing-wait=N runs a leg's first hop, waits N ticks, then the
 // rest, to show whether a click right after the landing is what costs a client ticks.
@@ -281,9 +326,11 @@ async function main(sdk: BotSDK, bot: BotActions): Promise<void> {
                     if (held.length !== want) throw new Error(`--drops=${mode}: the leg would drop ${held.length} slot(s) (${held.join(', ') || 'none'}), not ${want}`);
                 }
                 trace = startTrace(sdk);
+                const hits = hitlog ? startHitLog(sdk) : null;
                 const legLog = TickLog.memory('measure-legs');
                 const out = landingWait === null ? await runLeg(d, { sdk, bot, log: legLog, session: { name: botName, sessionId: 0 } as never }) : await runLegSplit(l, sdk, bot, landingWait);
                 trace.stop();
+                if (hits) result('hits', { id: d.id, run: r, client, hits: hits.stop() });
                 if (!out) throw new Error('already arrived at the start');
                 const travelMeta = legLog.rows.find(x => x.kind === 'travel')?.meta as { drops?: LegDrops[]; ate?: number; cured?: number; start?: LegStart } | undefined;
                 const bursts = travelMeta?.drops ?? [];
