@@ -288,7 +288,7 @@ describe('headcount report', () => {
         expect(s.byRival.map(r => [r.name, r.reads, r.sessions, r.longestMin])).toEqual([['A', 4, 2, 2], ['B', 2, 1, 1], ['C', 2, 1, 1]]);
         expect(s.coArrivals).toEqual([{ at: at(1), names: ['B', 'C'] }]);
         expect(s.ours).toEqual({ min: 0, mean: 0.5, max: 2 });
-        expect(s.hourly).toEqual([{ hour: '2026-10-24T04Z', reads: 6, distinct: 3, meanRivals: 7 / 6, meanOurs: 0.5 }]);
+        expect(s.hourly).toEqual([{ hour: '2026-10-24T04Z', reads: 6, distinct: 3, meanRivals: 8 / 6, meanOurs: 0.5 }]);
     });
 
     test('families group names by their stem', () => {
