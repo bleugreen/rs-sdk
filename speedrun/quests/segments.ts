@@ -90,7 +90,7 @@ export function segmentName(stepId: string, letter: string, label: string): stri
  * Prefer a game fact (a quest stage, items kept, a level) wherever one exists.
  */
 export function recorded(o: Observed, stepName: string): boolean {
-    return !!(o as Observed & { record?: { has(name: string): boolean } }).record?.has(stepName);
+    return !!o.record?.has(stepName);
 }
 
 const pass = () => true as const;
