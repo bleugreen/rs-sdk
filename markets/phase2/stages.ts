@@ -7,6 +7,11 @@
  * lite-client steps, the ship to Ardougne through thieving.ts's `thieving:to-ardougne` leg, any other sea crossing
  * through lib/sea-route.ts, a missing pickaxe through pickaxe.ts's steps, and each method through its Role.
  *
+ * Every stage reaches its start through lib/sea-route.ts first (`stageStart`, `reach`): when the start is on another
+ * land mass or behind a passage (the Gnome Stronghold's gate), the account travels there before the stage's own code,
+ * which walks only on one land mass, takes over. The bank, shop and Exchange walks inside the stages travel the same
+ * way. A trip that cannot be paid for throws sea-route's Unreachable, which the runner turns into a park.
+ *
  * A stage whose goal holds is skipped, so the runner recomputes the first unmet stage after anything that can undo
  * one (a death in the market loses the ship coins and the place; a redirect changes the method).
  */
@@ -23,14 +28,15 @@ import { crossTollGate, inAlKharid } from '../../speedrun/lib/toll-gate';
 import { waitUntil } from '../../speedrun/lib/wait';
 import { onTutorialIsland } from '../../speedrun/lib/world';
 import { runRoleUntil as runRole } from '../lib/role-until.ts';
-import { role as coinsRole } from '../methods/coins-driver.ts';
+import { role as coinsRole, standFor } from '../methods/coins-driver.ts';
 import { driveSteps, pickSteps } from '../methods/drive-steps.ts';
-import { parseOptions as hpOptions, spec as hpTrain, type SiteId, type TargetClaims } from '../methods/hp-train.ts';
+import { chooseSite } from '../methods/hp-model.ts';
+import { parseOptions as hpOptions, SITES, spec as hpTrain, type SiteId, type TargetClaims } from '../methods/hp-train.ts';
 import { role as mineRole } from '../methods/mine.ts';
 import { role as pickpocketRole } from '../methods/pickpocket.ts';
 import { parseArgs, Sampler } from '../methods/probe-sampler.ts';
-import { regionOf } from '../../speedrun/lib/ships';
-import { hereOf, travel, walk } from '../lib/sea-route.ts';
+import { BANKS } from '../../speedrun/helpers/buyer';
+import { ARDOUGNE_LANDING, hereOf, needsTravel, openBankAt, travel, type Tile, type Trip } from '../lib/sea-route.ts';
 import type { Stack } from './ledger.ts';
 import { bestPickaxe, BRONZE_PICKAXE, hasPickaxe, PICKAXE_COINS, pickaxeSteps, type PickaxeStep } from './pickaxe.ts';
 import { NEEDS, type MethodId, type Stage } from './plan.ts';
@@ -63,6 +69,10 @@ export interface StageCtx {
     reportBank(items: Stack[]): void;
     /** The bank at the runner's last sight of it this run (null when not seen). */
     bank?: Stack[] | null;
+    /** Coins in the bank at the runner's last sight of it (null when not seen): a trip that cannot pay is refused unmoved. */
+    bankCoins?(): number | null;
+    /** Every trip lib/sea-route.ts runs for this account, once it has arrived. */
+    trip?(t: Trip): void;
     hooks: StageHooks;
     /** The Hitpoints stage's site (hp-sites.ts) and the npc claims every account of the process shares. */
     hp?: { site: SiteId | 'auto'; claims: TargetClaims };
@@ -127,8 +137,58 @@ const ARDOUGNE_LEG = pickSteps(thievingSteps({ to: Number.POSITIVE_INFINITY }), 
 
 const stepSession = (x: StageCtx): RunnerSession => ({ sdk: x.sdk, bot: x.bot, name: x.account, sessionId: x.sessionId });
 
+/** mining.ts COPPER_SITES.rimmington's stand: where the mining stage's copper steps start. */
+const RIMMINGTON_COPPER = { x: 2977, z: 3246 };
+/** Stand inside the Varrock west bank, where the shark purchase starts (errands.ts VARROCK_WEST_BANK). */
+const VARROCK_WEST_BANK = { x: 3185, z: 3436 };
+
+/**
+ * Where a stage starts, for the trip before it; null when it starts wherever the account stands or travels itself
+ * (the pickaxe errand's steps; the ship to Ardougne from the mainland, which is thieving.ts's leg). Its code walks only
+ * on one land mass, so this need only be on the right side of the sea and of any passage.
+ */
+export function stageStart(st: Stage, method: MethodId, s: BotWorldState, x: Pick<StageCtx, 'options' | 'hp'>): Tile | null {
+    switch (st.do) {
+        case 'tutorial':
+        case 'pickaxe':
+        case 'wield':
+            return null;
+        case 'hp': {
+            // hp-train.ts trains a Kandarin site's first levels on the cows and walks over the mountain itself
+            const site = SITES[!x.hp || x.hp.site === 'auto' ? chooseSite(st.to) : x.hp.site];
+            return (site.kandarin ? SITES.cows : site).centre;
+        }
+        case 'thieving':
+        case 'admission':
+            return standFor(s, { target: 'auto' });
+        case 'coins':
+            return standFor(s, { target: 'man' });
+        case 'mining':
+            return RIMMINGTON_COPPER;
+        case 'buy-sharks':
+            return VARROCK_WEST_BANK;
+        case 'to-ardougne':
+            return regionOf(hereOf(s)) === 'mainland' ? null : ARDOUGNE_LANDING;
+        case 'method': {
+            const n = NEEDS[method];
+            if (n.staged) return null;
+            return n.ardougne ? ARDOUGNE_LANDING : standFor(s, x.options);
+        }
+    }
+}
+
+/** Travel to `start` first when it is on another land mass or behind a passage (lib/sea-route.ts). */
+export async function reach(x: StageCtx, stage: string, start: Tile | null): Promise<Trip | null> {
+    if (!start) return null;
+    const here = hereOf(x.sdk.getState()!);
+    if (!needsTravel(here, start)) return null;
+    x.event('travel to the stage', { stage, from: here, start });
+    return travel(x, start);
+}
+
 /** Run one stage on the account. Throws when it fails; returns early (aborted) when `x.signal` aborts. */
 export async function runStage(st: Stage, x: StageCtx, method: MethodId): Promise<void> {
+    await reach(x, st.do, stageStart(st, method, x.sdk.getState()!, x));
     switch (st.do) {
         case 'tutorial':
             await driveSteps(stepSession(x), [tutorialSkip], { c: {}, signal: x.signal });
@@ -145,8 +205,6 @@ export async function runStage(st: Stage, x: StageCtx, method: MethodId): Promis
         case 'pickaxe':
             return getPickaxe(x);
         case 'mining':
-            // a knight sent to iron from the market starts on the Ardougne side; the copper is at Rimmington
-            if (regionOf(hereOf(x.sdk.getState()!)) !== 'mainland') await travel(x, RIMMINGTON_COPPER);
             await leaveAlKharid(x);
             await driveSteps(stepSession(x), miningSteps({ to: st.to, travel: 'none' }), { c: {}, signal: x.signal });
             return;
@@ -160,6 +218,8 @@ export async function runStage(st: Stage, x: StageCtx, method: MethodId): Promis
             await leaveAlKharid(x);
             return x.hooks.buySharks();
         case 'to-ardougne':
+            // from Karamja or elsewhere in Kandarin the trip to the stage's start was the whole stage
+            if (onArdougneSide(x.sdk.getState()!)) return;
             await leaveAlKharid(x);
             await driveSteps(stepSession(x), [ARDOUGNE_LEG], { c: {} as never, signal: x.signal });
             return;
@@ -167,9 +227,6 @@ export async function runStage(st: Stage, x: StageCtx, method: MethodId): Promis
             return runMethod(x, method);
     }
 }
-
-/** mining.ts COPPER_SITES.rimmington's stand: where the mining stage's copper steps start. */
-const RIMMINGTON_COPPER = { x: 2977, z: 3246 };
 
 /** Walk pickaxe.ts's steps until a usable pickaxe is held. Throws when they end without one. */
 async function getPickaxe(x: StageCtx): Promise<void> {
@@ -207,7 +264,7 @@ async function pickaxeStep(x: StageCtx, st: PickaxeStep, mining: number): Promis
             return;
         }
         case 'buy': {
-            await walk(x, st.shop.stand, 3);
+            await travel(x, st.shop.stand, 3);
             const opened = await x.bot.openShop(st.shop.npc);
             if (!opened.success) throw new Error(`openShop: ${opened.message}`);
             const ware = x.sdk.getState()!.shop.shopItems.find(i => BRONZE_PICKAXE.test(i.name));
@@ -318,23 +375,6 @@ async function wield(x: StageCtx, item: RegExp): Promise<void> {
     if (!it || !op) throw new Error(`nothing matching ${item} to wield`);
     await x.sdk.sendUseItem(it.slot, op.opIndex);
     await waitUntil(x.sdk, st => st.equipment.some(e => item.test(e.name)), { maxTicks: 10 });
-}
-
-/**
- * Walk to the bank at `at` and open it afresh, waiting for its items. A sale falls due when the method reports its
- * bank, so the method is stopped with that bank still open or closing, and reading it then gave no items (lab, rs/732).
- */
-export async function openBankAt(x: Pick<StageCtx, 'sdk' | 'bot' | 'signal' | 'event'>, at: { x: number; z: number }): Promise<ReturnType<BotSDK['getBankItems']>> {
-    await walk(x, at, 3);
-    if (x.sdk.getState()?.bank?.isOpen) {
-        await x.bot.closeBank();
-        await waitUntil(x.sdk, s => !s.bank?.isOpen, { maxTicks: 5 });
-    }
-    const opened = await x.bot.openBank();
-    if (!opened.success) throw new Error(`openBank: ${opened.message}`);
-    // an empty bank never fills: it costs the wait's 5 ticks
-    await waitUntil(x.sdk, s => s.bank?.isOpen === true && s.bank.items.length > 0, { maxTicks: 5 });
-    return x.sdk.getBankItems();
 }
 
 /** Back west through the toll gate (10 coins): the thieving stage can end among the Al-Kharid warriors. */
