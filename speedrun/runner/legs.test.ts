@@ -1113,8 +1113,22 @@ describe("the leg upkeep under poison (attempt 4: T14-15b reached hpMin 1 with 3
         const sdk = new FakeSdk(at(landing.x, landing.z, 35, { tick: base, inventory: [shark(3), shark(4), superAnti(5, 1), oldVial], nearbyLocs: [YOUNG_TREE] }));
         const walk = simulateWalking(sdk);
         const { sim, each } = poisonWorld(sdk, walk, { severity: 27, firstAt: base + 2 });
+        // A drop lands on the next tick.
+        const dropped = new Set<number>();
+        const prev = sdk.onSend;
+        sdk.onSend = (a, f) => {
+            prev(a, f);
+            if (a.method === 'sendDropItem') dropped.add(a.args[0] as number);
+        };
+        const world = (s: BotWorldState): Partial<BotWorldState> => {
+            const out = each(s);
+            if (!dropped.size) return out;
+            const inventory = (out.inventory ?? s.inventory).filter(i => !dropped.has(i.slot));
+            dropped.clear();
+            return { ...out, inventory };
+        };
         const ctx = ctxFor(sdk);
-        await drive(sdk, b.run(ctx), 400, each);
+        await drive(sdk, b.run(ctx), 400, world);
         expect(arrived(b.def, sdk.state!)).toBe(true);
         expect(sim.drinks).toHaveLength(1);
         expect(sdk.sent.filter(a => a.method === 'sendDropItem').map(a => a.args[0])).toEqual([5]);
