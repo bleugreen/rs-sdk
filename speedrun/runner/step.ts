@@ -164,7 +164,7 @@ export interface Step<C = Record<string, never>> {
 export async function deathWatched<T>(session: RunnerSession, name: string, fn: () => Promise<T>): Promise<T> {
     const sdk = session.sdk;
     const fence = new Fence();
-    const unfence = typeof (sdk as { sendAction?: unknown }).sendAction === 'function' ? fence.install(sdk) : () => {};
+    const unfence = typeof (sdk as unknown as { sendAction?: unknown }).sendAction === 'function' ? fence.install(sdk) : () => {};
     const attempt = fence.open();
     const stretch = watchFrames(sdk, session, `in ${name}`);
     void stretch.died.then(d => attempt.abort(d.reason));
