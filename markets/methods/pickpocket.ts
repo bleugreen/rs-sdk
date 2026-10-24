@@ -4,7 +4,8 @@
 //   ROLE_OPTIONS='{"target":"knight"}' bun markets/methods/pickpocket.ts <account>
 //
 // One trip: pickpocket until the food runs out (or `bankAt` coins are carried), walk to the
-// East Ardougne south bank, deposit everything, withdraw `food` (fill, or `foodPerTrip` of them),
+// East Ardougne south bank, deposit everything, withdraw `food` (all but the spot's `reserve` of
+// the free slots, kept for the loot's stacks, or `foodPerTrip` of them),
 // report the bank, walk back. The demo's board counts the bank only, so every trip ends there.
 //
 // The click policy is speedrun/helpers/coins.ts's: click the target once every server tick and let
@@ -41,6 +42,8 @@ export interface PickSpot {
     level: number;
     /** Map spawn tiles: walked in turn when no target is in view (a target can wander out of view range). */
     spawns: readonly Tile[];
+    /** Slots the bank trip leaves free for the stackable loot: coins, and each kind of rune the pocket holds. */
+    reserve: number;
 }
 
 /** East Ardougne south bank, booths at (2656,3283) and (2656,3286) (speedrun/skills/thieving.ts). */
@@ -49,12 +52,14 @@ export const ARDOUGNE_SOUTH_BANK: Tile = { x: 2654, z: 3285 };
 export const SPOTS: Record<'knight' | 'paladin' | 'hero', PickSpot> = {
     // the eastern two spawns wander least
     knight: {
-        npc: /^knight of ardougne$/i, anchor: { x: 2667, z: 3306 }, radius: 16, bank: ARDOUGNE_SOUTH_BANK, damage: 3, level: 55,
+        npc: /^knight of ardougne$/i, anchor: { x: 2667, z: 3306 }, radius: 16, bank: ARDOUGNE_SOUTH_BANK, damage: 3, level: 55, reserve: 1,
         spawns: [{ x: 2669, z: 3298 }, { x: 2671, z: 3313 }, { x: 2653, z: 3300 }, { x: 2652, z: 3318 }]
     },
-    paladin: { npc: /^paladin$/i, anchor: { x: 2655, z: 3311 }, radius: 12, bank: ARDOUGNE_SOUTH_BANK, damage: 3, level: 70, spawns: [{ x: 2653, z: 3315 }, { x: 2657, z: 3307 }] },
+    // coins and chaos runes
+    paladin: { npc: /^paladin$/i, anchor: { x: 2655, z: 3311 }, radius: 12, bank: ARDOUGNE_SOUTH_BANK, damage: 3, level: 70, reserve: 2, spawns: [{ x: 2653, z: 3315 }, { x: 2657, z: 3307 }] },
     // spread across the market: none is in view from the bank, where a trip starts
-    hero: { npc: /^hero$/i, anchor: { x: 2650, z: 3304 }, radius: 24, bank: ARDOUGNE_SOUTH_BANK, damage: 4, level: 80, spawns: [{ x: 2647, z: 3306 }, { x: 2667, z: 3316 }, { x: 2630, z: 3288 }] }
+    // coins, blood and death runes; the rare unstackable loot takes the slots the eats free
+    hero: { npc: /^hero$/i, anchor: { x: 2650, z: 3304 }, radius: 24, bank: ARDOUGNE_SOUTH_BANK, damage: 4, level: 80, reserve: 3, spawns: [{ x: 2647, z: 3306 }, { x: 2667, z: 3316 }, { x: 2630, z: 3288 }] }
 };
 
 /** Hitpoints per eat (consume_normal.dbrow), by inventory name. */
@@ -213,6 +218,29 @@ export class FailureRun {
     }
 }
 
+/** The role's log line on every change of target: the npc's index and tile, and the bot's own tile. */
+export const TARGET_LOG = 'target';
+/**
+ * The role's log line on every change of errand (`{ errand }`: an Errand, or 'roam' for a walk to a spawn when no
+ * target is in view, door recoveries included): the phase-2 runner counts the ticks spent in 'thieve'.
+ */
+export const ERRAND_LOG = 'errand';
+
+/** Inventory slots a player has. */
+export const INVENTORY_SLOTS = 28;
+
+/**
+ * Food to withdraw into an inventory with `used` slots taken after the deposit: all but `reserve` free slots (or
+ * `perTrip`, if fewer), so the loot's stacks have a slot. A success into a full pack drops its loot on the ground
+ * (engine InvOps.ts INV_ADD, the overflow), and a pack filled with sharks right after a deposit stays full until the
+ * next eat: at HP 40 that eat waited for ~7 failures, and the lab knights lost 1.3-2.5 minutes of coins after every
+ * bank visit.
+ */
+export function foodToWithdraw(used: number, perTrip: number, reserve = 1): number {
+    const room = Math.max(0, INVENTORY_SLOTS - used - reserve);
+    return perTrip > 0 ? Math.min(perTrip, room) : room;
+}
+
 export type Errand = 'bank' | 'go' | 'thieve';
 
 /** The next errand from a snapshot: bank when out of food or carrying `bankAt` coins, else thieve at the station. */
@@ -258,6 +286,8 @@ export class Pickpocketer {
     roams = 0;
     private startTick = 0;
     private lastReport = 0;
+    private loggedTarget = -1;
+    private errand: Errand | 'roam' | null = null;
 
     constructor(private readonly ctx: RoleContext) {
         this.o = readOptions(ctx.options);
@@ -282,6 +312,7 @@ export class Pickpocketer {
             const s = this.s;
             if (s.dialog.isOpen) await this.ctx.sdk.sendClickDialog(0);
             const e = nextErrand({ food: this.food(s).length, coins: coinsIn(s), bankAt: this.o.bankAt, atStation: dist(s, this.spot.anchor) <= this.spot.radius });
+            this.setErrand(e);
             try {
                 if (e === 'bank') await this.bank();
                 else if (e === 'go') await this.walk(this.spot.anchor);
@@ -300,6 +331,12 @@ export class Pickpocketer {
             }
         }
         this.report('stop');
+    }
+
+    private setErrand(e: Errand | 'roam'): void {
+        if (e === this.errand) return;
+        this.errand = e;
+        this.ctx.log(ERRAND_LOG, { errand: e });
     }
 
     /** Throws WalkFailed when the walk fails, after a door retry if it was unroutable. */
@@ -325,8 +362,10 @@ export class Pickpocketer {
         const food = new RegExp(`^${this.o.food.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
         const sdk = this.ctx.sdk;
         const count = (items: readonly { name: string; count: number }[]) => items.filter(i => food.test(i.name)).reduce((n, i) => n + i.count, 0);
+        const n = foodToWithdraw(sdk.getState()?.inventory.length ?? INVENTORY_SLOTS, this.o.foodPerTrip, this.spot.reserve);
+        if (n === 0) throw new Error(`no free slot for food after the deposit (${d.remaining.map(i => i.name).join(', ')})`);
         const w = await withdrawFood({
-            withdraw: () => withdrawMany(sdk, [{ item: food, n: this.o.foodPerTrip > 0 ? this.o.foodPerTrip : 'fill' }]),
+            withdraw: () => withdrawMany(sdk, [{ item: food, n }]),
             carried: () => count(sdk.getState()?.inventory ?? []),
             inBank: () => {
                 const b = sdk.getState()?.bank;
@@ -415,11 +454,20 @@ export class Pickpocketer {
             if (target) {
                 unseenSince = t;
                 tried.clear();
+                if (target.index !== this.loggedTarget) {
+                    this.loggedTarget = target.index;
+                    this.ctx.log(TARGET_LOG, { index: target.index, npc: [target.tileX ?? target.x, target.tileZ ?? target.z], me: [p.worldX, p.worldZ] });
+                }
             } else if (t - unseenSince >= 8) {
                 const i = roamTo(this.spot.spawns, { x: p.worldX, z: p.worldZ }, tried);
                 tried.add(i);
                 this.roams++;
-                await this.walk(this.spot.spawns[i]!);
+                this.setErrand('roam');
+                try {
+                    await this.walk(this.spot.spawns[i]!);
+                } finally {
+                    this.setErrand('thieve');
+                }
                 s = this.s;
                 unseenSince = lastProgress = s.tick;
                 continue;
