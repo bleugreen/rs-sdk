@@ -211,6 +211,19 @@ describe('run.ts: the upkeep from login to the first step', () => {
         upkeep.stop();
     });
 
+    test("entered at once after login (no preflight ticks), the step's entry settles: the eat, then the dose, then the body", async () => {
+        const t0 = 65_000;
+        const hit = { tick: t0, type: 'damage_taken' as const, damage: 2, sourceType: 'npc' as const, sourceIndex: -1, targetType: 'player' as const, targetIndex: -1, hitmark: 2 };
+        const sdk = new FakeSdk(state({ tick: t0, inventory: [shark(0), potion(1, 4)], combatEvents: [hit] }, { hp: 11 }));
+        const served = serve(sdk);
+        const ctx = ctxFor(sdk);
+        const upkeep = loginUpkeep(ctx.session as never, TickLog.memory('login'), () => {});
+        let atBody: number[] = [];
+        const [first] = enteringEnds(steps(() => void (atBody = served.uses.map(u => u.slot))), upkeep);
+        await drive(sdk, first!.run(ctx), 20);
+        expect(atBody).toEqual([0, 1]);
+    });
+
     test('a death between login and the first step fails that step\'s entry with it before its body runs', async () => {
         const sdk = new FakeSdk(state({ tick: 80_000 }, { hp: 3 }));
         const ctx = ctxFor(sdk);
