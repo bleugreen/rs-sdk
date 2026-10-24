@@ -360,7 +360,7 @@ export function compareRow(p: Placed, rows: readonly LedgerRow[], entries: reado
     for (const g of groups.values()) {
         const item = [...g.names].join(' / ');
         const name = [...g.names][0]!;
-        let f: Omit<Finding, 'placed' | 'item' | 'where' | 'live' | 'verdict'> | null = null;
+        let f: Omit<Finding, 'placed' | 'item' | 'names' | 'where' | 'live' | 'verdict'> | null = null;
         if (g.where === 'pack') {
             if (g.inv.length) {
                 const w = sum(inv, g.inv);
