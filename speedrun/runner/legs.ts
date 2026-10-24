@@ -29,6 +29,7 @@ import {
 import { currentTick } from '../lib/wait';
 import { invCount, invItem, pos, skillLevel, type LocQuery, type OpPattern } from '../lib/world';
 import type { Observed, Step, StepContext } from './step';
+import { DeathWatch } from './death';
 
 export const skill = 'legs';
 
@@ -363,9 +364,17 @@ export async function runLeg(def: LegDef, ctx: Pick<StepContext<unknown>, 'sdk' 
     };
     const beforeHop = async (at: number): Promise<string | null> => (def.drops?.length ? await dropAt(at) : null) ?? (await stopAt(at));
     const from = resumeHop(def, s);
-    const r = await travel(ctx.sdk as unknown as TravelSdk, def.hops, { bot: ctx.bot, from, ...(def.food ? { eat: {} } : {}), ...(def.drops?.length || def.stops?.length ? { beforeHop } : {}) });
-    const why = r.ok ? await dropAt(def.hops.length) : null;
+    // A relocation travel sees fails the hop only as a death the watch corroborates; any other jump re-paths as before.
+    const watch = new DeathWatch(s, `on ${def.id}`);
+    const unwatch = ctx.sdk.onStateUpdate(st => watch.see(st));
+    const onRelocated: TravelOptions['onRelocated'] = rel => (rel.respawn && watch.death() ? 'fail' : 'repath');
+    const r = await travel(ctx.sdk as unknown as TravelSdk, def.hops, { bot: ctx.bot, from, onRelocated, ...(def.food ? { eat: {} } : {}), ...(def.drops?.length || def.stops?.length ? { beforeHop } : {}) })
+        .finally(() => unwatch());
+    const death = watch.death();
+    if (death && ctx.session) ctx.session.died ??= death;
+    const why = r.ok && !death ? await dropAt(def.hops.length) : null;
     if (ctx.log && ctx.session) logTravel(ctx as StepContext<unknown>, name, from, r, drops, stops);
+    if (death) throw new Error(`${def.id}: ${death.reason}`);
     // Drops refused before a hop stop the trip; their reason (naming what is held) is the leg's.
     const refused = drops.find(d => !d.ok);
     if (refused) throw new Error(refused.reason!);
