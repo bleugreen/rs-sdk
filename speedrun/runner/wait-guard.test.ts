@@ -7,8 +7,8 @@ import { muleDelivery } from '../helpers/mule-itinerary';
 import { baseState, drive, FakeSdk, flush } from '../lib/fake-sdk';
 import { TickLog } from '../lib/ticks';
 import { waitUntil } from '../lib/wait';
-import { cureDose, DRINK_DELAY_TICKS, drinkDelayOver, noteAntipoison } from '../quests/segments';
-import { loginUpkeep, LOGIN_STRETCH, poisonUnknownEntry } from '../run';
+import { DRINK_DELAY_TICKS, drinkDelayOver, noteAntipoison } from '../quests/segments';
+import { loginUpkeep, LOGIN_STRETCH } from '../run';
 import { muleScope, openGuarded } from './chain';
 import { CueKeeper } from './cue-keeper';
 import { DEATH_STEP, deathRow, diedResult, EXIT_DIED, type Death } from './death';
@@ -286,55 +286,20 @@ describe('run.ts: the upkeep from login to the first step', () => {
         expect(atBody).toEqual([0, 1]);
     });
 
-    describe('the poison-unknown dose (main\'s ruling): entering at S15:A or S16:B, one dose from login for a poison not yet seen', () => {
-        /** A cure whose poisonUnknown reads as rs/786's: no dose since the session began, no poison seen, a dose held. */
-        const unknownCure = (sdk: FakeSdk) => {
-            const c = Object.assign(flagCure(sdk, false), { cureDose });
-            return Object.assign(c, { poisonUnknown: (s: BotWorldState) => c.noted.length === 0 && cureDose(s) !== null });
-        };
-        const login = async (entry: string, inventory: InventoryItem[]) => {
-            const sdk = new FakeSdk(state({ tick: 90_000, inventory }, { hp: 38 }));
-            const served = serve(sdk);
-            const cure = unknownCure(sdk);
-            const log = TickLog.memory('login');
-            const ctx = ctxFor(sdk);
-            const upkeep = loginUpkeep(ctx.session as never, log, () => {}, { entry, cure });
-            for (let i = 0; i < 40; i++) {
-                await flush();
-                sdk.tick();
-            }
-            let atBody = -1;
-            const [first] = enteringEnds(steps(() => void (atBody = served.uses.length)), upkeep);
-            await drive(sdk, first!.run(ctx), 20);
-            return { served, log, atBody, sdk };
-        };
-
-        test('scoped to the two entries', () => {
-            expect(poisonUnknownEntry('S15:A-narnode')).toBe(true);
-            expect(poisonUnknownEntry('S16:B-cellar')).toBe(true);
-            expect(poisonUnknownEntry('S15:B-karamja')).toBe(false);
-            expect(poisonUnknownEntry('S14:A-wilderness')).toBe(false);
-            expect(poisonUnknownEntry(undefined)).toBe(false);
-        });
-
-        test('a resume into S15:A with an antipoison held, no hit and no message, drinks once (cureDose: the plain one first), before the body', async () => {
-            const { served, log, atBody, sdk } = await login('S15:A-narnode', [potion(0, 4), potion(1, 3, 'Antipoison')]);
-            expect(served.uses.map(u => u.slot)).toEqual([1]);
-            expect(atBody).toBe(1);
-            expect(sdk.state!.inventory.map(i => i.name)).toEqual(['Superantipoison(4)', 'Antipoison(2)']);
-            expect(log.rows.map(r => r.step)).toEqual([`(run) upkeep ${LOGIN_STRETCH}: cure`]);
-        });
-
-        test('entering anywhere else spends no dose on a poison not seen', async () => {
-            const { served } = await login('S14:A-wilderness', [potion(0, 3, 'Antipoison')]);
-            expect(served.uses).toEqual([]);
-        });
-
-        test('none held: nothing sent and nothing thrown (a refusal is poisonCovered\'s, on a poison seen)', async () => {
-            const { served, atBody } = await login('S16:B-cellar', [shark(0)]);
-            expect(served.uses).toEqual([]);
-            expect(atBody).toBe(0);
-        });
+    test('never a blind dose from login: an antipoison held and no poison seen, nothing is drunk (S15:A\'s and S16:B\'s entry cures own that)', async () => {
+        const sdk = new FakeSdk(state({ tick: 90_000, inventory: [potion(0, 4), potion(1, 3, 'Antipoison')] }, { hp: 38 }));
+        const served = serve(sdk);
+        const ctx = ctxFor(sdk);
+        const log = TickLog.memory('login');
+        const upkeep = loginUpkeep(ctx.session as never, log, () => {});
+        for (let i = 0; i < 40; i++) {
+            await flush();
+            sdk.tick();
+        }
+        const [first] = enteringEnds(steps(() => {}), upkeep);
+        await drive(sdk, first!.run(ctx), 20);
+        expect(served.uses).toEqual([]);
+        expect(log.rows).toEqual([]);
     });
 
     test("every login's first in-world tick is the cure's session start: the one just made, then an in-page relog whose tick keeps counting", () => {

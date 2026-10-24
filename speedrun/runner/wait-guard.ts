@@ -30,14 +30,9 @@ export interface Cure {
     /** Until a drink sent at `sent` has finished its p_delay, inside which any click is dropped (default: segments.ts drinkDelayOver). */
     drinkDelayOver?(sdk: StateSource, sent: number): Promise<void>;
     /**
-     * Main's poison-unknown (segments.ts `poisonUnknown`, rs/786): a fresh session since the last dose, no poison seen in
-     * it, an antipoison held. A carried poison shows only at its first hit, up to 30 ticks after login. Read only with
-     * UpkeepOptions.unknownPoisonDose; absent, that dose never goes.
-     */
-    poisonUnknown?(s: BotWorldState): boolean;
-    /**
-     * A login's first in-world tick, the session start poisonUnknown counts from (segments.ts `noteSessionStart`, rs/786).
-     * An in-page login keeps the client's tick counting, so only the caller that sees the login can say when it began.
+     * A login's first in-world tick, the session start segments.ts counts a fresh session from (`noteSessionStart`, rs/786,
+     * for S15:A's and S16:B's entry cures). An in-page login keeps the client's tick counting, so only the caller that sees
+     * the login can say when it began.
      */
     noteSessionStart?(tick: number): void;
 }
@@ -75,11 +70,6 @@ export interface UpkeepOptions {
      * could take SCORED through the floor. The cure always waits for the dialogue to close.
      */
     urgentHp?: number;
-    /**
-     * Drink one dose when the cure reads the poison unknown (Cure.poisonUnknown), not only on a poison seen: run.ts's
-     * login stretch into S15:A or S16:B (main's ruling), where waiting for the carried poison's first hit costs 5-6 HP.
-     */
-    unknownPoisonDose?: boolean;
     onAct?: (a: UpkeepAct) => void;
 }
 
@@ -180,12 +170,14 @@ export class WaitUpkeep {
         });
     }
 
-    /** The dose to drink now: none in CURE_SPACING ticks, and poisoned (or, with unknownPoisonDose, the poison unknown). */
+    /**
+     * The dose to drink now: none in CURE_SPACING ticks, and a poison seen (`poisoned`). Never a blind dose for a poison not
+     * yet seen: that one is S15:A's and S16:B's own entry cure (main's ruling).
+     */
     private doseDue(s: BotWorldState): InventoryItem | null {
         const cure = this.cure;
         if (!cure || (this.drink && s.tick - this.drink.tick < CURE_SPACING)) return null;
-        const want = cure.poisoned(s) || (!!this.o.unknownPoisonDose && !!cure.poisonUnknown?.(s));
-        return want ? cure.cureDose(s) : null;
+        return cure.poisoned(s) ? cure.cureDose(s) : null;
     }
 
     private drinkNow(s: BotWorldState, dose: InventoryItem, fresh: boolean): void {
