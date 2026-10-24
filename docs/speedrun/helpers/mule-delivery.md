@@ -166,8 +166,10 @@ and the teleport landing definition. Staging bank coordinates come only from
 - H22: helper exactly SUPPLIES' (3191,3363), one south of the leg/quest arrival
   (3191,3364), within leg tolerance 1 and the quest's outside area. The parent
   confirmed the SUPPLIES helper tile.
-- H4m: the explicitly documented overflow meeting point (2605,3234), not the
-  ordinary H4p arrival (2604,3235).
+- H4m.1..N: one stand, `H4M_STAND` (2606,3234), east of S09's zoo iron lap's
+  east stay (2605,3234). The stay is the only lap tile beside it, so SCORED
+  takes every load from there. (The old overflow point (2605,3234) was the
+  stay itself, and it is retired.)
 
 These are exact readiness locations, not proof that every tile is reachable by
 the assigned account or that adjacent trades succeed on the current engine.
@@ -227,8 +229,46 @@ with bank, trade and travel inactive. Green generator tests are not that proof.
 | H21d | E ordered | 3185,3436 | Varrock west 3185,3436 | After this carrier's H19; S24 plus S25a window before S25d | Planned H19 predecessor U; old H20 predecessor measured 174 ticks | Real 17-stack delivery and hammer-only return passed; no platebody seed; planned carrier transition still pending |
 | H22 | E ordered | 3191,3366 (ruled; was 3191,3363, the door tile; rs/667 lands the code) | Varrock west 3185,3436 | After H21d; remaining S25, gate before T25-26 | H21d success to exact ready: 88 / 88 ticks at this stand (rs/658, 2026-10-24, bgsrv-ub 400 ms, 38db295e, 2 runs); **68 / 68 / 68 ticks at the ruled stand (3191,3366)** (bgsrv-mac 400 ms, lab-only patch on 24bb891c, 3 runs) | **Trade refused at this stand in both runs:** (3191,3363) is the Champions' Guild door tile and SCORED's T25-26 target (3191,3364) is beside it, so the delivery door guard (`findDoorsAlongPath`, endpoint plus cardinal neighbours) refuses. The ruled pair, SCORED (3191,3365) tol 0 with the carrier at championsGuild z+1 (3191,3366), passed 3 of 3: SCORED arrived on (3191,3365) each time in 42 ticks, and the trade opened 9–10 ticks later and completed exactly; rs/667 commits the pair |
 | H4e | E conditional | 2920,3406 | Falador west 2946,3369 | Explicit fallback preparation before S07 ends; east carrier only, with a separately prepared western H6 | U; fallback trade 4 scored ticks measured, not a delivery-route duration | Pending |
-| H4m | W conditional audit only; excluded from attempt 1 | 2605,3234 | Ardougne south 2654,3283 | No implemented receiving window; attempt 1 uses the approved stock-only overflow fix instead | U; no same-arrival trip assumed | Retained for audit; no invented attempt-1 trigger |
+| H4m.1..N | W ordered after H4p, only while the ledger has the row `H4m.1-H4m.N` (below) | 2606,3234 | Ardougne south 2654,3283 | Each load when SCORED holds 0 big bones on S09's lap (a load lasts ~300 ticks) | H4m.1 carried with H4p: ready 4 ticks after H4p's trade. H4m.2, H4m.3: 81 ticks from the previous trade to ready (37 to the bank, 37 back) | Lab b05b8a1c (bgsrv-ub, 400 ms, h55-observed): 4 exact trades by id, peak 22 slots, no bank between H4p and H4m.1; paired scored band pending (rs/701) |
 | H3 | R rehearsal only | supplied canonical firemaking end | Draynor 3092,3245 | Explicit rehearsal selection; prepare during S03, ready before substitute S04 | U; geometry-dependent | Pending |
+
+### H4m's loads: one ledger row, N packages
+
+H4m moves ~200 big bones from S07's tail to S09's iron lap. SCORED buries them
+between laps, 20 a load (rs/701 builds the step side). In STEP-MANIFEST's
+fallback table, H4m is one row, `H4m.1-H4m.N | big bones @532 x20 [u] | - | ...`.
+Its `in` cell is one load, and the id carries N. `mule-ledger.ts`
+`muleFromLedger` expands it into N ordered packages, `h4m.1`..`h4m.N`, right
+after H4p (`H4M_ANCHOR`). Each one has its own `{H4m.k, mule}` scope, cue,
+readiness gate and served record, and each feeds S09. `h4mLoadRows(manifest)`
+returns those ids, and the scored chain derives its H4m rows from the same
+function, so N has a single source. A load is a fixed count that takes
+nothing back. A top-up or a take-back on the row is refused, and so is any
+H4m id selected or requested by name.
+
+**The row's presence is the switch.** With no `H4m.1-H4m.N` row, nothing
+expands, and `docs/speedrun/scripts/carriers-gen.ts` produces byte for byte
+what it did before H4m existed (pinned by a test that runs the real script
+with and without the row). The row must not be written before main rules H4m
+in. A bare `H4m` row is attempt 1's retired on-request overflow package. The
+archived lab projection still carries one, but it is not the switch.
+
+The loads ride H4p's carrier (cairn_h55 in the production binding).
+`muleRunOptionsByAccount` binds them through the anchor, so neither the
+production json nor carriers-gen needs an H4m entry. A binding of a load's own
+must name the same carrier. H4p and H4m.1 are a carry pair (`CARRY_PAIRS`).
+h55's pack is otherwise empty, so H4p's 2 slots plus 20 bones stage together
+(22 of 28). SCORED trades H4m.1 straight after H4p, with no bank trip between.
+Two loads are 40 slots, so every later load takes its own bank round trip.
+h55's order is H6, H4p, H4m.1..N, H7, and the last load's plain stop releases
+h55 to H7's staging as before.
+
+Stand checks (pinned in `mule-itinerary.test.ts`): no door within 10 tiles of
+the stand, and the real `deliveryTradeReach` accepts it with SCORED on the
+east stay. h55 is combat 77 (Magic 99 dominates). Among the ground-floor
+spawns in the nine map squares around the stand, the nearest player hunter is
+the zoo's scorpion, 19 tiles beyond its wander + hunt range. The nearest that
+would hunt a combat-77 player is the jogre, 33 tiles beyond its range.
 
 ### What this audit does and does not establish
 

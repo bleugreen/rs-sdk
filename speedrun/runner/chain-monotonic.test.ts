@@ -41,7 +41,7 @@ import { SCORED_LOGIN, SCORED_LOGOUT, SCORED_RELOG } from './scored-relog';
 const ATTEMPT = 'attempt-1';
 const MANIFEST_TEXT = readFileSync(MANIFEST, 'utf8');
 const BASE = mkdtempSync(join(tmpdir(), 'chain-monotonic-'));
-const PARTNERS: Record<string, string> = { ...Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS].map(id => [id, `p_${id.toLowerCase()}`])), H12a: 'p_h12', H12b: 'p_h12' };
+const PARTNERS: Record<string, string> = { ...Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS, 'H4m'].map(id => [id, `p_${id.toLowerCase()}`])), H12a: 'p_h12', H12b: 'p_h12' };
 /** S07's run shape: the b01-b04 group with the runes' last load (rs/663). */
 const BONE_GROUP = ['cairn_b01', 'cairn_b02', 'cairn_b03', 'cairn_b04'] as const;
 const config = (dir: string): RunConfig => ({
