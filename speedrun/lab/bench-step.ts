@@ -615,7 +615,8 @@ async function main(argv: string[]): Promise<number> {
         const r: RunResult = { ...m, run, account: names.scored, refused, score, secs, notes, log };
         results.push(r);
         const status = refused ? 'refused' : m.pass ? 'pass' : 'fail';
-        appendResults(a.out, [tsvRow({ commit, target: a.target, tick_ms: labTick, run, account: names.scored, status, ticks: refused ? null : m.ticks, score, secs, late: m.late, glued: m.glued, gaps: m.gaps, hp_entry: m.hpEntry, hp_min: m.hpMin, food: m.food, cheats: m.cheats.join('; '), notes, log, at: new Date().toISOString() })]);
+        const aside = appendResults(a.out, [tsvRow({ commit, target: a.target, tick_ms: labTick, run, account: names.scored, status, ticks: refused ? null : m.ticks, score, secs, late: m.late, glued: m.glued, gaps: m.gaps, hp_entry: m.hpEntry, hp_min: m.hpMin, food: m.food, cheats: m.cheats.join('; '), notes, log, at: new Date().toISOString() })]);
+        if (aside) console.log(`[bench] ${a.out} had an older header: moved to ${aside}, a new file started`);
         console.log(`[bench] run ${run}/${a.k} ${status}: ${refused ? '-' : m.ticks} ticks in ${secs} s; TICKMON ${m.minutes} min late ${m.late} glued ${m.glued} gaps ${m.gaps}; hp entry ${m.hpEntry ?? '-'} min ${m.hpMin ?? '-'}; food ${m.food ?? '-'}; cheats ${m.cheats.join(', ') || 'none'}${notes ? `; ${notes}` : ''}`);
     }
 

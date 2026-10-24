@@ -1,11 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
 import { join } from 'path';
 import { ROOT } from '../lib/session';
 import type { TickRow } from '../lib/ticks';
 import { buildChain, h12oLoginRefusal, KIT_PARTNER_ROWS, missingOnPath, PLACEMENT } from '../runner/chain';
 import { MANIFEST } from '../tools/slot-ledger';
-import { benchArgs, benchNames, benchScore, failurePrice, formatSegments, helperFlags, segmentTable, labRunConfig, median, resolveTarget, restartTicks, runMetrics, runOrderCells, tsvRow, TSV_COLUMNS, unservedLiteFamilies, type PlanStep } from './bench-step';
+import { appendResults, benchArgs, benchNames, benchScore, failurePrice, formatSegments, helperFlags, segmentTable, labRunConfig, median, resolveTarget, restartTicks, runMetrics, runOrderCells, tsvRow, TSV_COLUMNS, unservedLiteFamilies, type PlanStep } from './bench-step';
 import { familyNeeds, labChain, rehearsalPlan, STAFF, type FamilyNeeds } from './dress-rehearsal';
 import type { LabWorld } from './stand-ins';
 
@@ -216,6 +217,22 @@ describe('accounts and helpers', () => {
 });
 
 describe('results.tsv', () => {
+    test('a file under an older header is moved aside, not appended to; one under the current header is', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'bench-tsv-'));
+        try {
+            const path = join(dir, 'results.tsv');
+            writeFileSync(path, 'commit\ttarget\thp_min\nold\tS12\t3\n');
+            const aside = appendResults(path, ['new\n']);
+            expect(aside).not.toBeNull();
+            expect(readFileSync(aside!, 'utf8')).toBe('commit\ttarget\thp_min\nold\tS12\t3\n');
+            expect(readFileSync(path, 'utf8')).toBe(`${TSV_COLUMNS.join('\t')}\nnew\n`);
+            expect(appendResults(path, ['again\n'])).toBeNull();
+            expect(readFileSync(path, 'utf8').split('\n')).toHaveLength(4);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
     test('one row per run in the column order, tabs and newlines in a refusal flattened', () => {
         const line = tsvRow({ commit: 'abc', target: 'S12', tick_ms: 150, run: 1, account: 'benchk3x1', status: 'fail', ticks: 300, score: 843.9, secs: 210, late: 0, glued: 0, gaps: 0, hp_entry: 30, hp_min: 12, food: 2, cheats: 'stage S12', notes: 'S12:B\tfailed\nhere', log: '/tmp/l', at: 'now' });
         expect(line.split('\t')).toHaveLength(TSV_COLUMNS.length);
