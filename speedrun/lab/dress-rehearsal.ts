@@ -433,6 +433,13 @@ async function main(argv: string[]): Promise<number> {
     // H23's partner is the holder --cannon-holder launches, so H23 stays SCORED's real cue-served hand-off.
     if (cannonHolder) raw.partners = { ...raw.partners, H23: cannonHolder };
     const manifest = readFileSync(MANIFEST, 'utf8');
+    // The carriers' rows (the production binding under the lab names) are theirs before the chain is built.
+    const carriers = list(a.carriers);
+    const prod = carriers.length ? productionBinding(JSON.parse(readFileSync(PRODUCTION_BINDING, 'utf8'))) : null;
+    const carrierNamed = prod && carriers.length === 3 ? carrierNames(carriers) : null;
+    const carrierRowMap = carrierNamed ? carrierPartners(manifest, prod!, carrierNamed) : {};
+    const carrierRoles: Record<string, CarrierRole> = carrierNamed ? Object.fromEntries(Object.entries(carrierNamed).map(([r, n]) => [canonName(n), r as CarrierRole])) : {};
+    raw.partners = { ...raw.partners, ...carrierRowMap };
     // Every placed row's partner: the stub giver when there is one, else STAFF.
     const partners: Record<string, string> = { ...raw.partners };
     for (const row of Object.keys(PLACEMENT)) partners[row] ??= stubEnv?.BOT_USERNAME ?? STAFF;
@@ -448,6 +455,13 @@ async function main(argv: string[]): Promise<number> {
     // S25a trades the helper --anvil launches.
     if (anvil) cfg.anvil = { giver: anvil };
     if (wineGiver) cfg.wineGiver = wineGiver;
+    const s21Givers = list(a['s21-givers']);
+    const courier = a.courier;
+    const h12oName = a.h12o;
+    // S18's top-ups, S21's roster and H12o's two legs trade the helpers these flags launch.
+    if (courier) cfg.courier = { ...cfg.courier, giver: courier };
+    if (s21Givers.length) cfg.s21Givers = s21Givers;
+    if (h12oName) cfg.h12o = labH12o(h12oName, cfg);
     if (cfg.cueDir !== defaultCueDir()) {
         console.error(`[dress] REFUSED: cue dir ${cfg.cueDir} is not the one the helpers' writers use (${defaultCueDir()})`);
         return 3;
@@ -461,7 +475,7 @@ async function main(argv: string[]): Promise<number> {
     const full = buildChain(cfg, { cues: keeper, manifest, attempt, record: new AttemptRecord(RUN_DIR, attempt) });
     const sliced = sliceUntil(full, a.until);
     const kitServed = Object.keys(KIT_SEGMENTS).filter(r => raw.partners[r] && raw.partners[r] !== STAFF);
-    const lab = labChain(sliced, { manifest, stub: stubEnv?.BOT_USERNAME ?? null, world, cannonServed, kitServed });
+    const lab = labChain(sliced, { manifest, stub: stubEnv?.BOT_USERNAME ?? null, world, cannonServed, kitServed, ...(carrierNamed ? { carrierRows: new Set(Object.keys(carrierRowMap)) } : {}) });
     const runOrder = readFileSync(join(ROOT, 'docs/speedrun/RUN-ORDER.md'), 'utf8');
     // A helper-fed step no lab launch serves yet: staged past by staff and labelled (lab/boundary.ts staffJumps).
     const jumps = staffJumps(lab.chain, list(a['staff-steps']), { runOrder, manifest }, world);
@@ -483,11 +497,40 @@ async function main(argv: string[]): Promise<number> {
     const toRun = lab.chain.slice(from ?? 0);
     const loads = ringLoads(cfg.rings);
     const labHelpers = process.env.LAB_HELPERS !== undefined ? list(process.env.LAB_HELPERS) : undefined;
-    const gaps = giverGaps(toRun, { ringers, altarGivers, droppers, boneGivers, anvil, cannonHolder, wineGiver, loads: loads.length, ...(labHelpers ? { labHelpers } : {}) });
+    const gaps = giverGaps(toRun, { ringers, altarGivers, droppers, boneGivers, anvil, cannonHolder, wineGiver, carriers, s21Givers, ...(courier ? { courier } : {}), ...(h12oName ? { h12o: h12oName } : {}), loads: loads.length, ...(labHelpers ? { labHelpers } : {}) });
     if (gaps.length) {
         for (const g of gaps) console.error(`[dress] REFUSED: ${g}`);
         return 3;
     }
+    // The carriers file: the run-day generator for the carrier rows this slice trades (a hand-off, or a module's mule cue).
+    const sliceCarrierRows = [...new Set(toRun.flatMap(s => (s.cue?.family === 'mule' ? [s.cue.step] : s.kind === 'handoff' ? [rowOf(s)] : [])).filter(r => carrierRowMap[r]))];
+    const deliveryRun = a['delivery-run'] ?? `lab-${runId}`;
+    let carrierEntries: CarrierEntry[] = [];
+    let carrierSetup: { base: string; config: ReturnType<typeof carrierLaunch> } | null = null;
+    if (carrierNamed && sliceCarrierRows.length) {
+        try {
+            const file = labCarriersFile({ manifest, prod: prod!, names: carrierNamed, cueRoot: cueRootOf(muleCueDir(cfg)), serve: env.BOT_USERNAME, deliveryRun, rows: sliceCarrierRows });
+            const held = new Set(file.accounts.flatMap(e => e.options.packages.map(p => p.scope!.step)));
+            const missing = sliceCarrierRows.filter(r => !held.has(r));
+            if (missing.length) throw new Error(`rows ${missing.join(', ')} are on the slice but not in the generated carriers file (H4m's loads come only with H4p): start the slice at or before their anchor`);
+            carrierEntries = file.accounts;
+            const b = carrierBase(carrierEntries.map(e => e.account), env.SERVER || `localhost:${process.env.WEB_PORT ?? '9300'}`);
+            const config = carrierLaunch({ entries: carrierEntries, botsDir: b.botsDir, runDir: b.runDir, gatewayPort: Number(process.env.AGENT_PORT ?? 8300) + CARRIER_PORT_OFFSET });
+            writeFileSync(join(b.base, 'launch.json'), JSON.stringify(config, null, 2));
+            cfg.delivery = { run: deliveryRun, launcherConfig: join(b.base, 'launch.json') };
+            carrierSetup = { base: b.base, config };
+        } catch (e) {
+            console.error(`[dress] REFUSED: the lab carriers file: ${message(e)}`);
+            return 3;
+        }
+    } else if (carriers.length) console.log('[dress] --carriers unused: this slice trades no carrier row');
+    const needCarriers = carrierSetup !== null;
+    const needS21 = runsS21(toRun);
+    const needCourier = runsS18(toRun);
+    const needH12o = runsH12o(toRun);
+    if (s21Givers.length && !needS21) console.log('[dress] --s21-givers unused: this slice does not run S21');
+    if (courier && !needCourier) console.log('[dress] --courier unused: this slice does not run S18');
+    if (h12oName && !needH12o) console.log('[dress] --h12o unused: this slice does not reach H12o');
     const needRings = toRun.some(s => s.id === 'S04');
     const needAltar = toRun.some(s => s.id === 'S06');
     const needDroppers = runsS03(toRun);
