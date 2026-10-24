@@ -1030,7 +1030,12 @@ async function playersNow(ctx: StepContext<any>, origin: string | undefined): Pr
     return (await samplePlayerCount(from)).players;
 }
 
-async function ironBand(ctx: StepContext<any>, name: string, end: number, failures: boolean, o: IronOpts, shared: Shared): Promise<void> {
+/**
+ * The band to `end`. With `bury` it runs BURY_LAP with knife-mine's `bury` and returns as soon as no
+ * bone is held, or with why the lap cannot bury (Prayer at `buryPrayerTo`, iron respawn over
+ * BURY_MAX_RESPAWN, a contested or other site: it never walks away holding bones); null otherwise.
+ */
+async function ironBand(ctx: StepContext<any>, name: string, end: number, failures: boolean, o: IronOpts, shared: Shared, bury: BuryOpts | null = null): Promise<string | null> {
     const { sdk } = ctx;
     const t0 = currentTick(sdk);
     const log = (line: string) => console.log(`[${name}] ${line}`);
@@ -1057,13 +1062,16 @@ async function ironBand(ctx: StepContext<any>, name: string, end: number, failur
         }
     };
     let faults = 0;
-    const lap = (d: number) => (site === 'zoo' ? o.rotation : undefined) ?? lapFor(site, d);
+    const lap = (d: number) => (bury ? BURY_ROTATION : ((site === 'zoo' ? o.rotation : undefined) ?? lapFor(site, d)));
     let rotation = lap(D);
     let abort = new AbortController();
     let abortWhy = '';
     let contestAbort = false;
+    let buryEnd: string | null = null;
+    let buriedOut = false;
     const rotations = () => SITES[site]!.rotations;
-    const rocks = (r: string) => [...new Map(parseSteps(rotations()[r]!.steps).map(st => [key(st.rock), st.rock])).values()];
+    const stepsOf = (r: string) => (r === BURY_ROTATION ? BURY_LAP : rotations()[r]!.steps);
+    const rocks = (r: string) => [...new Map(parseSteps(stepsOf(r)).map(st => [key(st.rock), st.rock])).values()];
     const siteRocks = () => [...new Map(Object.values(rotations()).flatMap(r => parseSteps(r.steps)).map(st => [key(st.rock), st.rock])).values()];
     const observedRespawn: Record<number, number> = {};
     const watchRespawn = () =>
@@ -1122,6 +1130,15 @@ async function ironBand(ctx: StepContext<any>, name: string, end: number, failur
         watch = watchRespawn();
         contest = watchContest();
     };
+    // the last bone gone: stop the lap now, so the next load's trade follows at once
+    const unBones = bury
+        ? sdk.onStateUpdate(st => {
+              if (bonesHeld(st, bury.re) > 0 || abort.signal.aborted) return;
+              buriedOut = true;
+              abortWhy = 'every bone buried';
+              abort.abort();
+          })
+        : () => {};
     let poll: ReturnType<typeof setInterval> | undefined;
     if (o.respawn === 'auto') {
         poll = setInterval(() => {
@@ -1142,6 +1159,17 @@ async function ironBand(ctx: StepContext<any>, name: string, end: number, failur
         for (;;) {
             const s = sdk.getState()!;
             if (miningLevel(s) >= end) break;
+            if (bury) {
+                buryEnd =
+                    bonesHeld(s, bury.re) === 0 ? null
+                    : prayerLevel(s) >= bury.prayerTo ? `Prayer ${prayerLevel(s)} at ${bury.prayerTo}`
+                    : D > BURY_MAX_RESPAWN ? `respawn ${D} > ${BURY_MAX_RESPAWN}: the lap's stays take no bone`
+                    : site !== 'zoo' ? `at ${site}: the bone lap is the zoo's`
+                    : switching && contest.tripped(currentTick(sdk)) ? `contested (${contest.recent(currentTick(sdk))} events in ${CONTEST_WINDOW} ticks): no walk with bones held`
+                    : '';
+                if (buryEnd !== '') break;
+                buryEnd = null;
+            }
             rotation = lap(D);
             if (switching && contest.tripped(currentTick(sdk))) {
                 await leave();
@@ -1168,13 +1196,15 @@ async function ironBand(ctx: StepContext<any>, name: string, end: number, failur
             if (!canKnife && o.technique !== 'plain') log('no knife or no logs left: plain');
             if (technique === 'auto' && !shared.gate) shared.gate = deps.inPageGate(sdk as never, { plainTicksPerRoll: plainTicksPerOre(D), measureDrops: GATE_MEASURE_DROPS, log });
             const params: Record<string, unknown> = {
-                steps: rotations()[rotation]!.steps,
+                steps: stepsOf(rotation),
                 respawn: D,
                 untilLevel: end,
                 rate: rateTable(inv),
                 ...(failures ? { success: 'iron' } : {}),
                 // plain's timer trick on the next rock itself (inert under the knife)
                 selfStarter: true,
+                // one bone a lap on the east stay (inert under plain)
+                ...(bury ? { bury: bury.source } : {}),
             };
             log(`T${currentTick(sdk)} level ${miningLevel(sdk.getState())}: respawn ${D}${players !== null ? ` (${players} players)` : ''}, ${site === 'zoo' ? '' : `${site} `}rotation ${rotation}, ${technique}`);
             try {
@@ -1200,7 +1230,9 @@ async function ironBand(ctx: StepContext<any>, name: string, end: number, failur
                     log,
                 });
                 if (r.ended === 'aborted') {
-                    if (contestAbort) {
+                    if (buriedOut) {
+                        // the loop's top ends the band
+                    } else if (contestAbort) {
                         // a retry in place (the loop waits for the lap), or the loop leaves
                         if (contest.tripped(currentTick(sdk))) log(`T${currentTick(sdk)} ${contest.recent(currentTick(sdk))} contest events in ${CONTEST_WINDOW} ticks: leaving ${site}`);
                         else log(`T${currentTick(sdk)} retry ${++retries}: ${abortWhy}`);
@@ -1225,14 +1257,21 @@ async function ironBand(ctx: StepContext<any>, name: string, end: number, failur
     } finally {
         watch.stop();
         contest.stop();
+        unBones();
         merge();
         if (poll) clearInterval(poll);
         ctx.log.append(row(ctx, `(band) ${name}`, {
             players, respawn: D, rotation, restarts, restartWaits, oreDrops, faults, observedRespawn, gate: shared.gate?.summary() ?? null,
-            segments: segments.map(sg => ({ technique: sg.technique, reason: sg.reason, ticks: (sg.status.endedTick ?? sg.status.tick) - sg.status.startedTick, ores: sg.status.counters.ores ?? 0, slips: sg.status.counters.slips ?? 0, failed: sg.status.counters.failed ?? 0, result: sg.status.result })),
+            segments: segments.map(sg => ({
+                technique: sg.technique, reason: sg.reason, ticks: (sg.status.endedTick ?? sg.status.tick) - sg.status.startedTick, ores: sg.status.counters.ores ?? 0, slips: sg.status.counters.slips ?? 0, failed: sg.status.counters.failed ?? 0,
+                ...(bury ? { buried: sg.status.counters.burySent !== undefined ? ((sg.status.result as { buried?: number } | undefined)?.buried ?? null) : 0 } : {}),
+                result: sg.status.result,
+            })),
             site,
+            ...(bury ? { bury: { bones: bury.source, end: buryEnd ?? (buriedOut ? 'every bone buried' : null) } } : {}),
             contest: { fallback: o.fallback.sites, foreign: contestLog.length, own, retries, switches, events: contestLog.slice(0, 50) },
         }, t0, currentTick(sdk)));
     }
+    return buryEnd;
 }
 
