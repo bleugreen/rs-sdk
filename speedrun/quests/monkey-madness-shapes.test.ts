@@ -165,7 +165,7 @@ describe('S15 dialogue modes', () => {
         // which goes through shaped.
         expect(SOURCE.match(/\btalkShape\(/g)).toHaveLength(1);
         expect(SOURCE.match(/\bburst\s*:/g) ?? []).toEqual([]);
-        const shapeKeys = SOURCE.split('\n').filter(l => /\bshape\s*:/.test(l.replace(/\bshape: string/g, '')) && !/^\s*(\/\/|\*)/.test(l));
+        const shapeKeys = SOURCE.split('\n').filter(l => /\bshape\s*:/.test(l.replace(/\bshape: string/g, '')) && !/^\s*(\/\/|\/?\*)/.test(l));
         for (const l of shapeKeys) expect(l).toMatch(/await talk\(|shape: t\.shape/);
     });
 
