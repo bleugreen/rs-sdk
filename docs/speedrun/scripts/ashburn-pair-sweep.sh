@@ -10,8 +10,8 @@
 #
 # Runs from the operator's Mac (Cairn executor `local`), which holds the keys and the address files in
 # ~/.rs-fleet; addresses are read there and never printed. Each machine logs in ONE throwaway account
-# (run host cairn_r130, twin cairn_r83tw, auto-registered on first login). It touches nothing but
-# ~/rs83: not ~/rs-sdk, its worktrees, the gate timers or their account. Ask host for the window first.
+# (run host cairn_r83rh, twin cairn_r83tw, minted here and auto-registered on first login). It touches
+# nothing but ~/rs83: not ~/rs-sdk, its worktrees, the gate timers or their account. Ask host first.
 set -euo pipefail
 
 F="$HOME/.rs-fleet"
@@ -21,20 +21,22 @@ tw() { ssh "${SSH_OPTS[@]}" -i "$F/id_ed25519_rehearsal" -o UserKnownHostsFile="
 
 [ -f "$F/id_ed25519_ashburn" ] && [ -f "$F/id_ed25519_rehearsal" ] || { echo "no fleet keys on $(uname -n); run from executor local" >&2; exit 2; }
 
-# Clone (once), detach at origin/main, install deps without a rebuild. $1 = bot name, $2 = 'copy' to
-# take the bot.env from ~/rs130/probe (read only) or 'new' to mint a throwaway password.
+# Clone (once; https, else the ssh URL), detach at origin/main, install deps without a rebuild, and
+# mint a throwaway password for $1 if it has none.
+REPO_SLUG=bleugreen/rs-sdk
 prep_remote='set -euo pipefail
-bot=$1; cred=$2
+bot=$1; slug=$2
 echo "host $(uname -n) $(date -u +%FT%TZ)"
-if [ ! -d ~/rs83/.git ]; then git clone --quiet --branch main "$(git -C ~/rs-sdk remote get-url origin)" ~/rs83; fi
+if [ ! -d ~/rs83/.git ]; then
+  git clone --quiet --branch main "https://github.com/$slug.git" ~/rs83 2>/dev/null || git clone --quiet --branch main "git@github.com:$slug.git" ~/rs83
+fi
 cd ~/rs83
 git fetch --quiet origin main && git checkout --quiet --detach origin/main
 echo "commit $(git rev-parse HEAD)"
 bun install --frozen-lockfile >/dev/null 2>&1 && (cd server/webclient && bun install --frozen-lockfile >/dev/null 2>&1) && echo "deps ok"
 mkdir -p "bots/$bot" out
 if [ ! -f "bots/$bot/bot.env" ]; then
-  if [ "$cred" = copy ]; then cp ~/rs130/probe/bots/$bot/bot.env "bots/$bot/bot.env"
-  else printf "BOT_USERNAME=%s\nPASSWORD=%s\n" "$bot" "$(openssl rand -hex 8)" > "bots/$bot/bot.env"; fi
+  printf "BOT_USERNAME=%s\nPASSWORD=%s\n" "$bot" "$(openssl rand -hex 8)" > "bots/$bot/bot.env"
   chmod 600 "bots/$bot/bot.env"
 fi
 grep -q "^BOT_USERNAME=$bot$" "bots/$bot/bot.env" && echo "credentials ok ($bot)"
@@ -49,13 +51,13 @@ echo "$(uname -n): $label armed for $(date -u -d @$at +%TZ)"'
 
 case "${1:-}" in
   prep)
-    rh bash -s -- cairn_r130 copy <<<"$prep_remote" &
-    tw bash -s -- cairn_r83tw new <<<"$prep_remote" &
+    rh bash -s -- cairn_r83rh "$REPO_SLUG" <<<"$prep_remote" &
+    tw bash -s -- cairn_r83tw "$REPO_SLUG" <<<"$prep_remote" &
     wait ;;
   start)
     delays="${2:-0,50,100,150,200,250,300,300,250,200,150,100,50,0}"
     at=$(( ($(date +%s) / 60 + 1) * 60 )); [ $(( at - $(date +%s) )) -lt 25 ] && at=$(( at + 60 ))
-    rh bash -s -- rh-pair cairn_r130 "$at" "$delays" <<<"$start_remote"
+    rh bash -s -- rh-pair cairn_r83rh "$at" "$delays" <<<"$start_remote"
     tw bash -s -- tw-pair cairn_r83tw "$at" "$delays" <<<"$start_remote"
     echo "both start at $(date -u -r "$at" +%TZ)" ;;
   status)
