@@ -197,11 +197,12 @@ in banker's bank:
   exactly, which fits fills landing on collection.
 - **The orders themselves:** each gem started as one 10,000-unit order at a round price (2,500, and 3,500 for
   diamond). Every unit of each order is at that one price (the mean bid equals the best bid). None refilled in 13 h.
-- **The two exceptions:** banker holds 410 red topaz and about 9,000 sapphire more than the wall bought, from older
-  holdings or other trades.
+- **The two exceptions:** banker holds about 1,000 red topaz and about 13,200 sapphire more than the wall bought
+  (3,534 against 2,534 filled, and 16,678 against 3,465). 590 of the extra topaz arrived during the window without
+  passing through the bid, so banker also takes gems by direct trade (I).
 
 What the data can't do is tie an order to an account directly. The API has no order list or trader identity. The
-link is the arithmetic, which matched to the unit in eight separate fills.
+link is the arithmetic, which matched to the unit in nine separate fills.
 
 **The 10,000 ruby ask is a gatherer, almost certainly Croesus (I), and not the 2,501 bidder.**
 
@@ -284,7 +285,8 @@ concentrated:
 - **Who holds it:** xulvexi takes 92% of the pair's ceiling, guarded around the clock by Bramble (combat about 109,
   Prayer 99).
 - **What winning pays:** about 428k an hour as bars, but only while banker's bar bid lasts. That bid holds 1,679 bars
-  (about 64M net), others already fill it at 8 an hour, and so it outlasts our full surface output by only ~90 h.
+  (about 64M net), and others already fill it at 8 an hour. Even if we took the whole surface output, it would run
+  out in about 86 h.
   Ore has no market (0 trades in 13 h).
 - **What it costs:** guards that can repeatedly kill a 98 and a 109 and hold the tile, under 13-minute skulls that
   forfeit their gear.
