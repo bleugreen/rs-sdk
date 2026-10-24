@@ -36,7 +36,7 @@
 // (the pass rate is in the summary), 2 usage, 3 refused (off a lab, a tick mismatch, a giver gap, or
 // no run reached the step).
 
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, appendFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync, appendFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { randomBytes } from 'crypto';
@@ -422,10 +422,25 @@ export function tsvRow(row: Readonly<Record<(typeof TSV_COLUMNS)[number], string
     return TSV_COLUMNS.map(c => String(row[c] ?? '').replace(/[\t\r\n]+/g, ' ')).join('\t') + '\n';
 }
 
-export function appendResults(path: string, rows: readonly string[]): void {
+/**
+ * Appends `rows` under the current header. A file with another header (an older column set) is moved
+ * aside to `<path>.<its header's hash>` first, never appended to, so no row sits under the wrong
+ * columns; the moved path is returned.
+ */
+export function appendResults(path: string, rows: readonly string[]): string | null {
     mkdirSync(join(path, '..'), { recursive: true });
-    if (!existsSync(path)) writeFileSync(path, TSV_COLUMNS.join('\t') + '\n');
+    const header = TSV_COLUMNS.join('\t');
+    let moved: string | null = null;
+    if (existsSync(path)) {
+        const first = readFileSync(path, 'utf8').split('\n', 1)[0]!;
+        if (first !== header) {
+            moved = `${path}.${Bun.hash(first).toString(36)}`;
+            renameSync(path, moved);
+        }
+    }
+    if (!existsSync(path)) writeFileSync(path, header + '\n');
     for (const r of rows) appendFileSync(path, r);
+    return moved;
 }
 
 /** The commit under test: BENCH_COMMIT, else git's short HEAD (+dirty when tracked files differ), else unknown (a git-archive tree). */
