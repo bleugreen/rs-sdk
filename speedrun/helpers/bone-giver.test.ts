@@ -9,7 +9,9 @@ import { join } from 'node:path';
 import { ASK_SLACK_MS, nameHash, newRequestFrom, readTopUpAsk, usableAsk, writeTopUpAsk } from './altar-cue';
 import type { Cue } from './altar-cue';
 import type { RoleContext } from './role';
-import { askOffer, BoneGiver, boneGiverOptions, boneServer, boneWithdrawals, returnWants, carryDue, groupLoadsDone, isFinalLoad, legRan, loadOffer, npcTiles, onOpenSide, onSide, partnerIs, readBoneStatuses, requestUntilOpen, S07_SITES, sideTiles, wallBetween, type BoneStatus, type FlagReader } from './bone-giver';
+import { askOffer, BoneGiver, boneGiverOptions, boneServer, boneWithdrawals, returnWants, carryDue, DEFAULT_BONE_BANK, groupLoadsDone, isFinalLoad, legRan, loadOffer, namedSite, npcTiles, onOpenSide, onSide, partnerIs, readBoneStatuses, requestUntilOpen, S07_SITES, sideTiles, wallBetween, type BoneStatus, type FlagReader, type Site } from './bone-giver';
+import { CueWriter, readCue, readJson } from './altar-cue';
+import { judgeStatus } from '../runner/phase-gate';
 import { assertDemoStandIn } from './bone-receiver';
 
 const o = { noReplyTicks: 3, resendTicks: 100 };
@@ -636,5 +638,244 @@ describe('a travel fault advances the site (attempt 2: b01-b04 looped on an unst
             { from: 0, to: 1, error: 'Error: could not stand on 2920,3407' },
             { from: 1, to: 0, error: 'Error: could not stand on 2920,3407' }
         ]);
+    });
+});
+
+describe("the S07 cue names SCORED's site (rs/635): the givers go there and wait, without rotating", () => {
+    const S07 = { step: 'S07', family: 'bone' } as const;
+    const [OAK, WILLOW] = S07_SITES as [Site, Site];
+    const G = ['cairn_b01', 'cairn_b02', 'cairn_b03', 'cairn_b04'];
+    const bones = () => Array.from({ length: 23 }, (_, i) => ({ slot: i, id: 536, name: 'Dragon bones', count: 1, optionsWithIndex: [] }));
+    const player = (t: { x: number; z: number }) => ({ name: 'giver', worldX: t.x, worldZ: t.z, x: t.x, z: t.z, level: 0 }) as unknown as BotWorldState['player'];
+    type Priv = { site: number; phase: string; detail: string; cycle(): Promise<void>; travel(s: Site): Promise<void>; restock(n: number): Promise<void> };
+
+    /** A standing giver on its own fake client, standing on `at`'s giver tile with a full load; travel lands on the site's tile at once. */
+    function rig(o: { dir?: string; account?: string; at?: Site; prior?: Record<string, unknown>; options?: Record<string, unknown> } = {}) {
+        const dir = o.dir ?? mkdtempSync(join(tmpdir(), 'bone-site-'));
+        const account = o.account ?? 'cairn_b01';
+        if (o.prior) writeFileSync(join(dir, `bones-${account}.json`), JSON.stringify({ v: 1, account, phase: 'waiting', held: 23, n: 23, trades: 0, bounces: 0, tile: null, readyAt: 1, session: null, final: false, loads: null, ms: 1, ...o.prior }));
+        const sdk = new FakeSdk(baseState({ inventory: bones(), player: player((o.at ?? OAK).giver) }));
+        const logs: Array<[string, unknown]> = [];
+        const g = new BoneGiver({
+            account,
+            options: { cueDir: dir, scope: S07, ...o.options },
+            sdk,
+            signal: new AbortController().signal,
+            log: (m: string, d?: unknown) => logs.push([m, d])
+        } as unknown as RoleContext);
+        const priv = g as unknown as Priv;
+        const walks: Site[] = [];
+        priv.travel = async s => {
+            walks.push(s);
+            sdk.push({ player: player(s.giver) });
+        };
+        const status = () => readJson<BoneStatus>(join(dir, `bones-${account}.json`));
+        return { dir, sdk, g, priv, walks, logs, status };
+    }
+
+    /** A scored-side writer of the S07 cue in `dir`: each call writes it naming `site` (none: no site) and returns it as read. */
+    const scored = (dir: string, session?: string) => {
+        const w = new CueWriter(dir, 'scored', S07, session);
+        return (site?: { x: number; z: number }) => {
+            w.write({ beacons: [{ tick: 1, ms: Date.now() }], turns: [], ...(site ? { site } : {}) });
+            return readCue(dir)!;
+        };
+    };
+
+    /** Tick every client `n` frames, letting each cycle react to each frame; true once all of `ps` settled. */
+    const ticks = async (sdks: FakeSdk | FakeSdk[], ps: Promise<unknown> | Promise<unknown>[], n: number): Promise<boolean> => {
+        const all = Array.isArray(ps) ? ps : [ps];
+        let left = all.length;
+        for (const p of all) p.then(() => left--, () => left--);
+        for (let i = 0; i < n && left > 0; i++) {
+            await flush();
+            for (const sdk of Array.isArray(sdks) ? sdks : [sdks]) sdk.tick();
+        }
+        await flush();
+        return left === 0;
+    };
+
+    test('namedSite: the exact receiver tile, else the nearest within 8 tiles; nothing farther, no site and a stop name none; custom sites the same', () => {
+        expect(namedSite(S07_SITES, { site: { x: 2914, z: 3494 } })).toBe(0);
+        expect(namedSite(S07_SITES, { site: { x: 2920, z: 3406 } })).toBe(1);
+        expect(namedSite(S07_SITES, { site: { x: 2918, z: 3400 } })).toBe(1);
+        expect(namedSite(S07_SITES, { site: { x: 2920, z: 3415 } })).toBeNull();
+        expect(namedSite(S07_SITES, {})).toBeNull();
+        expect(namedSite(S07_SITES, null)).toBeNull();
+        expect(namedSite(S07_SITES, { site: { x: 2914, z: 3494 }, stop: true })).toBeNull();
+        const rimmington: Site[] = [{ giver: { x: 2983, z: 3205 }, receiver: { x: 2984, z: 3205 } }, { giver: { x: 3058, z: 3254 }, receiver: { x: 3058, z: 3253 } }];
+        expect(namedSite(rimmington, { site: { x: 3058, z: 3253 } })).toBe(1);
+        expect(namedSite(S07_SITES, { site: { x: 3058, z: 3253 } })).toBeNull();
+    });
+
+    test('a named site: the giver walks there and waits past siteWaitTicks without rotating; the cue naming the other site breaks the wait and the next cycle walks there', async () => {
+        const r = rig();
+        const write = scored(r.dir);
+        r.g.onCue(write(WILLOW.receiver));
+        const c1 = r.priv.cycle();
+        // The rotation gives up after siteWaitTicks (30, about 70 frames of until's bound): 300 frames and it still waits.
+        expect(await ticks(r.sdk, c1, 300)).toBe(false);
+        expect(r.walks).toEqual([WILLOW]);
+        expect([r.priv.site, r.priv.phase, r.priv.detail]).toEqual([1, 'waiting', 'site 1']);
+        r.g.onCue(write(OAK.receiver));
+        expect(await ticks(r.sdk, c1, 3)).toBe(true);
+        expect(r.priv.phase).toBe('waiting');
+        const c2 = r.priv.cycle();
+        expect(await ticks(r.sdk, c2, 5)).toBe(false);
+        expect(r.walks).toEqual([WILLOW, OAK]);
+        expect([r.priv.site, r.priv.phase, r.priv.detail]).toEqual([0, 'waiting', 'site 0']);
+    });
+
+    test('a site named while the giver walks elsewhere: it never publishes waiting there, and goes on to the named site', async () => {
+        const r = rig();
+        const write = scored(r.dir);
+        r.g.onCue(write(WILLOW.receiver));
+        const phases: string[] = [];
+        r.priv.travel = async s => {
+            r.walks.push(s);
+            r.sdk.push({ player: player(s.giver) });
+            // SCORED moved on while we walked: the cue now names the oaks.
+            if (r.walks.length === 1) r.g.onCue(write(OAK.receiver));
+        };
+        const watch = setInterval(() => phases.push(r.priv.phase), 0);
+        await ticks(r.sdk, r.priv.cycle(), 3);
+        expect(r.status()).toMatchObject({ phase: 'travel', detail: 'site 1' });
+        await ticks(r.sdk, r.priv.cycle(), 3);
+        clearInterval(watch);
+        expect(r.walks).toEqual([WILLOW, OAK]);
+        expect(r.status()).toMatchObject({ phase: 'waiting', detail: 'site 0', tile: { x: OAK.giver.x, z: OAK.giver.z } });
+    });
+
+    test('a cue naming no site (an older writer, another run) keeps the rotation exactly: siteWaitTicks without the receiver, then the next site', async () => {
+        const r = rig();
+        r.g.onCue(scored(r.dir)());
+        expect(await ticks(r.sdk, r.priv.cycle(), 200)).toBe(true);
+        expect(r.walks).toEqual([]);
+        expect([r.priv.site, r.priv.phase, r.priv.detail]).toEqual([1, 'travel', 'site 1']);
+        expect(await ticks(r.sdk, r.priv.cycle(), 200)).toBe(true);
+        expect(r.walks).toEqual([WILLOW]);
+        expect([r.priv.site, r.priv.phase, r.priv.detail]).toEqual([0, 'travel', 'site 0']);
+    });
+
+    test('after a restock the giver walks back to the site the cue names, not the next in rotation', async () => {
+        const r = rig({ at: WILLOW });
+        r.g.onCue(scored(r.dir)(WILLOW.receiver));
+        // As after a trade at the willows: empty-handed, and the rotation index on the oaks.
+        r.sdk.push({ inventory: [] });
+        r.priv.site = 0;
+        let restocked = 0;
+        r.priv.restock = async () => {
+            restocked++;
+            r.sdk.push({ inventory: bones(), player: player(DEFAULT_BONE_BANK) });
+        };
+        expect(await ticks(r.sdk, r.priv.cycle(), 5)).toBe(false);
+        expect(restocked).toBe(1);
+        expect(r.walks).toEqual([WILLOW]);
+        expect([r.priv.site, r.priv.phase]).toEqual([1, 'waiting']);
+    });
+
+    test('a named site that cannot be stood on is retried, never rotated away from: after 3 failed walks the giver stays, faulted, until the cue names another site', async () => {
+        const r = rig();
+        const write = scored(r.dir);
+        r.g.onCue(write(WILLOW.receiver));
+        r.priv.travel = async s => {
+            r.walks.push(s);
+            throw new Error('could not stand on 2920,3407');
+        };
+        for (let i = 0; i < 3; i++) {
+            await expect(r.priv.cycle()).rejects.toThrow('could not stand on 2920,3407');
+            expect(r.priv.site).toBe(1);
+        }
+        expect(r.walks).toEqual([WILLOW, WILLOW, WILLOW]);
+        expect(r.logs.filter(([m]) => m === 'travel fault: named site').map(([, d]) => (d as { tries: number }).tries)).toEqual([1, 2, 3]);
+        expect(r.logs.some(([m]) => m === 'travel fault: next site')).toBe(false);
+        const stay = r.priv.cycle();
+        expect(await ticks(r.sdk, stay, 100)).toBe(false);
+        expect(r.walks).toHaveLength(3);
+        expect(r.priv.phase).toBe('fault');
+        expect(r.priv.detail).toMatch(/^site 1 refused 3 walks: Error: could not stand on 2920,3407/);
+        // The phase gate refuses it: correct, SCORED's site has no giver.
+        expect(judgeStatus('bone', r.status(), { now: Date.now() }).ok).toBe(false);
+        r.g.onCue(write(OAK.receiver));
+        expect(await ticks(r.sdk, stay, 3)).toBe(true);
+        // Still on the oak tile it never left: the oaks, named now, need no walk.
+        await ticks(r.sdk, r.priv.cycle(), 3);
+        expect(r.walks).toHaveLength(3);
+        expect([r.priv.site, r.priv.phase, r.priv.detail]).toEqual([0, 'waiting', 'site 0']);
+    });
+
+    test('before any cue the giver holds on its site (sites[0] at launch) past siteWaitTicks; the first cue breaks the hold', async () => {
+        const r = rig();
+        const c = r.priv.cycle();
+        expect(await ticks(r.sdk, c, 300)).toBe(false);
+        expect([r.priv.site, r.priv.phase, r.priv.detail, r.walks.length]).toEqual([0, 'waiting', 'site 0', 0]);
+        r.g.onCue(scored(r.dir)(WILLOW.receiver));
+        expect(await ticks(r.sdk, c, 3)).toBe(true);
+        await ticks(r.sdk, r.priv.cycle(), 3);
+        expect(r.walks).toEqual([WILLOW]);
+    });
+
+    test("a cue left on disk from before the giver started moves it only in the giver's own last session (a resume); otherwise it holds at the oaks (rs/41)", async () => {
+        // A previous attempt's willow-band cue: written a minute before this process, in another session.
+        const dir = mkdtempSync(join(tmpdir(), 'bone-stale-cue-'));
+        const stale = { ...scored(dir, 'attempt-3.S07.bone')(WILLOW.receiver), ms: Date.now() - 60_000 };
+        const r = rig({ dir, prior: { session: 'attempt-2.S07.bone' } });
+        r.g.onCue(stale);
+        const c = r.priv.cycle();
+        expect(await ticks(r.sdk, c, 300)).toBe(false);
+        expect([r.priv.site, r.priv.phase, r.walks.length]).toEqual([0, 'waiting', 0]);
+        // This attempt's first cue, written after the start: it governs.
+        r.g.onCue(scored(dir, 'attempt-4.S07.bone')(WILLOW.receiver));
+        expect(await ticks(r.sdk, c, 3)).toBe(true);
+        await ticks(r.sdk, r.priv.cycle(), 3);
+        expect(r.walks).toEqual([WILLOW]);
+
+        // A relaunch mid-session: the old cue is the session its own last status counted in.
+        const dir2 = mkdtempSync(join(tmpdir(), 'bone-resume-cue-'));
+        const resumed = { ...scored(dir2, 'attempt-4.S07.bone')(WILLOW.receiver), ms: Date.now() - 60_000 };
+        const r2 = rig({ dir: dir2, prior: { session: 'attempt-4.S07.bone', trades: 2 } });
+        r2.g.onCue(resumed);
+        expect(await ticks(r2.sdk, r2.priv.cycle(), 3)).toBe(false);
+        expect(r2.walks).toEqual([WILLOW]);
+        expect([r2.priv.site, r2.priv.phase]).toEqual([1, 'waiting']);
+        expect(r2.status()).toMatchObject({ trades: 2, session: 'attempt-4.S07.bone' });
+    });
+
+    test('a stop cue naming no site stands the giver down: no walk, no rotation', async () => {
+        const r = rig({ at: WILLOW });
+        r.priv.site = 1;
+        const w = new CueWriter(r.dir, 'scored', S07);
+        w.write({ beacons: [{ tick: 1, ms: Date.now() }], turns: [] });
+        w.stop([{ tick: 2, ms: Date.now() }]);
+        r.g.onCue(readCue(r.dir)!);
+        expect(await ticks(r.sdk, r.priv.cycle(), 3)).toBe(true);
+        expect([r.priv.site, r.walks.length, r.priv.phase]).toEqual([1, 0, 'start']);
+    });
+
+    test('the group: all four hold at the oaks before the run and pass the phase gate there; the cue naming the oaks keeps them, the willows moves every one, and each passes waiting at the willows', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'bone-site-group-'));
+        const rigs = G.map(account => rig({ dir, account, options: { group: G } }));
+        const sdks = rigs.map(r => r.sdk);
+        const gate = () => rigs.map(r => judgeStatus('bone', r.status(), { now: Date.now() }));
+        let cycles = rigs.map(r => r.priv.cycle());
+        expect(await ticks(sdks, cycles, 300)).toBe(false);
+        expect(rigs.map(r => [r.priv.site, r.priv.phase, r.walks.length])).toEqual(G.map(() => [0, 'waiting', 0]));
+        expect(gate().map(v => v.ok)).toEqual([true, true, true, true]);
+        expect(gate()[0]!.detail).toMatch(/^waiting on site 0 /);
+        const write = scored(dir);
+        // The oak band's start: the hold ends, and each is already on its site's tile.
+        for (const r of rigs) r.g.onCue(write(OAK.receiver));
+        expect(await ticks(sdks, cycles, 3)).toBe(true);
+        cycles = rigs.map(r => r.priv.cycle());
+        expect(await ticks(sdks, cycles, 300)).toBe(false);
+        expect(rigs.map(r => [r.priv.site, r.priv.phase, r.walks.length])).toEqual(G.map(() => [0, 'waiting', 0]));
+        // The oak band's end: every giver leaves for the willows.
+        for (const r of rigs) r.g.onCue(write(WILLOW.receiver));
+        expect(await ticks(sdks, cycles, 3)).toBe(true);
+        cycles = rigs.map(r => r.priv.cycle());
+        expect(await ticks(sdks, cycles, 300)).toBe(false);
+        expect(rigs.map(r => r.walks)).toEqual(G.map(() => [WILLOW]));
+        expect(gate().map(v => v.ok)).toEqual([true, true, true, true]);
+        expect(gate().every(v => /^waiting on site 1 /.test(v.detail))).toBe(true);
     });
 });
