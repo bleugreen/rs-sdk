@@ -291,9 +291,12 @@ export function poisonSeenAt(s: Pick<BotWorldState, 'combatEvents' | 'gameMessag
 
 let drunkAt = -Infinity;
 
-/** The tick of the run's last antipoison dose, by any caller; -Infinity after a restart. */
-export function antipoisonDrunkAt(): number {
-    return drunkAt;
+/**
+ * The tick of the run's last antipoison dose, by any caller; -Infinity after a restart, or when the record is ahead of
+ * `now`: the published tick is the client's own and restarts at a reload, so such a record is another session's.
+ */
+export function antipoisonDrunkAt(now = Infinity): number {
+    return drunkAt > now ? -Infinity : drunkAt;
 }
 
 /** Record a dose, in the tick its drink is sent: from then `poisoned` reads every earlier evidence as cured. */
@@ -304,11 +307,27 @@ export function noteAntipoison(tick: number): void {
 /**
  * Whether the poison is on as far as the published state shows: evidence newer than `since` (the last dose) and within
  * POISON_WINDOW of now. A poison that wore off reads as on for at most POISON_WINDOW past its last hit (a wasted dose at
- * worst); after a client reload, a carried poison shows only at its next hit.
+ * worst); after a client reload, a carried poison shows only at its next hit. A `since` ahead of the state's tick is a
+ * record from before a reload (the client's tick restarts) and counts as no dose: measured in the lab, it hid a carried
+ * poison until its next hit.
  */
 export function poisoned(s: Pick<BotWorldState, 'tick' | 'combatEvents' | 'gameMessages'>, since = drunkAt): boolean {
     const at = poisonSeenAt(s);
-    return at > since && s.tick - at <= POISON_WINDOW;
+    const dose = since > s.tick ? -Infinity : since;
+    return at > dose && s.tick - at <= POISON_WINDOW;
+}
+
+/** What a potion's drink prints once its p_delay is over (consume_effects.rs2 consume_effect_messages). */
+const DRINK_DONE = /^You have (finished your potion|\d doses? of potion left)/i;
+/** The most ticks a potion's p_delay holds the player (its message_delay; the doses-left message came 2-3 ticks after the drink at 400 ms). */
+export const DRINK_DELAY_TICKS = 4;
+
+/**
+ * Until a potion drunk at `sent` has finished its p_delay (its doses-left message), at most DRINK_DELAY_TICKS. A click sent
+ * inside the delay is dropped with no message: measured at S15:A, Narnode's talk sent there opened 16 ticks late.
+ */
+export async function drinkDelayOver(sdk: StateSource, sent: number): Promise<void> {
+    await waitUntil(sdk, s => (s.gameMessages ?? []).some(m => m.tick >= sent && DRINK_DONE.test(m.text)), { maxTicks: DRINK_DELAY_TICKS });
 }
 
 const dosesOf = (name: string) => Number(/\((\d)\)$/.exec(name)?.[1] ?? 0);
@@ -326,8 +345,9 @@ export function cureDose(s: Pick<BotWorldState, 'inventory'>): InventoryItem | n
 
 /**
  * Cure a poison that is on: one dose (cureDose), confirmed by the potion leaving its slot (a dose fewer, or the vial) and
- * re-sent once after DRINK_RESEND_TICKS (a scene's delay drops item clicks). An open chat gets CURE_CHAT_TICKS to close
- * first. Notes the dose in the tick it is sent. Throws when neither drink lands.
+ * re-sent once after DRINK_RESEND_TICKS (a scene's delay drops item clicks), then the drink's own delay waited out
+ * (drinkDelayOver), so the caller's next click lands. An open chat gets CURE_CHAT_TICKS to close first. Notes the dose in
+ * the tick it is sent. Throws when neither drink lands.
  */
 export async function curePoison(sdk: DrinkSdk, where: string): Promise<'clean' | 'cured' | 'none-held'> {
     let s = sdk.getState();
@@ -343,9 +363,13 @@ export async function curePoison(sdk: DrinkSdk, where: string): Promise<'clean' 
     const { slot, name } = dose;
     const gone = (st: BotWorldState) => st.inventory.find(i => i.slot === slot)?.name !== name;
     for (let attempt = 0; attempt < 2; attempt++) {
-        noteAntipoison(sdk.getState()!.tick);
+        const sent = sdk.getState()!.tick;
+        noteAntipoison(sent);
         void sdk.sendUseItem(slot, dose.optionsWithIndex.find(o => /^drink$/i.test(o.text))?.opIndex ?? 1);
-        if ((await waitUntil(sdk, gone, { maxTicks: DRINK_RESEND_TICKS })).ok) return 'cured';
+        if ((await waitUntil(sdk, gone, { maxTicks: DRINK_RESEND_TICKS })).ok) {
+            await drinkDelayOver(sdk, sent);
+            return 'cured';
+        }
     }
     throw new Error(`${where}: the ${name} in slot ${slot} was not drunk in ${2 * DRINK_RESEND_TICKS} ticks`);
 }
