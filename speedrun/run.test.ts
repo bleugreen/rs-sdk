@@ -774,7 +774,7 @@ describe('S14 fails among the spiders: the retreat before the logout (rs/725)', 
         const timer = setInterval(() => { if (!seen.click) sdk.tick(script); }, 5);
         const log = TickLog.memory('rehearsal-3');
         const real = tag('S14', 'step', cannonSessionStep());
-        const s14: ChainStep = { ...real, preconditions: s => ((refused = true), real.preconditions(s)) };
+        const s14: ChainStep = { ...real, preconditions: (s, c) => ((refused = true), real.preconditions(s, c)) };
         const handlers = { on: () => {}, off: () => {}, exit: () => {}, log: () => {} };
         const run = async () => {
             try {
