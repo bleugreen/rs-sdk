@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { ONEOFF_GATEWAY_URL } from '../lib/oneoff';
-import { aliasEnvText, countBotConnected, isolationVerdict, resolveTool, runWrapper, summarize, WRAPPER_EXIT, type WrapperIO } from './oneoff';
+import { aliasEnvText, countBotConnected, isolationVerdict, resolveAdhoc, resolveTool, runWrapper, splitArgs, summarize, WRAPPER_EXIT, type WrapperIO } from './oneoff';
 
 // A made-up account: the real scored name never appears in the repo.
 const ACCT = 'test_scored';
@@ -85,6 +85,7 @@ interface Fake {
     out: string[];
     tmux: string[][];
     toolEnv: Record<string, string> | null;
+    toolArgv: string[] | null;
     aliasDuringTool: string | null;
     aliasModeDuringTool: number | null;
 }
@@ -92,7 +93,7 @@ interface Fake {
 /** A run host in miniature: `ss` sees 7781 between gw1's start and its kill; the tool is `tool`. */
 function fake(o: { ps?: string; taken?: boolean; tool?: (f: Fake) => number; lines?: string[] } = {}): Fake {
     let gw = o.taken ?? false;
-    const f: Fake = { io: null as unknown as WrapperIO, out: [], tmux: [], toolEnv: null, aliasDuringTool: null, aliasModeDuringTool: null };
+    const f: Fake = { io: null as unknown as WrapperIO, out: [], tmux: [], toolEnv: null, toolArgv: null, aliasDuringTool: null, aliasModeDuringTool: null };
     f.io = {
         ps: () => o.ps ?? '',
         listening: async () => gw,
@@ -102,7 +103,8 @@ function fake(o: { ps?: string; taken?: boolean; tool?: (f: Fake) => number; lin
             if (args[0] === 'kill-session') gw = false;
             return 0;
         },
-        runTool: async (_argv, t) => {
+        runTool: async (argv, t) => {
+            f.toolArgv = argv;
             f.toolEnv = t.env;
             f.aliasDuringTool = readFileSync(t.env.LITE_BOT_ENV!, 'utf8');
             f.aliasModeDuringTool = statSync(t.env.LITE_BOT_ENV!).mode & 0o777;
@@ -202,5 +204,54 @@ describe('runWrapper', () => {
         const nolog = fake();
         expect(await wrap(nolog)).toBe(WRAPPER_EXIT.refused);
         expect(nolog.tmux).toEqual([]);
+    });
+});
+
+describe('--adhoc', () => {
+    const ADHOC_TOOL = "import { runOneoff } from '/checkout/speedrun/lib/oneoff';\nprocess.exit(await runOneoff({ kind: 'drop2', argv: [], act: async () => true }));\n";
+    const adhocDir = () => join(runDir, 'oneoff-adhoc');
+
+    test('splitArgs: wrapper flags lead; with --adhoc everything after them is the tool\'s', () => {
+        expect(splitArgs(['--run-dir=/r', 'drop', '--id=1', '--go'])).toEqual({ own: ['--run-dir=/r'], toolArg: 'drop', toolArgs: ['--id=1', '--go'] });
+        expect(splitArgs(['--adhoc=x.ts', '--id=1', '--go'])).toEqual({ own: ['--adhoc=x.ts'], toolArg: undefined, toolArgs: ['--id=1', '--go'] });
+        expect(splitArgs(['--go'])).toEqual({ own: [], toolArg: undefined, toolArgs: ['--go'] });
+    });
+
+    test('runs a runOneoff tool from <run dir>/oneoff-adhoc/, announced by a loud ADHOC line with its sha256', async () => {
+        mkdirSync(adhocDir(), { recursive: true });
+        writeFileSync(join(adhocDir(), 'drop2.ts'), ADHOC_TOOL);
+        const f = fake();
+        expect(await wrap(f, ['--adhoc=drop2.ts', '--id=1', '--go'])).toBe(0);
+        expect(f.toolArgv!.slice(-3)).toEqual([realpathSync(join(adhocDir(), 'drop2.ts')), '--id=1', '--go']);
+        expect(f.out.some(l => l.startsWith('ADHOC: running the uncommitted tool oneoff-adhoc/drop2.ts'))).toBe(true);
+        const lines = ledger();
+        expect(lines[0].k).toBe('ADHOC');
+        expect(lines[0].v.sha256).toMatch(/^[0-9a-f]{64}$/);
+        expect(lines.at(-1).v.adhoc).toEqual({ path: 'oneoff-adhoc/drop2.ts', sha256: lines[0].v.sha256 });
+        // The isolation check and teardown are the same as for a committed tool.
+        expect(f.out).toContain('7780 untouched (Bot connected count 2)');
+        expect(f.out).toContain('alias dir removed');
+    });
+
+    test('refuses, starting nothing, outside the ad hoc dir, through a symlink out of it, or off runOneoff', async () => {
+        mkdirSync(adhocDir(), { recursive: true });
+        writeFileSync(join(runDir, 'outside.ts'), ADHOC_TOOL);
+        symlinkSync(join(runDir, 'outside.ts'), join(adhocDir(), 'link.ts'));
+        writeFileSync(join(adhocDir(), 'raw.ts'), "import { openSession } from '/checkout/speedrun/lib/session';\n");
+        writeFileSync(join(adhocDir(), 'notes.txt'), ADHOC_TOOL);
+        expect(resolveAdhoc(join(runDir, 'outside.ts'), runDir)).toContain('is not inside');
+        expect(resolveAdhoc('link.ts', runDir)).toContain('is not inside');
+        expect(resolveAdhoc('../outside.ts', runDir)).toContain('is not inside');
+        expect(resolveAdhoc('raw.ts', runDir)).toContain('must run on runOneoff');
+        expect(resolveAdhoc('notes.txt', runDir)).toContain('.ts file');
+        expect(resolveAdhoc('missing.ts', runDir)).toContain('no ad hoc tool');
+        const f = fake();
+        expect(await wrap(f, ['--adhoc=link.ts', '--go'])).toBe(WRAPPER_EXIT.refused);
+        expect(f.tmux).toEqual([]);
+        expect(existsSync(join(runDir, 'oneoff-drop.jsonl'))).toBe(false);
+    });
+
+    test('refuses without the ad hoc dir', () => {
+        expect(resolveAdhoc('drop2.ts', runDir)).toContain('no ad hoc dir');
     });
 });
