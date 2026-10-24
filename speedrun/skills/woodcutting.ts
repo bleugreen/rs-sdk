@@ -101,6 +101,13 @@
 // resume at `to` that still owes Prayer or the runes re-enters the band, and the willow walk takes
 // it back to the stand.
 //
+// The early last load (a group): the count is padded above need, so it must not decide the end. At
+// `to` and `prayerTo` with no bones held and the runes owed, the band writes the cue's lastLoad once
+// (BoneCue.markLastLoad), and its next ask is the runes alone from the group's final giver
+// (bone-giver.ts boneServer, loadOffer); it closes on that load. A final giver that never comes fails
+// the load within serverWait, by name. On the scored run's path (`lastLoad` set) the last band also
+// buries every bone it holds before it closes, Prayer 99 or not: T07-08 has no room for them.
+//
 // The giver group (`bones.group`, S07's b01-b04 taking turns; bone-giver.md "Taking turns"): the
 // module writes the cue the givers read, scoped { step: 'S07', family: 'bone' } (S07_BONE_CUE), at
 // each burying band's start and stops it when S07's last band reaches `to`, in one session for the
