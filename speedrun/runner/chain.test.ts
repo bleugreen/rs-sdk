@@ -1395,7 +1395,7 @@ describe('S15: Monkey Madness on the chain', () => {
         expect(() => buildChain({ ...COMPLETE, partners: Object.fromEntries(Object.entries(PARTNERS).filter(([r]) => r !== 'H12')) }, { cues: recorder().cues })).toThrow('names no partner for H12');
     });
 
-    test("H12's ask names exactly its row's `to N` entries at what SCORED lacks, written once on the trade's open frame; nothing is asked when they are met", async () => {
+    test("H12's ask names exactly its row's `to N` entries at what SCORED lacks on the trade's open frame, written once; nothing is asked when they are met there", async () => {
         const plan = handOffFrom(MANIFEST_TEXT, 'H12');
         const tops = plan.receive.filter(r => r.topUp);
         expect(tops.map(r => [r.pattern.source, r.count])).toEqual([[expect.stringMatching(/shark/i), 15]]);
@@ -1404,9 +1404,11 @@ describe('S15: Monkey Madness on the chain', () => {
             const sharks = (n: number) => inv([385, 'Shark', 1]).flatMap(() => Array.from({ length: n }, (_, slot) => ({ slot, id: 385, name: 'Shark', count: 1, optionsWithIndex: [] }))) as unknown as BotWorldState['inventory'];
             const trade = (isOpen: boolean, partner = 'p_h12') => ({ trade: { isOpen, partner } as unknown as BotWorldState['trade'] });
             const asks: TopUpAsk[] = [];
-            const step = (sdk: FakeSdk): ChainStep => tag('S15', 'step', {
+            // `eatTo`: the step's upkeep eats down to that many sharks after the step starts and before the trade opens.
+            const step = (sdk: FakeSdk, eatTo?: number): ChainStep => tag('S15', 'step', {
                 name: KIT_SEGMENTS.H12!, logoutSafe: true, preconditions: () => true, postconditions: () => true,
                 run: async () => {
+                    if (eatTo !== undefined) sdk.push({ inventory: sharks(eatTo) });
                     sdk.push(trade(true, 'someone else'));
                     expect(existsSync(join(d, ASK_FILE))).toBe(false);
                     for (let k = 0; k < 3; k++) {
@@ -1428,6 +1430,17 @@ describe('S15: Monkey Madness on the chain', () => {
             asks.length = 0;
             await askedOnTrade(step(met), plan, 'p_h12', d).run(ctxFor(met));
             expect(asks).toEqual([]);
+            // Sized on the open frame (attempt 4's S15:A): 4 held at the start, one eaten before the open, so 12, not 11.
+            const ate = new FakeSdk(st({ inventory: sharks(4) }));
+            await askedOnTrade(step(ate, 3), plan, 'p_h12', d).run(ctxFor(ate));
+            expect(asks.map(a => [a.items, a.scope])).toEqual([[[{ item: tops[0]!.pattern.source, count: 12 }], { step: 'H12', family: 'mule' }]]);
+            ate.push(trade(true));
+            expect(existsSync(join(d, ASK_FILE))).toBe(false);
+            // Met at the start, eaten below 15 before the open: it still asks, for the one eaten.
+            const metThenAte = new FakeSdk(st({ inventory: sharks(15) }));
+            asks.length = 0;
+            await askedOnTrade(step(metThenAte, 14), plan, 'p_h12', d).run(ctxFor(metThenAte));
+            expect(asks.map(a => [a.items, a.scope])).toEqual([[[{ item: tops[0]!.pattern.source, count: 1 }], { step: 'H12', family: 'mule' }]]);
         } finally {
             rmSync(d, { recursive: true, force: true });
         }
