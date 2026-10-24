@@ -265,24 +265,27 @@ export interface H4mPlan {
     bone: prayer.BoneType;
     /** Its name as the bury steps' pattern (mining.ts `bury`). */
     pattern: string;
+    /** S07's close target under H4m: the run config's `s07PrayerTo`, else the lowest level the loads lift to 99. */
+    closeAt: number;
 }
 
 /**
- * The H4m variant, or null when S07 closes at 99 (today's chain, unchanged). The run config turns it
- * on (`s07PrayerTo` below 99); the loads are the carrier generator's, h4mLoadRows over the ledger's
- * H4m row, so the chain and the carriers never disagree on N, and either side alone refuses. S07
- * closes the first time Prayer reaches `s07PrayerTo`, so at worst at that level's floor: the loads
- * must carry the floor's distance to 99, or the chain refuses with both numbers.
+ * The H4m variant, or null without the ledger's H4m row (today's chain, unchanged). The row is the
+ * switch, on this side as in the carrier generator: the loads are h4mLoadRows over it, so the chain
+ * and the carriers never disagree on N. S07 closes the first time Prayer reaches its target, so at
+ * worst at that level's floor, and the loads must carry the floor's distance to 99. With no
+ * `s07PrayerTo` the target is the lowest level from H4M_MIN_PRAYER they do carry; one the run config
+ * names is checked, 99 refused (S07 would bury every bone and the carrier's loads go untaken).
  */
 export function h4mPlan(cfg: Pick<RunConfig, 's07PrayerTo' | 'partners'>, manifest: string): H4mPlan | null {
-    const p = s07PrayerTo(cfg);
+    const named = cfg.s07PrayerTo === undefined ? null : s07PrayerTo(cfg);
     const rows = h4mLoadRows(manifest);
-    if (p === S07_PRAYER_TO) {
-        if (rows.length) throw new Error(`STEP-MANIFEST.md's fallback hand-offs carry ${H4M_ROW} (${rows.length} loads for the carrier), but the run config's s07PrayerTo is ${S07_PRAYER_TO}: S07 buries every bone and S09 would take none`);
+    if (!rows.length) {
+        if (named !== null && named < S07_PRAYER_TO) throw new Error(`run config: s07PrayerTo ${named} leaves Prayer ${S09_PRAYER_TO} to S09's H4m loads, and STEP-MANIFEST.md's fallback hand-offs have no ${H4M_ROW} row`);
         return null;
     }
-    if (p < H4M_MIN_PRAYER) throw new Error(`run config: s07PrayerTo ${p} < ${H4M_MIN_PRAYER}: S09's combat 43 needs Prayer ${H4M_MIN_PRAYER} (rs/360), and S09 starts before H4m's bones are buried`);
-    if (!rows.length) throw new Error(`run config: s07PrayerTo ${p} leaves Prayer ${S09_PRAYER_TO} to S09's H4m loads, and STEP-MANIFEST.md's fallback hand-offs have no ${H4M_ROW} row`);
+    if (named === S07_PRAYER_TO) throw new Error(`STEP-MANIFEST.md's fallback hand-offs carry ${H4M_ROW} (${rows.length} loads for the carrier), but the run config's s07PrayerTo is ${S07_PRAYER_TO}: S07 buries every bone and S09 would take none`);
+    if (named !== null && named < H4M_MIN_PRAYER) throw new Error(`run config: s07PrayerTo ${named} < ${H4M_MIN_PRAYER}: S09's combat 43 needs Prayer ${H4M_MIN_PRAYER} (rs/360), and S09 starts before H4m's bones are buried`);
     if (!cfg.partners[H4M_ROW]) throw new Error(`the run config names no partner for ${H4M_ROW} (its carrier)`);
     // h4mLoadRows has checked it is the one row H4m.1-H4m.N
     const plan = planHandOff(parseFallbacks(manifest).find(r => r.row.startsWith(`${H4M_ROW}.`))!);
@@ -292,13 +295,15 @@ export function h4mPlan(cfg: Pick<RunConfig, 's07PrayerTo' | 'partners'>, manife
         throw new Error(`${H4M_ROW} (line ${plan.line}) must receive one bone by id, unnoted and a fixed count, of ${H4M_BONES.map(b => `${b.obj} @${b.id}`).join(', ')}: S09's bury steps and the Prayer check read nothing else`);
     }
     const name = bone.name.toLowerCase();
-    const need = xpForLevel(S09_PRAYER_TO) - xpForLevel(p);
     const brings = rows.length * bones.count * bone.base * XP_RATE;
-    if (brings < need) {
+    const need = (p: number) => xpForLevel(S09_PRAYER_TO) - xpForLevel(p);
+    let p = named ?? H4M_MIN_PRAYER;
+    if (named === null) while (p < S07_PRAYER_TO - 1 && brings < need(p)) p++;
+    if (brings < need(p)) {
         const base = (xp: number) => (xp / XP_RATE).toFixed(2);
-        throw new Error(`H4m: ${rows.length} loads of ${bones.count} ${name} bring ${base(brings)} base, and from Prayer ${p}'s floor (${base(xpForLevel(p))} base) to ${S09_PRAYER_TO} (${base(xpForLevel(S09_PRAYER_TO))}) needs ${base(need)}: ${Math.ceil(need / (bone.base * XP_RATE))} ${name}`);
+        throw new Error(`H4m: ${rows.length} loads of ${bones.count} ${name} bring ${base(brings)} base, and from Prayer ${p}'s floor (${base(xpForLevel(p))} base) to ${S09_PRAYER_TO} (${base(xpForLevel(S09_PRAYER_TO))}) needs ${base(need(p))}: ${Math.ceil(need(p) / (bone.base * XP_RATE))} ${name}`);
     }
-    return { rows, plan, perLoad: bones.count, bone, pattern: `^${name}$` };
+    return { rows, plan, perLoad: bones.count, bone, pattern: `^${name}$`, closeAt: p };
 }
 
 /**
@@ -802,8 +807,6 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
     const missingPartners = [...placed, ...KIT_PARTNER_ROWS.filter(id => inLedger.has(id))].filter(id => !cfg.partners[id]);
     if (missingPartners.length) throw new Error(`the run config names no partner for ${missingPartners.join(', ')}`);
     const h4m = h4mPlan(cfg, manifest);
-    // A bury step is done once the next load is recorded, the one thing that tells load k's step from load k+1's.
-    if (h4m && !o.record) throw new Error('H4m: the S09 bury steps resume by the attempt record (ChainOptions.record), and none is given');
     const partner = (id: string) => (h4m?.rows.includes(id) ? cfg.partners[H4M_ROW]! : cfg.partners[id]!);
     const kitFrom = (id: string) => ({ kitFrom: partner(id) });
 
@@ -833,7 +836,7 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         return s;
     };
 
-    const woodcuttingAll = woodcutting.steps(s07Woodcutting(cfg, o.attempt));
+    const woodcuttingAll = woodcutting.steps(s07Woodcutting(h4m ? { ...cfg, s07PrayerTo: h4m.closeAt } : cfg, o.attempt));
     const wc = (n: string) => pick('woodcutting', woodcuttingAll, [n]);
     // S07's {bone} cue has one writer: woodcutting.ts for a giver group (BoneCue, one session across
     // both bands), the chain for one giver, for which woodcutting.ts writes none. Both writing the group's
@@ -865,7 +868,8 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
      */
     const s09WithH4m = (h: H4mPlan): Entry[] => {
         const all = mining.steps({ ...S09_MINING, bury: h.pattern, buryLoads: h.rows.length, buryPrayerTo: S09_PRAYER_TO });
-        const record = o.record!.handOffs;
+        // Without the record (a build that never resumes) a bury step is done at Prayer 99 only; run.ts always passes it.
+        const record = o.record?.handOffs ?? { has: () => false };
         const bones = new RegExp(h.pattern, 'i');
         // the level, not the points (skillLevel's current level)
         const prayerAt = (st: BotWorldState) => st.skills.find(k => k.name.toLowerCase() === 'prayer')?.baseLevel ?? 0;
@@ -882,7 +886,7 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
                 postconditions: (st, c) => {
                     const held = bury.postconditions(st, c);
                     if (held !== true) return held;
-                    return reached(st) ? true : `Prayer ${prayerAt(st)} < ${S09_PRAYER_TO} after H4m's ${h.rows.length} loads (S07 closed at ${s07PrayerTo(cfg)}): the chain's Prayer ${S09_PRAYER_TO}`;
+                    return reached(st) ? true : `Prayer ${prayerAt(st)} < ${S09_PRAYER_TO} after H4m's ${h.rows.length} loads (S07 closed at ${h.closeAt}): the chain's Prayer ${S09_PRAYER_TO}`;
                 },
             });
         });
