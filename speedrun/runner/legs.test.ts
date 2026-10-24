@@ -2,12 +2,12 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import type { BotWorldState, InventoryItem, PlayerState } from '../../sdk/types';
-import { parseLedger, type OutEntry } from '../tools/slot-ledger';
+import { parseLedger, walk, type OutEntry } from '../tools/slot-ledger';
 import { parseTiles, resolveOptions, routeLogs } from '../skills/firemaking';
 import { baseState, drive, FakeSdk, simulateWalking } from '../lib/fake-sdk';
 import { TickLog } from '../lib/ticks';
 import { inArea, SPELLS } from '../lib/travel';
-import { arrived, DROPS_PER_TICK, dropsDue, entersWilderness, leg, legById, legPreconditions, LEGS, legsAfter, legsFor, neededBy, netTotal, resumeHop, runLeg, splitLeg, TILES, type LegStep } from './legs';
+import { arrived, dropDue, DROPS_PER_TICK, dropsDue, entersWilderness, leg, legById, legPreconditions, LEGS, legsAfter, legsFor, neededBy, netTotal, resumeHop, runLeg, splitLeg, TILES, type LegStep } from './legs';
 import { Observation, resolveResume } from './resume';
 import type { RunnerSession, Step, StepContext } from './step';
 
@@ -435,6 +435,71 @@ describe('leg drops', () => {
     });
 });
 
+describe("T07-08 drops the last load's unburied bones before the Camelot teleport (rs/664)", () => {
+    const T0708 = () => legById('T07-08');
+    /** S07's close at the willow stand: the Camelot runes, the knife, the kept log, then `n` bones. */
+    const s07End = (bones: string, n: number) => state(TILES.taverleyWillows.x, TILES.taverleyWillows.z, {
+        inventory: [item(0, 'Law rune', 1), item(1, 'Air rune', 5), item(2, 'Knife'), item(3, 'Logs'), ...Array.from({ length: n }, (_, i) => item(4 + i, bones))],
+    });
+    const travelRow = (ctx: StepContext<unknown>) => ctx.log.rows.find(r => r.kind === 'travel')!;
+
+    for (const bones of ['Babydragon bones', 'Dragon bones']) {
+        test(`21 ${bones}: all dropped, ${DROPS_PER_TICK} a tick, before the teleport click; the runes, knife and log kept`, async () => {
+            const sdk = new FakeSdk(s07End(bones, 21));
+            const drops = serveDrops(sdk);
+            const held = serveTeleport(sdk, SPELLS.camelot.landing);
+            simulateWalking(sdk);
+            const ctx = ctxFor(sdk);
+            await drive(sdk, T0708().run(ctx));
+            expect(drops.map(d => d.slot)).toEqual(Array.from({ length: 21 }, (_, i) => 4 + i));
+            // 5 + 5 + 5 + 5 + 1: five batches, one tick each.
+            expect([...new Set(drops.map(d => d.tick))].map(t => drops.filter(d => d.tick === t).length)).toEqual([5, 5, 5, 5, 1]);
+            expect(kinds(sdk).slice(0, 2)).toEqual(['sendDropItem', 'sendClickComponent']);
+            expect(held).toEqual([['Law rune', 'Air rune', 'Knife', 'Logs']]);
+            expect(inArea(sdk.state!, TILES.edmond)).toBe(true);
+            const [burst, ...more] = (travelRow(ctx).meta as { drops: { at: number; ok: boolean; dropped: string[]; batches: number; ticks: number }[] }).drops;
+            expect(more).toEqual([]);
+            expect(burst).toMatchObject({ at: 0, ok: true, batches: 5, dropped: Array(21).fill(bones) });
+            expect(burst!.ticks).toBe(drops.at(-1)!.tick - drops[0]!.tick + 1);
+            expect(T0708().postconditions(sdk.state!, undefined)).toBe(true);
+        });
+    }
+
+    test('no bones held: a no-op, no drop sent, no drop rows, 0 ticks before the teleport click', async () => {
+        expect(await dropDue(new FakeSdk(s07End('', 0)) as never, T0708().def, 0)).toEqual({ at: 0, ok: true, dropped: [], ticks: 0, batches: 0 });
+        const sdk = new FakeSdk(s07End('', 0));
+        const drops = serveDrops(sdk);
+        const castTicks: number[] = [];
+        const prev = sdk.onSend;
+        sdk.onSend = (a, f) => {
+            if (a.method === 'sendClickComponent') castTicks.push(f.state!.tick);
+            prev(a, f);
+        };
+        serveTeleport(sdk, SPELLS.camelot.landing);
+        simulateWalking(sdk);
+        const ctx = ctxFor(sdk);
+        await drive(sdk, T0708().run(ctx));
+        expect(drops).toEqual([]);
+        expect(sdk.sent[0]!.method).toBe('sendClickComponent');
+        expect(castTicks).toEqual([100]);
+        expect(travelRow(ctx).meta).not.toHaveProperty('drops');
+        expect(inArea(sdk.state!, TILES.edmond)).toBe(true);
+    });
+
+    test('the pattern takes every bone and nothing else SCORED holds at T07-08; no hop needs a bone', () => {
+        const { drops = [], hops } = T0708().def;
+        const takes = (name: string) => drops.some(p => p.test(name));
+        for (const b of ['Bones', 'Big bones', 'Babydragon bones', 'Dragon bones', 'babydragon bones']) {
+            expect(takes(b)).toBe(true);
+            expect(neededBy(hops, b)).toBe(false);
+        }
+        for (const kept of ['Law rune', 'Air rune', 'Knife', 'Logs', 'Staff of water']) expect(takes(kept)).toBe(false);
+        expect(neededBy(hops, 'Law rune')).toBe(true);
+        expect(neededBy(hops, 'Air rune')).toBe(true);
+        expect(dropsDue(T0708().def, s07End('Dragon bones', 21), 0).map(i => i.slot)).toEqual(Array.from({ length: 21 }, (_, i) => 4 + i));
+    });
+});
+
 // ------------------------------------------------------------------ the ledger contract
 
 const MANIFEST = readFileSync(join(import.meta.dir, '../../docs/speedrun/STEP-MANIFEST.md'), 'utf8');
@@ -460,8 +525,18 @@ describe('leg drops: the STEP-MANIFEST ledger contract', () => {
 
     test('the ledger has leg rows with drops to check', () => {
         expect(legRows.filter(r => r.out.some(o => o.reason === 'drop')).map(r => r.row)).toEqual(
-            ['T01-02', 'T04-05', 'T06-07', 'T11-12', 'T20-21', 'T21-22', 'T22-23', 'T26-27'],
+            ['T01-02', 'T04-05', 'T06-07', 'T07-08', 'T11-12', 'T20-21', 'T21-22', 'T22-23', 'T26-27'],
         );
+    });
+
+    test("T07-08's row drops the S07 last load's <bones>, which the leg's /bones$/i takes; the walk leaves H6 its 12", () => {
+        expect(dropsOn('T07-08')).toEqual([{ name: 'bones', placeholder: true, count: 'all', reason: 'drop' }]);
+        expect(rows.find(r => r.row === 'S07 last load')!.in).toContainEqual({ name: 'bones', placeholder: true, count: 21, kind: 'u' });
+        const entries = walk(rows);
+        const at = (row: string) => entries.find(e => e.row.row === row)!;
+        expect(at('S07 last load')).toMatchObject({ verdict: 'pass', used: 25 });
+        expect(at('T07-08')).toMatchObject({ verdict: 'pass', used: 2, held: 'knife x1, logs x1' });
+        expect(at('H6')).toMatchObject({ verdict: 'pass', need: 12 });
     });
 
     test('every drop on a leg row has exactly one performer: the leg, a named module exit, or a pending ruling', () => {
