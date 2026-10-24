@@ -44,7 +44,7 @@
 import { existsSync } from 'node:fs';
 import type { BotActions } from '../../sdk/actions';
 import type { BotSDK } from '../../sdk/index';
-import { findDoorsAlongPath, findLongPath, initPathfinding } from '../../sdk/pathfinding';
+import { findDoorsAlongPath, initPathfinding } from '../../sdk/pathfinding';
 import { reached } from '../../server/vendor/rsmod-pathfinder';
 import type { BankItem, BotWorldState, GameMessage, InventoryItem, NearbyNpc, TradeItem, TradeItemSpec } from '../../sdk/types';
 import { TRADE_REQUEST_CHAT_TYPE } from '../../sdk/types';
@@ -55,8 +55,8 @@ import { westOfTaverley } from '../lib/kandarin';
 import { crossingsBetween } from '../lib/passages';
 import { crossForDelivery } from './delivery-cross';
 import { travelTo } from '../lib/toll-gate';
-import { expandRoute, inArea, runTo } from '../lib/travel';
-import { deliveryVia } from './mule-itinerary';
+import { inArea, runTo } from '../lib/travel';
+import { deliveryVia } from './mule-route';
 import { deliverySession, muleCanReady, muleHealthy, mulePreparationPath, readMulePreparation, sameWorldTile, worldTile, writeMuleReady, type MuleHold, type WorldTile } from './mule-readiness';
 import { ANY_OFFER, clickBack, decideTradeClick, DROPPED_TICKS, give, newClickCtx, offerSatisfies, openTrade, sameName, sendTradeClick, type ClickCtx } from '../lib/trade';
 import { tickMs, waitUntil, type StateSource } from '../lib/wait';
@@ -347,11 +347,6 @@ export function topUpCounts(pkg: Pick<Package, 'items'>, inventory: readonly Inv
         out.push({ item: refLabel(spec), id: first?.id ?? null, max, held, asked, n: Math.min(want, held) });
     }
     return out;
-}
-
-/** Every tile of the SDK's ground route from `a` to `b`, the route runTo walks without `via`. */
-export function groundPath(a: { x: number; z: number }, b: { x: number; z: number }): { x: number; z: number }[] {
-    return expandRoute(a, findLongPath(0, a.x, a.z, b.x, b.z, 500));
 }
 
 /** Within this many tiles the mule pre-requests the scored account. */
@@ -1458,7 +1453,7 @@ class Mule {
                 tiles += Math.max(Math.abs(crossing.to.x - crossing.from.x), Math.abs(crossing.to.z - crossing.from.z));
             }
             // One waypoint at a time, so each stretch is the pathfinder's own route between them.
-            via = player.level === 0 && to.level === 0 && !crossings.length ? deliveryVia(from, to, groundPath) : [];
+            via = player.level === 0 && to.level === 0 && !crossings.length ? deliveryVia(from, to) : [];
             for (const waypoint of via) await walk(waypoint);
             await walk(to);
             ok = true;
