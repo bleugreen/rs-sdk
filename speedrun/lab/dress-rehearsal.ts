@@ -21,6 +21,16 @@
 //       [--until=<id>] [--from=<id>] [--stage=0] [--stub=<stub giver env>] [--client=browser|lite] [--log=<file>]
 //       [--ringers=<g1>,<g2>,<g3>] [--altar-givers=<a1>,...,<a7>] [--droppers=<d1>,...,<d6>] [--bone-givers=<b1>,...,<b4>] [--staff-steps=<id>,...]
 //       [--anvil=<cairn_ name>] [--cannon-holder=<cairn_ name>] [--wine-giver=<lab.sh helper>]
+//       [--plan-out=<file>] [--plan-only=1] [--vitals=<file>]
+//
+// --plan-out: the lab chain this invocation runs (each step's id, name and kind), the index it starts
+// at, the helper families the steps from there need and its giver gaps, as JSON (RehearsalPlan),
+// written before any session opens; --plan-only=1 writes it and exits (3 when there are gaps). A
+// driver (lab/bench-step.ts) resolves a step and its families from the chain itself this way, not
+// from a second copy of the planning above.
+// --vitals: SCORED's hitpoints and food held (lib/travel.ts FOOD), one JSONL line each time either
+// changes, keyed by the session and tick the tick log's rows use: what a step cost in HP and food,
+// which the tick log does not carry.
 //
 // --anvil: S25a's anvil helper (SUPPLIES.md H21a), a cairn_ name NOT on LAB_HELPERS: lab/anvil-launch.ts
 // starts helpers/anvil.ts through the run machine's launcher (relay, bank restock with lab stock,
@@ -79,7 +89,7 @@
 //
 // Exit: 0 the slice ran (partial or not, the report says which), 1 a step failed, 3 refused.
 
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'fs';
+import { appendFileSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import type { Subprocess } from 'bun';
@@ -88,6 +98,7 @@ import { ACCOUNT_NAME_RE, FORBIDDEN_ACCOUNTS } from '../helpers/fleet-config';
 import { annotation } from '../lib/attempt';
 import { ReservationWatch, reservationPath } from '../lib/host-reservation';
 import { closeSession, loadBotEnv, openSession, relog, ROOT, type Session } from '../lib/session';
+import { FOOD } from '../lib/travel';
 import { waitUntil } from '../lib/wait';
 import { parseTiles } from '../skills/firemaking';
 import { resolveOptions as magicOptions, ROUTE_LOADS, type RingCounts } from '../skills/magic';
@@ -312,6 +323,58 @@ export function giverGaps(all: readonly (Pick<ChainStep, 'id'> & { name?: string
     return out;
 }
 
+/** The helper families the steps a rehearsal runs meet (giverGaps names what each one needs). */
+export interface FamilyNeeds {
+    droppers: boolean;
+    rings: boolean;
+    altar: boolean;
+    bones: boolean;
+    anvil: boolean;
+    holder: boolean;
+    wine: boolean;
+}
+
+export function familyNeeds(toRun: readonly ChainStep[]): FamilyNeeds {
+    return { droppers: runsS03(toRun), rings: toRun.some(s => s.id === 'S04'), altar: toRun.some(s => s.id === 'S06'), bones: runsS07(toRun), anvil: runsS25a(toRun), holder: runsH23(toRun), wine: runsS25c(toRun) };
+}
+
+/** --plan-out's JSON: what this invocation will run, from where, with which families, and why it would refuse. */
+export interface RehearsalPlan {
+    /** The chain index the run starts at (0: the start). */
+    from: number;
+    chain: { id: string; name: string; kind: ChainStep['kind'] }[];
+    needs: FamilyNeeds;
+    gaps: string[];
+    /** The chunk boundary --from=Sxx stages, or null. */
+    boundary: Boundary | null;
+}
+
+export function rehearsalPlan(chain: readonly ChainStep[], from: number, needs: FamilyNeeds, gaps: readonly string[], boundary: Boundary | null): RehearsalPlan {
+    return { from, chain: chain.map(s => ({ id: s.id, name: s.name, kind: s.kind })), needs, gaps: [...gaps], boundary };
+}
+
+/** One --vitals line: SCORED's hitpoints and the food it holds, at a session's tick (the tick log's sessionId and ticks). */
+export interface VitalsLine {
+    sid: number;
+    tick: number;
+    hp: number;
+    food: number;
+}
+
+/** The --vitals lines: one per in-game state where the hitpoints or the food count changed. */
+export class VitalsRecorder {
+    private last = '';
+
+    see(s: BotWorldState | null | undefined, sid: number): VitalsLine | null {
+        if (!s?.inGame || !s.player) return null;
+        const food = s.inventory.filter(i => FOOD.test(i.name)).reduce((a, i) => a + i.count, 0);
+        const key = `${sid} ${s.player.hp} ${food}`;
+        if (key === this.last) return null;
+        this.last = key;
+        return { sid, tick: s.tick, hp: s.player.hp, food };
+    }
+}
+
 /** `step` with `start` called each time it runs or resumes, and `done` once it returns (not when it throws). */
 export function hooked(step: ChainStep, h: { start?: (ctx: StepContext<unknown>) => void; done?: () => void }): ChainStep {
     const wrap = (f: (ctx: StepContext<unknown>) => Promise<void>) => async (ctx: StepContext<unknown>) => {
@@ -424,19 +487,20 @@ async function main(argv: string[]): Promise<number> {
     const loads = ringLoads(cfg.rings);
     const labHelpers = process.env.LAB_HELPERS !== undefined ? list(process.env.LAB_HELPERS) : undefined;
     const gaps = giverGaps(toRun, { ringers, altarGivers, droppers, boneGivers, anvil, cannonHolder, wineGiver, loads: loads.length, ...(labHelpers ? { labHelpers } : {}) });
+    const needs = familyNeeds(toRun);
+    if (a['plan-out']) writeFileSync(a['plan-out'], JSON.stringify(rehearsalPlan(lab.chain, from ?? 0, needs, gaps, boundary)));
+    if (a['plan-only']) {
+        for (const g of gaps) console.log(`[dress] plan: gap ${g}`);
+        console.log(`[dress] plan only: ${toRun.length} of ${lab.chain.length} steps from index ${from ?? 0}${a['plan-out'] ? `, written to ${a['plan-out']}` : ''}`);
+        return gaps.length ? 3 : 0;
+    }
     if (gaps.length) {
         for (const g of gaps) console.error(`[dress] REFUSED: ${g}`);
         return 3;
     }
-    const needRings = toRun.some(s => s.id === 'S04');
-    const needAltar = toRun.some(s => s.id === 'S06');
-    const needDroppers = runsS03(toRun);
-    const needBones = runsS07(toRun);
+    const { rings: needRings, altar: needAltar, droppers: needDroppers, bones: needBones, anvil: needAnvil, holder: needHolder, wine: needWine } = needs;
     const lastBones = lastS07Step(lab.chain);
     if (boneGivers.length && !needBones) console.log('[dress] --bone-givers unused: this slice does not run S07');
-    const needAnvil = runsS25a(toRun);
-    const needHolder = runsH23(toRun);
-    const needWine = runsS25c(toRun);
     if (wineGiver && !needWine) console.log('[dress] --wine-giver unused: this slice does not run S25c');
     if (cannonHolder && !needHolder) console.log('[dress] --cannon-holder unused: this slice does not run H23');
     if (anvil && !needAnvil) console.log('[dress] --anvil unused: this slice does not run S25a');
@@ -476,6 +540,7 @@ async function main(argv: string[]): Promise<number> {
     let session: Session | null = null;
     // The `(chunk end)` row the seam check reads (lab/seam-check.ts), written once the chain stops.
     let chunkEnd: ChunkEndWatch | null = null;
+    let stopVitals: (() => void) | null = null;
     let code = 3;
     let term: Terminated | null = null;
     try {
@@ -627,6 +692,14 @@ async function main(argv: string[]): Promise<number> {
             return 3;
         }
         log.append(annotation(log, s.name, 'gate', '(gate) dress rehearsal', { meta: { until: a.until ?? null, from: a.from ?? null, standIns: lab.standIns, staffed: lab.staffed, stubRows: lab.stubRows, cueServed: lab.cueServed, ringGivers: ringNames, altarGivers: altarNames, droppers: needDroppers ? droppers : [], boneGivers: needBones ? boneGivers : [], host: process.env.HOSTNAME ?? null } }));
+        if (a.vitals) {
+            const path = a.vitals;
+            const vitals = new VitalsRecorder();
+            stopVitals = s.sdk.onStateUpdate(st => {
+                const v = vitals.see(st as BotWorldState, s.sessionId);
+                if (v) appendFileSync(path, JSON.stringify(v) + '\n');
+            });
+        }
         chunkEnd = watchChunkEnd(s, lab.chain, log);
         const ran = await runChainOnSession(s, { log, chain, reservation: new ReservationWatch(reservationPath(a['host-reservation']), { label: 'dress' }), cues: keeper, wholeRun: a.until === undefined, label: 'dress', tabMemory: { chunk: `${a.from ?? 'start'}..${a.until ?? 'end'}`, ...(secureBrowser?.chrome.browser.process()?.pid ? { chromePid: secureBrowser.chrome.browser.process()!.pid! } : {}) }, ...(from !== undefined ? { from } : {}) }).catch(e => {
             // A signal: SCORED is out; the helpers, Chrome and the proxy stop below, then the exit.
@@ -643,6 +716,7 @@ async function main(argv: string[]): Promise<number> {
         }
     } finally {
         try {
+        stopVitals?.();
         chunkEnd?.close(code);
         stub?.kill();
         ringStop = true;
