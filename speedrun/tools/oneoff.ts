@@ -3,9 +3,14 @@
 // ported so its isolation check is tested. From an ssh shell on the run host:
 //
 //   bun speedrun/tools/oneoff.ts [--run-dir=DIR] [--run-gateway-log=FILE] <tool> [tool args...]
+//   bun speedrun/tools/oneoff.ts [--run-dir=DIR] [--run-gateway-log=FILE] --adhoc=FILE [tool args...]
 //
-// <tool> names a script in speedrun/tools/oneoff/ (read, drop, receive, walk); nothing else is run.
-// Without --go in the tool args the tool runs its preflight only and logs nothing in. In order:
+// <tool> names a committed script in speedrun/tools/oneoff/ (read, drop, receive, walk, ...). The run
+// night escape, --adhoc, runs an uncommitted script instead, and only one inside <run dir>/oneoff-adhoc/
+// (a relative FILE is taken from there; symlinks out of it are refused) that runs on runOneoff, which
+// makes the same isolation refusals as every committed tool. It is announced by an ADHOC line, on the
+// terminal and in the ledger with the file's sha256, before anything is raised. Without --go in the
+// tool args the tool runs its preflight only and logs nothing in. In order:
 // 1. refuses (exit 9, nothing raised) while run.ts runs, while 7781 is taken, while the alias dir is
 //    left over from an earlier one-off, or without SCORED's env, ~/rs-run/.scored-account or the run
 //    gateway's log;
@@ -24,9 +29,10 @@
 // SIGINT, SIGTERM or SIGHUP while the tool runs is passed on to it as SIGTERM (session.ts then clicks
 // SCORED out) and the teardown still runs.
 
-import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { createHash } from 'crypto';
+import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs';
 import { homedir } from 'os';
-import { basename, dirname, join } from 'path';
+import { basename, dirname, isAbsolute, join, relative, sep } from 'path';
 import { RUN_DIR } from '../helpers/altar-cue';
 import {
     aliasEnvPath,
@@ -82,6 +88,49 @@ export function resolveTool(arg: string, root: string = ROOT): string | null {
     if (!/^[a-z][a-z0-9-]*$/.test(basename(name)) || (name.includes('/') && dirname(name).replace(/^\.\//, '') !== 'speedrun/tools/oneoff')) return null;
     const path = join(root, 'speedrun', 'tools', 'oneoff', `${basename(name)}.ts`);
     return existsSync(path) ? path : null;
+}
+
+/** Where an uncommitted run-night tool must live, under the run dir. */
+export const ADHOC_DIR = 'oneoff-adhoc';
+
+export interface AdhocTool {
+    path: string;
+    /** The path inside the ad hoc dir, for the ledger. */
+    rel: string;
+    sha256: string;
+}
+
+/**
+ * An --adhoc tool: a .ts file whose real path (symlinks resolved) is inside <run dir>/oneoff-adhoc/ and
+ * which calls runOneoff, so its session goes through loadOneoffEnv's refusals; else why not.
+ */
+export function resolveAdhoc(arg: string, runDir: string): AdhocTool | string {
+    const dir = join(runDir, ADHOC_DIR);
+    if (!existsSync(dir)) return `no ad hoc dir ${dir}`;
+    if (!arg.endsWith('.ts')) return 'an ad hoc tool is a .ts file';
+    const realDir = realpathSync(dir);
+    let path: string;
+    try {
+        path = realpathSync(isAbsolute(arg) ? arg : join(dir, arg));
+    } catch {
+        return `no ad hoc tool ${arg} in ${dir}`;
+    }
+    if (!path.startsWith(realDir + sep)) return `${arg} is not inside ${dir}`;
+    const text = readFileSync(path, 'utf8');
+    if (!/\brunOneoff\s*\(/.test(text)) return 'an ad hoc tool must run on runOneoff (speedrun/lib/oneoff.ts), which makes the isolation checks';
+    return { path, rel: relative(realDir, path), sha256: createHash('sha256').update(text).digest('hex') };
+}
+
+const WRAPPER_FLAGS = ['run-dir', 'run-gateway-log', 'adhoc'];
+
+/** The wrapper's own leading flags, then the tool (absent with --adhoc) and its arguments. */
+export function splitArgs(argv: readonly string[]): { own: string[]; toolArg: string | undefined; toolArgs: string[] } {
+    let n = 0;
+    while (n < argv.length && WRAPPER_FLAGS.some(f => argv[n]!.startsWith(`--${f}=`))) n++;
+    const own = argv.slice(0, n);
+    const rest = argv.slice(n);
+    if (flag(own, 'adhoc') !== undefined) return { own, toolArg: undefined, toolArgs: rest };
+    return rest.length && !rest[0]!.startsWith('--') ? { own, toolArg: rest[0], toolArgs: rest.slice(1) } : { own, toolArg: undefined, toolArgs: rest };
 }
 
 export function gatewayCommand(o: { bound: string; bun: string; log: string }): string {
@@ -147,7 +196,7 @@ export interface WrapperOptions {
     bun?: string;
 }
 
-const USAGE = 'usage: bun speedrun/tools/oneoff.ts [--run-dir=DIR] [--run-gateway-log=FILE] <read|drop|receive|walk> [tool args...] [--go]';
+const USAGE = 'usage: bun speedrun/tools/oneoff.ts [--run-dir=DIR] [--run-gateway-log=FILE] <tool in speedrun/tools/oneoff/ | --adhoc=FILE> [tool args...] [--go]';
 
 function stamp(d: Date): string {
     return d.toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
@@ -156,11 +205,8 @@ function stamp(d: Date): string {
 export async function runWrapper(argv: readonly string[], io: WrapperIO, o: WrapperOptions = {}): Promise<number> {
     const root = o.root ?? ROOT;
     const home = o.home ?? homedir();
-    // Wrapper flags come before the tool; everything after it is the tool's.
-    const at = argv.findIndex(a => !a.startsWith('--'));
-    const own = at < 0 ? argv : argv.slice(0, at);
-    const toolArg = at < 0 ? undefined : argv[at];
-    const toolArgs = at < 0 ? [] : argv.slice(at + 1);
+    const { own, toolArg, toolArgs } = splitArgs(argv);
+    const adhocArg = flag(own, 'adhoc');
     const runDir = flag(own, 'run-dir') ?? o.runDir ?? RUN_DIR;
     const runLog = flag(own, 'run-gateway-log') ?? o.runGatewayLog ?? join(home, 'rs-run', 'gateway.log');
     const oneoffLog = join(home, 'rs-run', 'gateway-oneoff.log');
