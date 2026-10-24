@@ -1126,10 +1126,10 @@ describe("woodcutting: S07's last bone load carries T07-08's runes, (load - 2) b
         expect(loads.map(r => [r.ok, (r.meta as { received: number }).received])).toEqual([[true, 23], [true, 21]]);
         const s = h.sdk.getState()!;
         expect(held(s).filter(n => !/bones/.test(n))).toEqual(['Rune axe x1', 'Knife x1', 'Logs x1', 'Law rune x1', 'Air rune x5']);
-        // the band at 99 held the full load, then the last load's 21 bones: the pure-bury tail buried both before closing, so T07-08 has its slots
+        // run 1 buried the first load; the band reached 99 holding the last load's 21 bones, and the pure-bury tail buried them before closing, so T07-08 has its slots
         expect(s.inventory.filter(i => /bones$/i.test(i.name))).toHaveLength(0);
         expect(h.calls).toHaveLength(2);
-        expect(h.log.rows.filter(r => r.step === 'woodcutting:bury-tail').map(r => (r.meta as { buried: number }).buried)).toEqual([23, 21]);
+        expect(h.log.rows.filter(r => r.step === 'woodcutting:bury-tail').map(r => (r.meta as { buried: number }).buried)).toEqual([21]);
         expect(28 - s.inventory.length).toBe(23);
         expect(band.postconditions(s, {})).toBe(true);
     });
