@@ -146,8 +146,9 @@ Labs run on fedora or bgsrv-ub with `NODE_TICKRATE=400`. Check all ports with `l
 | M11 | phase-2 runner (rs/544; LOGIN 44000, LOGGER 44001) | 10000 / 10001 / 10002 | 45000 | 8000 | 46000 |
 | M17 | phase-2 Hitpoints sites and return trip (rs/632; LOGIN 44065, LOGGER 44066) | 10060 / 10061 / 10062 | 45060 | 8065 | 46060 |
 | M21 | pickpocket door recovery (rs/736; LOGIN 44105, LOGGER 44106) | 10100 / 10101 / 10102 | 45100 | 8105 | 46100 |
+| M22 | phase-2 shark resupply (rs/743; LOGIN 44115, LOGGER 44116) | 10110 / 10111 / 10112 | 45110 | 8115 | 46110 |
 
-`. markets/methods/lab/block.sh M8` (or M9, M10, M11, M17, M21) exports a block's ports and refuses if any is listening. The
+`. markets/methods/lab/block.sh M8` (or M9, M10, M11, M17, M21, M22) exports a block's ports and refuses if any is listening. The
 next free block for follow-ups starts at 10010 (NODE 45010); check the AGENT, FRIEND, LOGIN and LOGGER ports first. A
 long lab on fedora runs from a copy outside the build slot (`/tmp/<name>-lab`, kept between batches so the content
 pack is built once) inside a named tmux server; `hp-training.md` gives the commands.

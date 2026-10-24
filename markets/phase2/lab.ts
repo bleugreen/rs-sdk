@@ -15,6 +15,12 @@
  * 4. Writes the plan and runs `markets/phase2/run.ts --placeholder-data` on it, stopped by SIGINT after `--sigint`
  *    minutes (the clean-stop path), then prints `markets/phase2/report.ts`.
  *
+ * Shark resupply (docs/markets/phase2.md 'Shark resupply'): `--trained=1` gives each staged knight Thieving 99 and
+ * Hitpoints 40 so it skips training; `--legacy-sharks=1` writes each staged knight's role-state as the runner before
+ * SharkState left it (a bare purchase record, `banked` = `--sharks`), so its buy-sharks stage starts done;
+ * `--buy=1` makes the plan buy sharks (`--per-account`, `--minimum`, `--rebuy-min`, `--ceiling`) and passes
+ * `--run-ended`; `--ramp=0` turns the ramp off. The Exchange check's maker leaves its shark ask open for the rebuy.
+ *
  * `--fresh=1` stages nobody: every account starts on Tutorial Island and the runner's own stages do everything (the
  * Hitpoints-site lab). `--min-free-mb=N` (default 1200) stops the run with SIGINT when the host's available memory
  * falls below N MB, so a shared lab host keeps room for its other tenants; the memory is logged every 30 s.
@@ -25,7 +31,7 @@ import { executionContext } from '../../sdk/execution-context';
 import type { BotSDK } from '../../sdk/index';
 import { pointMarketAtServer } from '../../speedrun/helpers/mule';
 import { memoryRoleState } from '../../speedrun/helpers/role';
-import { cheat, leaveTutorial, mustTele } from '../../speedrun/lab/setup';
+import { cheat, leaveTutorial, mustTele, setStats } from '../../speedrun/lab/setup';
 import { depositMatching } from '../../speedrun/lib/bank';
 import { openDirectSession, type DirectSession } from '../../speedrun/lib/direct';
 import { loadBotEnv, ROOT } from '../../speedrun/lib/session';
@@ -35,6 +41,7 @@ import { DemoMarket } from '../lib/market.ts';
 import { lastArg as arg } from '../methods/lab/common-arg.ts';
 import { buySharks, sellAtExchange, VARROCK_WEST_BANK } from './errands.ts';
 import { SHARK_ID } from './exchange.ts';
+import { aliasOf } from './names.ts';
 
 const DRAYNOR_BANK = { x: 3092, z: 3245 };
 const LUMBRIDGE = { x: 3222, z: 3218 };
@@ -55,6 +62,10 @@ const out = arg('out', join(process.env.TMPDIR ?? '/tmp', 'phase2-lab'));
 const exchange = arg('exchange', '1') === '1';
 const fresh = arg('fresh', '0') === '1';
 const minFreeMb = count('min-free-mb', 1200);
+const trained = arg('trained', '0') === '1';
+const legacySharks = arg('legacy-sharks', '0') === '1';
+const buy = arg('buy', '0') === '1';
+const rampOn = arg('ramp', '1') === '1';
 
 const server = loadBotEnv(labBot).SERVER ?? '';
 if (!/^(localhost|127\.)/.test(server)) {
@@ -108,8 +119,9 @@ async function stageKnight(name: string): Promise<void> {
         await waitTicks(sdk, 2);
         const banked = sdk.getBankItems().find(i => /^shark$/i.test(i.name))?.count ?? 0;
         await bot.closeBank();
+        if (trained) await setStats(sdk, { thieving: 99, hitpoints: 40 });
         await mustTele(sdk, LUMBRIDGE.x, LUMBRIDGE.z);
-        log('staged', { name, sharks: banked });
+        log('staged', { name, sharks: banked, trained });
     });
 }
 
@@ -162,15 +174,27 @@ const staged = fresh ? [] : knightNames.slice(0, Math.max(0, knights - hungry));
 for (let i = 0; i < staged.length; i += 4) await Promise.all(staged.slice(i, i + 4).map(n => stageKnight(n)));
 log('staging done', { knights: staged.length, fresh: accounts.length - staged.length });
 
+// the purchase record the runner wrote before SharkState (errands.ts buySharks' record with its `at`)
+if (legacySharks)
+    for (const n of staged) {
+        const path = join(out, 'role-state', `${aliasOf(accounts.findIndex(a => a.account === n))}.json`);
+        mkdirSync(join(out, 'role-state'), { recursive: true });
+        writeFileSync(path, JSON.stringify({ 'phase2.sharks': { kind: 'buy', item: SHARK_ID, ceiling: 701, held: sharks, result: 'enough', banked: sharks, at: new Date().toISOString() } }, null, 2) + '\n');
+        log('legacy role-state', { name: n, path });
+    }
+
 const plan = {
     accounts,
     loginSpacingMs: 2000,
-    ramp: { steps, holdMinutes: hold, dropPct: 10, admitTimeoutMinutes: 30 },
-    ledger: { everyTicks: 50, bookMinutes: 5 }
+    ramp: rampOn ? { steps, holdMinutes: hold, dropPct: 10, admitTimeoutMinutes: 30 } : null,
+    ledger: { everyTicks: 50, bookMinutes: 5 },
+    ...(buy
+        ? { sharks: { source: 'buy', perAccount: count('per-account', 20), minimum: count('minimum', 5), rebuyMinSharks: count('rebuy-min', 5), ceiling: count('ceiling', 650), fillMinutes: 1 } }
+        : {})
 };
 const planPath = join(out, 'plan.json');
 writeFileSync(planPath, JSON.stringify(plan, null, 2));
-const child = Bun.spawn(['bun', 'markets/phase2/run.ts', planPath, '--out', out, '--placeholder-data'], { cwd: ROOT, stdout: 'inherit', stderr: 'inherit' });
+const child = Bun.spawn(['bun', 'markets/phase2/run.ts', planPath, '--out', out, '--placeholder-data', ...(buy ? ['--run-ended'] : [])], { cwd: ROOT, stdout: 'inherit', stderr: 'inherit' });
 if (sigint > 0)
     setTimeout(() => {
         log('sending SIGINT', { afterMinutes: sigint });
