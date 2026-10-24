@@ -180,3 +180,33 @@ describe('the real S04 and S06 givers', () => {
         expect(h.resume).toBeUndefined();
     });
 });
+
+describe('--plan-out and --vitals', () => {
+    const full = buildChain(cfg('lab_stub'), { cues, manifest });
+
+    test("familyNeeds: the families of the steps a slice runs, as giverGaps checks them; a plan carries each step's id, name and kind", () => {
+        const from = full.findIndex(s => s.id === 'S07');
+        const s07 = familyNeeds(sliceUntil(full, 'S07').slice(from));
+        expect(s07).toEqual({ droppers: false, rings: false, altar: false, bones: true, anvil: false, holder: false, wine: false });
+        expect(familyNeeds(sliceUntil(full, 'S12').slice(full.findIndex(s => s.id === 'S12')))).toEqual({ droppers: false, rings: false, altar: false, bones: false, anvil: false, holder: false, wine: false });
+        const plan = JSON.parse(JSON.stringify(rehearsalPlan(full, from, s07, ['a gap'], null)));
+        expect(plan.from).toBe(from);
+        expect(plan.chain[from]).toEqual({ id: 'S07', name: full[from]!.name, kind: 'step' });
+        expect(plan.chain).toHaveLength(full.length);
+        expect(plan.gaps).toEqual(['a gap']);
+    });
+
+    test('a vitals line each time the hitpoints or the food held change, in game only, keyed by the session', () => {
+        const v = new VitalsRecorder();
+        const st = (hp: number, sharks: number, tick: number) => {
+            const s = baseState();
+            return { ...s, inGame: true, tick, player: { ...s.player!, hp }, inventory: sharks ? [{ slot: 0, id: 385, name: 'Shark', count: sharks, optionsWithIndex: [] }] : [] } as unknown as Parameters<VitalsRecorder['see']>[0];
+        };
+        expect(v.see(st(42, 3, 1), 1)).toEqual({ sid: 1, tick: 1, hp: 42, food: 3 });
+        expect(v.see(st(42, 3, 2), 1)).toBeNull();
+        expect(v.see(st(30, 3, 3), 1)).toEqual({ sid: 1, tick: 3, hp: 30, food: 3 });
+        expect(v.see(st(42, 2, 4), 1)).toEqual({ sid: 1, tick: 4, hp: 42, food: 2 });
+        expect(v.see(st(42, 2, 1), 2)).toEqual({ sid: 2, tick: 1, hp: 42, food: 2 });
+        expect(v.see({ ...st(1, 0, 5), inGame: false } as never, 2)).toBeNull();
+    });
+});
