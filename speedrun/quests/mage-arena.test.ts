@@ -630,8 +630,8 @@ describe('exit drops (the ledger T16-18 row, done in F)', () => {
         // H14's swap outs (the knife, and the Superantipoison since rs/755) leave before its check: 23 free against its 22.
         const h14 = row('H14');
         expect([h14.free, h14.need]).toEqual([23, 22]);
-        const outs = h14.row.out.filter(o => o.reason === 'swap').map(o => o.name.toLowerCase());
-        const swapped = (n: string) => outs.some(o => (o.endsWith('(*)') ? n.startsWith(o.slice(0, -3)) && /\(\d\)$/.test(n) : n === o));
+        const outs = h14.row.out.filter(o => o.reason === 'swap');
+        const swapped = (n: string) => outs.some(o => (o.family ? n.startsWith(o.name.toLowerCase()) && /\(\d\)$/.test(n) : n === o.name.toLowerCase()));
         expect(28 - end.inventory.filter(i => !swapped(i.name.toLowerCase())).length).toBe(h14.free);
     });
 
