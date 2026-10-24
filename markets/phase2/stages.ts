@@ -22,7 +22,7 @@ import { crossTollGate, inAlKharid } from '../../speedrun/lib/toll-gate';
 import { waitUntil } from '../../speedrun/lib/wait';
 import { onTutorialIsland } from '../../speedrun/lib/world';
 import { driveSteps, pickSteps } from '../methods/drive-steps.ts';
-import { parseOptions as hpOptions, spec as hpTrain } from '../methods/hp-train.ts';
+import { parseOptions as hpOptions, spec as hpTrain, type SiteId, type TargetClaims } from '../methods/hp-train.ts';
 import { role as mineRole } from '../methods/mine.ts';
 import { role as pickpocketRole } from '../methods/pickpocket.ts';
 import { parseArgs, Sampler } from '../methods/probe-sampler.ts';
@@ -53,6 +53,8 @@ export interface StageCtx {
     event(message: string, data?: Record<string, unknown>): void;
     reportBank(items: Stack[]): void;
     hooks: StageHooks;
+    /** The Hitpoints stage's site (hp-sites.ts) and the npc claims every account of the process shares. */
+    hp?: { site: SiteId | 'auto'; claims: TargetClaims };
 }
 
 export const level = (s: BotWorldState, skill: string): number => s.skills.find(k => k.name.toLowerCase() === skill)?.baseLevel ?? 1;
@@ -233,9 +235,13 @@ export async function runRoleUntil(
     return why ?? 'returned';
 }
 
-/** hp-train.ts's trainer to `to`, its events into the account's events; its 50-tick samples are the ledger's job. */
+/**
+ * hp-train.ts's trainer to `to` on the stage's site, its events into the account's events; its 50-tick samples are
+ * the ledger's job. No final bank walk: the next stage starts from the site.
+ */
 async function trainHp(x: StageCtx, to: number): Promise<void> {
-    const options = hpOptions(parseArgs([x.account, '--to', String(to)]));
+    const options = hpOptions(parseArgs([x.account, '--to', String(to), '--site', x.hp?.site ?? 'auto', '--final-bank', 'false']));
+    if (x.hp) options.claims = { table: x.hp.claims, owner: x.account };
     const sampler = new Sampler(x.sdk, () => undefined, hpTrain.name, hpTrain.items);
     sampler.start();
     const totals: Record<string, unknown> = {};
