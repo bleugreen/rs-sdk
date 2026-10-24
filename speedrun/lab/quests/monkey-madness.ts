@@ -29,6 +29,10 @@
 // --neverAccept (P): H12o-P's helper is a second lab session on P's tile that opens SCORED's trade, offers the super
 // antipoison and never accepts; the run reports what it saw and the leg's last cue (P's final stop expected).
 // --loadCap=L: a run due while the host's 1-minute load is L or more starts only after a minute under L (a shared lab host).
+// --absentHelper (P): H12o-P's helper is an account that never logs in, so P's leg waits TOPUP_WAIT and moves on.
+// --knockout=N (P): N ticks after SCORED first stands at the bridge jump's landing, a staged knockout (stagedKnockout).
+// --h45 on a chain with P and not M: M's cues are written first (M's open, then its stop and P's open), as M leaves them
+// when it trades nothing, so h45 is logged in and serving P when P lands.
 
 import { mkdtempSync, readFileSync } from 'fs';
 import { hostname, loadavg, tmpdir } from 'os';
@@ -43,7 +47,7 @@ import { readCue } from '../../helpers/altar-cue';
 import { TickLog } from '../../lib/ticks';
 import { waitTicks } from '../../lib/wait';
 import { chebyshev, configId, pos } from '../../lib/world';
-import { BELOW_30_EATING, H12_POTIONS, H12_SHARKS, inCage, inCell, JOURNAL_PROBE, MM_OBJ, underTemple, REWARD_ITEMS, SEGMENT_EATING, SEGMENTS, segmentName, steps, type EatPolicy, type MmContext, type TopUp } from '../../quests/monkey-madness';
+import { BELOW_30_EATING, H12_POTIONS, H12_SHARKS, inCage, inCell, JOURNAL_PROBE, legCue, MM_OBJ, outsideTown, underTemple, REWARD_ITEMS, SEGMENT_EATING, SEGMENTS, segmentName, steps, type EatPolicy, type MmContext, type TopUp } from '../../quests/monkey-madness';
 import { slotNeed } from '../../quests/segments';
 import { H45_BOT, h45Env, launchH45, stageH45, type H45Launcher } from '../h45';
 import { journalProbe } from '../../lib/quests';
@@ -598,6 +602,37 @@ function neverAcceptHelper(h: Session, scored: string): { stop: () => { requests
     return { stop: () => { un(); return seen; } };
 }
 
+/** --absentHelper's helper: a lab account name no session logs in as. */
+const ABSENT_HELPER = 'cairn_labnone';
+/** Where the bridge jump lands (quest_mm.rs2:1043): P's H12o leg waits here. */
+const JUMP_LANDING = { x: 2803, z: 2724 };
+/** A tile in the jail cell, where every town knockout lands (mm_archer.rs2's p_telejump: 0_43_43_18_41 + 0-6, 0-1). */
+const CELL_TILE = { x: 2772, z: 2794 };
+
+/**
+ * --knockout=N: N ticks after SCORED first stands outside the town within 1 of the jump's landing, a staff tele into
+ * the jail cell. No staff command runs the town's knockout queues (aa_archer_knockout and the others have no
+ * debugproc), and a lab archer's 1 in 20 roll can't be timed into the wait, so this stages their end state: SCORED in
+ * the cell, mid-leg. Unlike a real knockout it sets no unconscious flag and queues no Lumo dialogue.
+ */
+function stagedKnockout(sdk: BotSDK, after: number, run: number): () => void {
+    let landed = -1;
+    let done = false;
+    const un = sdk.onStateUpdate(s => {
+        if (done) return;
+        if (landed < 0 && outsideTown(s) && chebyshev(pos(s), JUMP_LANDING) <= 1) landed = s.tick;
+        if (landed < 0 || s.tick < landed + after) return;
+        done = true;
+        const from = pos(s);
+        const t0 = s.tick;
+        void tele(sdk as never, CELL_TILE.x, CELL_TILE.z).then(ok => {
+            const st = sdk.getState()!;
+            result('mm_knockout', { run, landedTick: landed, sentTick: t0, from, ok, inCell: inCell(st), at: pos(st), tick: st.tick });
+        });
+    });
+    return un;
+}
+
 async function main(): Promise<void> {
     const from = arg('from', 'H').toUpperCase();
     const until = arg('until', from).toUpperCase();
@@ -644,7 +679,12 @@ async function main(): Promise<void> {
     const scoredAccount = loadBotEnv(botArg()).BOT_USERNAME!;
     // The cue directory is the launcher's, set per run below; steps() keeps this object, so the module reads it then.
     const neverAccept = process.argv.includes('--neverAccept');
-    const topUpFrom: TopUp | undefined = useH45 ? { from: h45Env().account, m: true, p: true, cueDir: '' } : neverAccept ? { from: h45Env().account, p: true, cueDir: '' } : undefined;
+    const absentHelper = process.argv.includes('--absentHelper');
+    const topUpFrom: TopUp | undefined = useH45 ? { from: h45Env().account, m: true, p: true, cueDir: '' }
+        : neverAccept ? { from: h45Env().account, p: true, cueDir: '' }
+        : absentHelper ? { from: ABSENT_HELPER, p: true, cueDir: '' } : undefined;
+    const knockout = arg('knockout', '');
+    if (knockout && !(Number(knockout) >= 0)) throw new Error(`bad --knockout=${knockout}`);
     const all = steps({ dialogue, note: line => console.log(line), bow: configId('obj', bow), eating, ...(topUpFrom ? { topUpFrom } : {}) });
     const chosen = all.slice(i0, i1 + 1);
     /** The gnome-half trade's boundary (a segment letter): a ::give top-up before it, as the helper's trade. */
@@ -786,11 +826,27 @@ async function main(): Promise<void> {
             topUpFrom.cueDir = mkdtempSync(join(tmpdir(), 'mm-never-'));
             const hs = await openSession(H45_BOT, { launch: true });
             never = { session: hs, helper: neverAcceptHelper(hs, sdk.getState()!.player!.name) };
+        } else if (topUpFrom && absentHelper) {
+            topUpFrom.cueDir = mkdtempSync(join(tmpdir(), 'mm-absent-'));
         } else if (topUpFrom) {
             await stageH45();
             launcher = launchH45({ scoredAccount, gatewayPort: gw, tick: () => sdk.getState()?.tick ?? -1 });
             topUpFrom.cueDir = launcher.cueDir;
+            if (letters.includes('P') && !letters.includes('M')) {
+                // The cue gate counts only cues written after the launcher started, so M's open waits for it to stand
+                // at awaiting-cue; h45 logs in on that open (loginOn), and M's stop then sends it on to P.
+                const state = () => launcher!.status()?.state ?? null;
+                const until = async (want: string, ticks: number) => { for (let i = 0; i < ticks && state() !== want; i++) await waitTicks(sdk, 1); return state() === want; };
+                const armed = await until('awaiting-cue', 150);
+                legCue(sdk, launcher.cueDir, 'M', 'open');
+                const online = await until('online', 150);
+                await waitTicks(sdk, 10);
+                legCue(sdk, launcher.cueDir, 'M', 'stop');
+                legCue(sdk, launcher.cueDir, 'P', 'open');
+                result('mm_h45_prelude', { run, armed, online, state: state(), tick: sdk.getState()!.tick });
+            }
         }
+        const unknock = knockout ? stagedKnockout(sdk, Number(knockout), run) : () => undefined;
         const unstage = async () => {
             if (never) {
                 const seen = never.helper.stop();
@@ -816,6 +872,7 @@ async function main(): Promise<void> {
             error = e instanceof Error ? e.message : String(e);
         } finally {
             disarm();
+            unknock();
             await unstage();
             untrace();
             unuse();

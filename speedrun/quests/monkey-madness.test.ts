@@ -15,6 +15,7 @@ import type { Observed, RunnerSession } from '../runner/step';
 import {
     BANANA_TREE_IDS, bananaRoomDrops, h12Plan, DEFAULT_OPTIONS, roomFor, doneAt, EXIT_DROPS, exitState, h12Kit, H12_POTIONS, H12_SHARKS, isWaydarIntroEnd, itemMilestone, setStepNote, talkableNpc, JOURNAL_MARKS, JOURNAL_PROBE, journalMilestone, MM_OBJ, mmMilestone, PUZZLE_TILE_IDS,
     BELOW_30_EATING, cureWanted, eatBelowFor, sharksToDrop, GARKOR_WEST, isMonkeyChatter, CAGE, CAGE_NORTH_STRIP, CAGE_TILES, inCage, letOut, letOutPick, LET_OUT_ATTEMPTS, MINDER_REACH, nearestFire, sceneBuilt, tileIn, underTemple, scorpionsNear, SCORPION_CLOSE, SCORPION_REACH, sigilRoom, h12oLeg, legCue, pFinalStop, closeLeftTrade, DECLINE_TICKS, H12O_M_ROW, mTopUpCap, ASK_SHARK, ASK_SUPER_ANTIPOISON, H12O_SCOPE, onTradeOpen, P_TOPUP_MAX_SHARKS, pTopUpAsk, immunityWanted,
+    AREAS, inArea, inCell, zooknockWay, type ZooknockLegs,
     ARCHER_REACH, AUNT_BOX, crateRoute, crateSteps, entersSleepingZone, SLEEPING_DETOURS, sleepingDetour, GUARD_REACH, legPrayerFor, M_TOPUP_TILE, mLegSize, mTopUpSharks, NO_DWELL, pathTiles, pLegSize, POSTED_ARCHERS, prayerRuns, receiveLeg, RELIGIOUS_GUARDS, SLEEPING_ZONE, tilePrayer, TOPUP_TRIES, TOPUP_WAIT, tradeIdle, type Receive, nextBananaTree, SUPER_IMMUNE_TICKS, offAtoll, patrolLeavesLane, SEGMENT_EATING, topUpWanted, resolveOptions, REWARD_ITEMS, seg, segmentName, SEGMENTS, stepId, steps, templeLeft, treeRouteRefusal, yRoom, type MmContext,
 } from './monkey-madness';
 import { slotNeed } from './segments';
@@ -1118,6 +1119,107 @@ describe('the atoll top-ups (H12o)', () => {
         s = stub([okReceive]);
         expect(await drive(sdk, receiveLeg(sdk as never, 'Helper', 'M', mLegSize, { receive: s.receive }), 100)).toMatchObject({ ok: false, attempts: 0, reason: expect.stringMatching(/no free slot/) });
         expect(s.calls).toHaveLength(0);
+    });
+});
+
+describe("P's way to Zooknock: a knockout during H12o-P's wait (zooknockWay)", () => {
+    const at = (p: { x: number; z: number }) => ({ name: 'scored', x: p.x, z: p.z, worldX: p.x, worldZ: p.z, level: 0, hp: 42, maxHp: 42, animId: -1 }) as unknown as PlayerState;
+    const TOWN = { x: 2790, z: 2780 };
+    const LANDING = { x: 2803, z: 2724 };
+    const CELL = { x: 2772, z: 2794 };
+    const LADDER_BOTTOM = { x: 2763, z: 9104 };
+    const ZOOKNOCK = { x: 2804, z: 9145 };
+
+    /**
+     * P from the town with its legs faked as moves, and H12o-P's real leg (its helper never in view), all in P's final-stop
+     * wrap. `knock`: SCORED lands in the cell that many ticks into the leg's wait, or as the first jump ends.
+     */
+    const runP = async (knock: { duringLeg?: number; inFirstJump?: boolean } = {}) => {
+        const notes: string[] = [];
+        setStepNote(l => notes.push(l));
+        const dir = mkdtempSync(join(tmpdir(), 'mm-pko-'));
+        const t = { from: 'Helper', p: true, cueDir: dir };
+        const sdk = new FakeSdk(baseState({ tick: 1, player: at(TOWN), nearbyPlayers: [] } as Partial<BotWorldState>));
+        const move = (p: { x: number; z: number }) => sdk.tick({ player: at(p) });
+        const calls = { jump: 0, pLeg: 0, ladder: 0, walk: 0 };
+        const jumpsFromCell: boolean[] = [];
+        let legFrom = -1;
+        const legs: ZooknockLegs = {
+            roofs: async () => { throw new Error('the roofs are not on the way from the town'); },
+            jump: async () => {
+                calls.jump++;
+                jumpsFromCell.push(inCell(sdk.getState()!));
+                if (knock.inFirstJump && calls.jump === 1) {
+                    move(CELL);
+                    throw new Error('the bridge ladder did not move the player');
+                }
+                move(LANDING);
+            },
+            pLeg: async () => {
+                calls.pLeg++;
+                legFrom = sdk.getState()!.tick;
+                return h12oLeg(sdk as never, t, 'P');
+            },
+            ladder: async () => { calls.ladder++; move(LADDER_BOTTOM); },
+            // As go(): no route from the cell.
+            walk: async () => {
+                calls.walk++;
+                const p = sdk.getState()!.player!;
+                if (!inArea(sdk.getState()!, AREAS.dungeon)) throw new Error(`walk to ${ZOOKNOCK.x},${ZOOKNOCK.z} failed at ${p.worldX},${p.worldZ}`);
+                move(ZOOKNOCK);
+            },
+        };
+        let knocked = false;
+        const each = (s: BotWorldState): Partial<BotWorldState> => {
+            if (knock.duringLeg === undefined || knocked || legFrom < 0 || s.tick < legFrom + knock.duringLeg) return {};
+            knocked = true;
+            return { player: at(CELL) };
+        };
+        const error = await drive(sdk, pFinalStop(sdk as never, t, () => zooknockWay(sdk as never, legs)), 300, each).then(() => null, e => (e as Error).message);
+        setStepNote(() => {});
+        const p = sdk.getState()!.player!;
+        return {
+            error, calls, jumpsFromCell, end: { x: p.worldX, z: p.worldZ }, notes,
+            finalStops: notes.filter(l => /S15:P H12o cue stop final \(H12oP\)/.test(l)).length,
+            skipped: notes.filter(l => /S15:P top-up: not tried again after a knockout/.test(l)).length,
+            cue: readCue(dir),
+        };
+    };
+
+    test('knocked into the cell during the wait: the leg moves on, jailSafe retries from the cell, and P reaches Zooknock', async () => {
+        const r = await runP({ duringLeg: 8 });
+        // The old shape (the walk after a jailSafe errand that returned in the cell) threw here: walk to 2804,9145 failed at 2772,2794.
+        expect(r.error).toBeNull();
+        expect(r.notes.some(l => /S15:P top-up from Helper: moving on without it after 0 attempt\(s\)/.test(l))).toBe(true);
+        expect(r.jumpsFromCell).toEqual([false, true]);
+        expect(r.calls).toEqual({ jump: 2, pLeg: 1, ladder: 1, walk: 1 });
+        expect(r.end).toEqual(ZOOKNOCK);
+    });
+
+    test("the retry does not run the P leg again and writes no second final stop: one skip noted, one final stop", async () => {
+        const r = await runP({ duringLeg: 8 });
+        expect(r.calls.pLeg).toBe(1);
+        expect(r.skipped).toBe(1);
+        expect(r.finalStops).toBe(1);
+        expect(r.cue).toMatchObject({ scope: { step: 'H12oP', family: 'mule' }, stop: true, final: true });
+    });
+
+    test('with no knockout the way is unchanged: one jump, the leg, the ladder and the walk', async () => {
+        const r = await runP();
+        expect(r.error).toBeNull();
+        expect(r.calls).toEqual({ jump: 1, pLeg: 1, ladder: 1, walk: 1 });
+        expect(r.skipped).toBe(0);
+        expect(r.finalStops).toBe(1);
+        expect(r.end).toEqual(ZOOKNOCK);
+    });
+
+    test('a knockout before the leg (in the jump) still runs the leg once on the retry', async () => {
+        const r = await runP({ inFirstJump: true });
+        expect(r.error).toBeNull();
+        expect(r.jumpsFromCell).toEqual([false, true]);
+        expect(r.calls).toEqual({ jump: 2, pLeg: 1, ladder: 1, walk: 1 });
+        expect(r.skipped).toBe(0);
+        expect(r.finalStops).toBe(1);
     });
 });
 
