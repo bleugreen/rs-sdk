@@ -923,13 +923,14 @@ export interface RateWindow {
  * Why a minimum window and a deadband (44 to 46 keeps either technique), not a bare threshold: the
  * on-time share over 50 Burys has a standard error of about 0.046 near the break-even, so a bare
  * threshold re-switches on chop-to-chop noise, and each switch stops and restarts the program (a
- * re-anchor, a few ticks). Near the break-even the two loops cost the same per roll, so the deadband
- * costs nothing there; above it, at a true 0.94, plain + bury runs about 1.5 windows (some 300 ticks)
- * before the knife is back. At exactly 0.88 the knife keeps a window about half the time and plain +
- * bury returns about one window in eight: a switch every ~550 Burys, under 1% of the band's ticks in
- * restarts. The meter lives for one band's run: a resume starts on the knife with an empty window,
- * since a rate measured before the stop says nothing sure about the server now, and the early
- * switch bounds a ragged start at 7 late Burys.
+ * re-anchor, a few ticks). Simulated against a perfect chooser (knife 3 / r^2 ticks a roll, plain +
+ * bury 3.87, 8 ticks a switch): within 3.5% at every rate from 0.7 to 1.0, at most one switch per
+ * ~200 Burys (some 650 ticks) at rates from 0.88 to 0.92, where the two loops cost nearly the
+ * same, none at 0.8 or below or at 1.0; a ragged start at 0.7 costs about 60 ticks before the early
+ * switch. A 100-Bury window switches about a quarter as often but pays some 45 ticks more at every
+ * ragged start. The meter lives for one band's run: a resume starts on the knife with an empty
+ * window, since a rate measured before the stop says nothing sure about the server now, and the
+ * early switch bounds a ragged start at 7 late Burys.
  */
 export class OnTimeMeter {
     technique: SegmentTechnique = 'knife';
