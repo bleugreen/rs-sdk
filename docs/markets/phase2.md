@@ -148,21 +148,42 @@ of the npc (`server/engine/src/engine/entity/Player.ts` `tryInteract`), never as
 `npc_setmode(playerface)` and `npc_setmode(null)` (`thieving.rs2` `fail_pick_pocket`) set and reset the npc's own
 interaction (`NpcOps.ts` `NPC_SETMODE`), which no other player's op reads.
 
-**What the ramp measured instead: where each login stood in its bank cycle.** A knight banks for food once on
-arrival and then whenever it carries `bankAt` (50,000) coins, at ~18 gp a tick about every 21 minutes. In run 1
-every step-1 knight's deposit trip came 20.5-22.4 minutes after it arrived, inside step 2's hold (18-33 minutes after
-arrival); step 2's newcomers, measured 5-15 minutes after theirs, had none due. A 15-minute hold is shorter than the
-cycle, so a wall-clock rate depends on which logins' trips fall inside it: the incumbents' -11% (and the live
--4.6%) is that trip, and the newcomers' arrival is the rest of the live 0.848. An arrival's gp a tick by minute
-(median of 16): 0.2, 7.3, 12.2, 13.2, 15.2 in minutes 0-4, about 18 from minute 6.
+**What the ramp measured instead: coins dropped on the ground after every bank visit.** A knight banks for food on
+arrival and then whenever it carries `bankAt` (50,000) coins, at ~18 gp a tick about every 21 minutes. The bank
+visit deposited everything and withdrew sharks with `'fill'`, so the pack went back with 28 sharks and no coins
+stack, and a success into a full pack drops its coins under the player (`inv_add`'s overflow,
+`server/engine/src/engine/entity/../script/handlers/InvOps.ts` `INV_ADD`). The knight kept pickpocketing (the
+experience still came) and dropped every 50 until its next eat freed a slot: in a success window it eats only at
+HP 20 or under (`shouldEat`, a 20-heal shark at HP 40), ~7 failures away. The walk itself is short (the knights
+spend 98.4% of their ticks at the knights, bank trips and walks the rest); the dropped coins were not.
 
-**The ramp now measures each login at the knights, past a warm-up** (`ramp.ts` `holdRates`, `workRate`): a login
+| After a bank visit, minutes to coins carried again | Median | p90 | Visits |
+|---|---|---|---|
+| run 1, `'fill'` | 2.33 | 3.33 | 44 |
+| run 2, `'fill'` | 2.17 | 3.34 | 48 |
+| run 3, all but one slot | 0.33 (one 20 s ledger interval, the measure's floor) | 0.33 | see below |
+
+That is the ramp's puzzle. In run 1 every step-1 knight's deposit came 20.5-22.4 minutes after it arrived, inside
+step 2's hold (18-33 minutes after arrival), and its ~2.3 minutes of dropped coins are the incumbents' -11%; live,
+the same visit inside the 06:36-06:51Z hold is the incumbents' -4.6%. The arrival's food visit is most of the
+warm-up and the newcomers' share of the live 0.848: an arrival's gp a tick by minute (median of 16, run 1) was 0.2,
+7.3, 12.2, 13.2, 15.2 in minutes 0-4 and ~18 from minute 6; with the fix (run 3, 8 arrivals so far) 14.4 in minute 0
+and ~18 from minute 1. It cost every bank visit, live too: ~2.2 minutes in every ~21, about a tenth of the knights'
+income.
+
+**The fix** (`pickpocket.ts` `foodToWithdraw`): the bank visit counts the slots still taken after the deposit and
+withdraws food into all but `reserve` of the free ones: 1 at the knights (coins), 2 at the paladins (coins, chaos
+runs), 3 at the heroes (coins, blood and death runes; the rare unstackable loot takes the slots the eats free).
+
+**The ramp measures each login at the knights, past a warm-up** (`ramp.ts` `holdRates`, `workRate`): a login
 counts as working only `warmupMinutes` (5) after it reached the method, its rate is measured from then, and the
 rate is its coins over the ticks it spent in `pickpocket.ts`'s thieve errand, so the bank trips, the walks back and
 the roams to a spawn (door recoveries included) are left out. A login with under half the window at the knights,
-or measured over under half the hold, is left out. The step rule uses that rate, which is what crowding would
-lower; each decision also carries the gross rate over wall time (`gross`), the income figure the plan's
-arithmetic uses, and the incumbents' own ratio to their first-step rates (`incumbents`).
+or measured over under half the hold, is left out. With the dropped coins fixed at the source these guards are
+small (the walks are ~1.6% of the ticks, the arrival about a minute), but they keep a hold from depending on which
+logins' visits fall inside it. The step rule uses that rate, which is what crowding would lower; each decision also
+carries the gross rate over wall time (`gross`), the income figure the plan's arithmetic uses, and the incumbents'
+own ratio to their first-step rates (`incumbents`).
 
 **Live, still unexplained:** two step-2 newcomers (a09, a15) read ~11.5 gp a tick in the re-measured window against
 the others' ~15.7. The door trap (rs/736, 'Stuck behind a door') held a07, a08 and a10, from 06:55; all 16 followed
