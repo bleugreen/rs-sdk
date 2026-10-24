@@ -68,7 +68,7 @@ import { patchMethod } from './runner/fence';
 import { buildChain, chainProbes, missingOnPath, muleCueDir, resolveFrom, sliceUntil, type ChainOptions, type ChainStep, type CueSink, type RunConfig } from './runner/chain';
 import { exitStopIsFinal, prepareCueDir, RunCues } from './runner/cue-keeper';
 import { deliveryOwnerFor } from './runner/delivery-owner';
-import { dropRecover } from './runner/drop-relog';
+import { dropRecovery } from './runner/drop-relog';
 import { LOST_AFTER_TICKS, sessionLink } from './runner/resume';
 import { RelogBudget } from './runner/relog-budget';
 import { HandOffRecord } from './runner/handoff';
@@ -544,15 +544,20 @@ export async function runChainOnSession(session: Session, o: ChainRunOptions): P
     });
     const unCues = o.cues?.attach(session.sdk);
     // With the drop recovery on, a browser page's own in-game flag decides a drop: the link asks it
-    // (a dropped page publishes nothing) and the watchdog stands down for it (drop-relog relogs in page).
+    // (a dropped page publishes nothing), and while a recovery runs the watchdog stands down for an
+    // out page (drop-relog relogs it in page). With no recovery running nothing would, so it does not.
     const cdp = o.relogs && session.client === 'browser' ? cdpUrl(session.env) : undefined;
     const page = cdp ? () => pageInGame(cdp, session.name).catch(() => null) : undefined;
+    const link = sessionLink(session, page ? { pageInGame: page } : {});
+    const recovery = o.relogs ? dropRecovery(session, o.relogs, link, line => console.log(line)) : null;
     const wd = startWatchdog(session, {
         onEvent: e => console.log(`[watchdog] ${e.verdict}: ${e.reason}`),
         // The link (LOST_AFTER_TICKS) sees a stale tick first and drop-relog pauses the watchdog; at the
         // same bound the watchdog's logout and relaunch won the race on the lab (rs/511).
         ...(o.relogs ? { staleTicks: LOST_AFTER_TICKS + WATCHDOG_AFTER_LINK_TICKS } : {}),
-        ...(page ? { standDown: async () => ((await page()) === false ? 'the page is out of the world: run.ts relogs it in page' : null) } : {}),
+        ...(page && recovery
+            ? { standDown: async () => (recovery.acting() && (await page()) === false ? 'the page is out of the world: the running drop recovery relogs it in page' : null) }
+            : {}),
     });
     const tabMem = startRunTabMemory(session, log, o.tabMemory);
 
@@ -564,12 +569,11 @@ export async function runChainOnSession(session: Session, o: ChainRunOptions): P
         return r;
     };
     const sig = signalShutdown(tag, leave, o.signals);
-    const link = sessionLink(session, page ? { pageInGame: page } : {});
     let result: AttemptResult | null = null;
     try {
         result = await untilTerminated(runAttempt(session, o.chain, {
             log, account, link, reservation: o.reservation, probes,
-            ...(o.relogs ? { recover: dropRecover(session, o.relogs, link, line => console.log(line)) } : {}),
+            ...(recovery ? { recover: recovery.recover } : {}),
             stopAsked: sig.stopAsked, gateStop: () => null, logout: () => leave(), label: o.label ?? 'run',
             ...(o.from !== undefined ? { from: o.from } : {}),
             onEvent: e => console.log(`[resume] ${JSON.stringify(e)}`),
