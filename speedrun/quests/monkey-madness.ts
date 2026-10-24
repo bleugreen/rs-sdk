@@ -41,7 +41,7 @@ import { solveOnPanel } from '../lib/puzzle';
 import { currentTick, waitTicks, waitUntil, type Pred } from '../lib/wait';
 import { chebyshev, findLoc, invCount, messagesSince, pos, waitForNpc, type StateLike } from '../lib/world';
 import type { Check, Observed, Step, StepContext } from '../runner/step';
-import { slotNeed, slotsCover, type QuestItem } from './segments';
+import { drinkPrayerTo, prayerCovers, slotNeed, slotsCover, type QuestItem } from './segments';
 import { cueDir, CueWriter, writeTopUpAsk, type AskItem, type CueScope } from '../helpers/altar-cue';
 import { itemLabel, MANIFEST, parseLedger } from '../tools/slot-ledger';
 import { readFileSync } from 'fs';
@@ -836,6 +836,12 @@ let eating: { below: number; topUpBelow?: number } = { below: SEGMENT_EATING.oth
 
 /** Drink a prayer potion below this many points while a prayer is on (a dose restores 30 at Prayer 94). */
 export const DRINK_BELOW = 20;
+
+/**
+ * Prayer points X needs for the Jungle Demon under Protect from Magic, counting held doses: the five
+ * measured kills took 94 down to 30-50, 44-64 points (rs/201), with margin (rs/687's budget).
+ */
+export const X_PRAYER = 70;
 
 // ------------------------------------------------------------------ actions
 
@@ -2948,8 +2954,11 @@ const BODIES: Partial<Record<string, Body>> = {
     },
     X: {
         preconditions: () => true,
-        pre: o => all(holding(MM_OBJ.sigil, o.bow), s => invCount(s, MM_OBJ.runeArrow) > 0 || s.equipment.some(i => i.id === MM_OBJ.runeArrow) || 'no rune arrows'),
-        run: (ctx, o) => demonFight(ctx, o.note, o.bow),
+        pre: o => all(holding(MM_OBJ.sigil, o.bow), s => invCount(s, MM_OBJ.runeArrow) > 0 || s.equipment.some(i => i.id === MM_OBJ.runeArrow) || 'no rune arrows', prayerCovers('S15:X for the Jungle Demon', X_PRAYER)),
+        async run(ctx, o) {
+            await drinkPrayerTo(ctx.sdk, DRINK_BELOW);
+            await demonFight(ctx, o.note, o.bow);
+        },
     },
     P: {
         preconditions: all(human, holding(MM_OBJ.talisman, MM_OBJ.monkeyBones), s => inArea(s, AREAS.atoll) || inArea(s, AREAS.dungeon) || 'not on the atoll or in its dungeon'),

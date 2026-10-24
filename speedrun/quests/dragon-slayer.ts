@@ -56,7 +56,7 @@ import { runTo, spellUse, sumUse, teleport, type Area, type RuneUseTable, type T
 import { waitTicks, waitUntil, type Pred } from '../lib/wait';
 import { chebyshev, configId, findLoc, invCount, invItem, opIndex, pos, waitForNpc, worn, type LocQuery } from '../lib/world';
 import type { Step, StepContext } from '../runner/step';
-import { allOf, baseLevels, kitSegment, kitWant, questSteps, slotsCover, talkShape, type KitItem, type QuestItem, type QuestOptions, type Segment } from './segments';
+import { allOf, baseLevels, drinkPrayerTo, kitSegment, kitWant, prayerCovers, prayerReserve, questSteps, slotsCover, talkShape, type KitItem, type QuestItem, type QuestOptions, type Segment } from './segments';
 
 export const quest = 'dragon' as const;
 export const stepId = 'S26';
@@ -77,6 +77,19 @@ export interface Options extends QuestOptions {
 }
 
 export const ELVARG_PRAYERS: readonly PrayerName[] = ['protect_from_melee', 'ultimate_strength', 'incredible_reflexes'];
+
+/**
+ * Prayer points Elvarg's fight needs under Protect from Melee alone, counting held doses: 1 point per
+ * 5 ticks (drain effect 12 against resistance 60, prayers.enum and prayer.rs2's timer) over the
+ * longest fight, ~140 ticks (rs/378's L at 168). L's precondition (rs/687's budget).
+ */
+export const ELVARG_PROTECT_PRAYER = 30;
+/**
+ * With Ultimate Strength and Incredible Reflexes as well the drain is three times that, 0.6 a tick:
+ * the measured fights' 85-108 ticks take 51-65. Below this the fight keeps Protect from Melee alone,
+ * so the protection never runs out mid-fight for the sake of the boosts.
+ */
+export const ELVARG_ALL_PRAYER = 70;
 
 // ------------------------------------------------------------------ items
 
@@ -819,6 +832,18 @@ export function usablePrayers(s: BotWorldState, opts: Options): PrayerName[] {
     return (opts.elvargPrayers ?? ELVARG_PRAYERS).filter(p => PRAYER_LEVELS[p] <= level);
 }
 
+/** The prayers Elvarg's fight turns on: the usable ones, or Protect from Melee alone when the pool cannot carry all three. */
+export function elvargPrayerList(s: BotWorldState, opts: Options): PrayerName[] {
+    const list = usablePrayers(s, opts);
+    if (prayerReserve(s) >= ELVARG_ALL_PRAYER || !list.includes('protect_from_melee')) return list;
+    return ['protect_from_melee'];
+}
+
+/** L's prayer precondition: none once the quest is complete (a resume for the key drop) or with no protect prayer in use. */
+function elvargPrayerCheck(opts: Options): (s: BotWorldState) => true | string {
+    return s => (questStatus(s, quest) === 'complete' || !usablePrayers(s, opts).includes('protect_from_melee') ? true : prayerCovers('S26:L for Elvarg', ELVARG_PROTECT_PRAYER)(s, {}));
+}
+
 async function prayers(sdk: Sdk, list: readonly PrayerName[], on: boolean): Promise<void> {
     const todo = list.filter(p => prayerActive(sdk.getState()!, p) !== on);
     if (todo.length) await Promise.all(todo.map(p => setPrayer(sdk, p, on)));
@@ -834,7 +859,8 @@ async function fightElvarg(where: string, ctx: Ctx, opts: Options): Promise<Figh
         await runToArea(where, sdk, { ...TILES.lairGateOutside, tol: 1 }, 'Elvarg\'s gate');
         await operate(where, sdk, LOCS.lairGate, /^open$/i, s => inBox(s, AREAS.lair), { maxTicks: 30 });
     }
-    const list = usablePrayers(sdk.getState()!, opts);
+    await drinkPrayerTo(sdk, ELVARG_ALL_PRAYER);
+    const list = elvargPrayerList(sdk.getState()!, opts);
     const protect = list.includes('protect_from_melee') ? ('protect_from_melee' as const) : undefined;
     await prayers(sdk, list, true);
     const died0 = sdk.getState()!.player?.respawnCount ?? 0;
@@ -1034,7 +1060,7 @@ export function steps(opts: Options = {}): Step<any>[] {
         {
             letter: 'L', label: 'elvarg', logoutSafe: true,
             // Complete is a start too: a run stopped after the kill resumes here for the key drop.
-            preconditions: s => ok(mapWithNed(s) || questStatus(s, quest) === 'complete', 'the Crandor map is not with Ned'),
+            preconditions: allOf(s => ok(mapWithNed(s) || questStatus(s, quest) === 'complete', 'the Crandor map is not with Ned'), elvargPrayerCheck(opts)),
             run: ctx => elvarg(ctx, opts),
             postconditions: allOf(
                 s => ok(questStatus(s, quest) === 'complete', 'Dragon Slayer is not complete'),
