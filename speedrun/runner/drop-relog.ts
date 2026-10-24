@@ -10,11 +10,19 @@
 // - The operator holds it (tools/relog-now.ts): run.ts never starts its own; it waits for the lock
 //   to go, then finds the page in the world and adopts that session. relog-now recorded it.
 // - The page is back in the world when run.ts looks (a relog by hand that finished first, or the
-//   page's own reconnect): adopted and recorded as a manual relog, the same budget.
+//   page's own reconnect): adopted and recorded as an adopt, which no budget is charged for: no
+//   login was sent and SCORED never left the world.
 // - Otherwise run.ts takes the lock, reads the page once more under it, checks the budget, logs in,
 //   records the relog with the step and tick of the drop, and lets the lock go. relog-now refuses
 //   while run.ts holds it.
 // Past the budget the recover throws RelogBudgetSpent and the run stops with that reason.
+//
+// A login refused because the account is still logged in (session.ts ALREADY_LOGGED_IN) is waited
+// out, the lock held: a dropped socket that went silent without closing keeps its player in the
+// world until the server's TIMEOUT_NO_RESPONSE (1,000 ticks), and every login meanwhile gets that
+// reply. run.ts retries every ALREADY_IN_RETRY_MS for up to ALREADY_IN_BOUND_MS from the first
+// refusal and records one unplanned relog when a login lands; past the bound it fails. The watchdog
+// stays paused throughout and stands down for the out page, as for any running recovery.
 //
 // Every wait here keeps asking the page (rs/659). Waiting on the session alone deadlocked attempt 3:
 // an adopted page was logged out a tick later, the adopt wait watched only for ticks, and the
@@ -32,26 +40,32 @@
 // (n x tickMs(), lib/wait.ts's idle convention).
 
 import { demoOrigin, samplePlayerCount } from '../lib/demo-status';
-import { adoptSession, cdpUrl, gatewayStatus, login, pageWorld, sdkConnected, type Session } from '../lib/session';
+import { adoptSession, ALREADY_LOGGED_IN, alreadyLoggedIn, cdpUrl, gatewayStatus, login, pageWorld, sdkConnected, type Session } from '../lib/session';
 import { pageInGame } from '../lib/tab';
 import { sleep, tickMs } from '../lib/wait';
 import { RelogBudgetSpent, type RelogBudget, type RelogEntry } from './relog-budget';
+import { pageHoldTicks } from './page-hold';
 import type { Link } from './resume';
 
 /** Ticks run.ts waits for an operator's relog to let the lock go, and for an adopted session to tick (relog-now's login is bounded at 90 s = 225 ticks at 400 ms). */
 export const ADOPT_WAIT_TICKS = 300;
-/**
- * Ticks a page that still says it is in game, with no tick advancing, is given to settle: a page whose
- * socket died notices it only some seconds later (about 7 s, 17 ticks at 400 ms, on the lab), then
- * either reconnects itself (adopted) or falls to the title screen (relogged here).
- */
-export const SETTLE_TICKS = 40;
 /** Ticks between the page reads while the recovery waits for the session to come back. */
 export const RECHECK_TICKS = 3;
 /** Ticks the recovery waits for a session to come back by other means (the watchdog's path, a world or gateway outage): 30 min at 400 ms. */
 export const RESTORE_WAIT_TICKS = 4_500;
 /** Times one recovery relogs a session that fell out of the world again while it waited, before it gives up. */
 export const MAX_FALLS = 2;
+/**
+ * Wall ms between logins refused as already logged in: the client's own "Try again in 60 secs" and a
+ * margin. Wall time, as the hold is: nothing publishes ticks while the page is out.
+ */
+export const ALREADY_IN_RETRY_MS = 65_000;
+/**
+ * Wall ms from the first such refusal past which no retry starts: the server's 1,000-tick
+ * TIMEOUT_NO_RESPONSE at 400 ms (6.7 min) and a margin. Measured on a block of the scored tab's
+ * socket (no FIN): every login after a 20 s hold was refused until the old player timed out.
+ */
+export const ALREADY_IN_BOUND_MS = 8 * 60_000;
 
 export interface DropRelogDeps {
     /** The page's own in-game flag; null when there is no tab or no DevTools to ask. */
@@ -62,7 +76,10 @@ export interface DropRelogDeps {
     gatewayUp(): Promise<boolean>;
     /** session.expectInWorld: false while someone's logout runs (the watchdog's), whose out page is not a drop. */
     expectInWorld(): boolean;
-    /** session.ts login in page, the token URL as fallback; resolves once in the world with an advancing tick. */
+    /**
+     * session.ts login in page, the token URL as fallback; resolves once in the world with an
+     * advancing tick. A refusal as already logged in throws at once (session.ts LoginRefused).
+     */
     login(): Promise<{ via: 'page' | 'launch'; wallMs?: number }>;
     /** session.ts adoptSession: begin the session the page is in (a new session id, expectInWorld on, the watchdog resumed). */
     adopt(tickBase: number | undefined): void;
@@ -145,17 +162,39 @@ export async function recoverDrop(budget: Budget, deps: DropRelogDeps, reason: s
     };
 
     const adopt = async (how: string, charged: RelogEntry | null): Promise<DropRelogResult> => {
-        let entry = charged ?? budget.entries().find(e => e.by === 'operator' && e.at >= since) ?? null;
-        if (!entry) {
-            const room = budget.check('manual');
-            if (room !== true) throw new RelogBudgetSpent(`${room}; the page was found back in the world after ${where}`);
-            entry = budget.record({ kind: 'manual', by: 'run', step: at.step, tick: at.tick, via: 'adopted', meta: { reason, how } });
-        }
+        // The operator's relog found done is its own (charged) entry; an adopt with no login behind it
+        // is recorded uncharged, whatever the budget holds.
+        const entry =
+            charged ??
+            budget.entries().find(e => e.by === 'operator' && e.at >= since) ??
+            budget.record({ kind: 'adopt', by: 'run', step: at.step, tick: at.tick, via: 'adopted', meta: { reason, how } });
         const tb = entry.meta?.tickBase;
         deps.adopt(typeof tb === 'number' ? tb : undefined);
         if ((await untilBack(ADOPT_WAIT_TICKS, 'the adopt')) === 'out') return fellOut(`the adopt (${how})`, entry);
         deps.log?.(`[relog] adopted (${how}) after ${where}; ${budget.describe()}`);
         return { outcome: 'adopted', entry, why: how };
+    };
+
+    /** deps.login, waiting out the server's hold on the dropped player (ALREADY_IN_*); any other failure throws as it came. */
+    const loginPastHold = async (): Promise<Awaited<ReturnType<DropRelogDeps['login']>> & { refusals: number; heldMs: number }> => {
+        let first: number | null = null;
+        for (let refusals = 0; ; refusals++) {
+            try {
+                const r = await deps.login();
+                return { ...r, refusals, heldMs: first === null ? 0 : deps.now() - first };
+            } catch (e) {
+                if (!alreadyLoggedIn(e)) throw e;
+                const now = deps.now();
+                first ??= now;
+                const heldS = Math.round((now - first) / 1000);
+                if (now - first + ALREADY_IN_RETRY_MS > ALREADY_IN_BOUND_MS) {
+                    throw new Error(`${e.message}; refused ${refusals + 1} times over ${heldS} s after ${where}, past the ${ALREADY_IN_BOUND_MS / 60_000}-min bound on the server's hold of the dropped player`);
+                }
+                deps.log?.(`[relog] the server still holds SCORED in the world after ${where} (reply ${ALREADY_LOGGED_IN}, refusal ${refusals + 1}, ${heldS} s): retrying in ${ALREADY_IN_RETRY_MS / 1000} s`);
+                const retryAt = now + ALREADY_IN_RETRY_MS;
+                while (deps.now() < retryAt) await deps.waitTicks(RECHECK_TICKS);
+            }
+        }
     };
 
     const relogInPage = async (charged: RelogEntry | null): Promise<DropRelogResult> => {
@@ -177,14 +216,17 @@ export async function recoverDrop(budget: Budget, deps: DropRelogDeps, reason: s
             try {
                 if ((await deps.pageInGame()) === true) found = true;
                 else {
-                    // An adopt of ours that fell out is the one login this drop is charged; the relog takes its entry over.
+                    // An adopt of ours that fell out was never charged: this login is, on the adopt's entry, so one drop is one entry.
                     const reuse = charged?.by === 'run' ? charged : null;
-                    if (!reuse) {
-                        const room = budget.check('unplanned');
-                        if (room !== true) throw new RelogBudgetSpent(`${room}; ${where} (${reason})`);
-                    }
-                    const r = await deps.login();
-                    const meta = { reason, ...(r.wallMs !== undefined ? { loginWallMs: r.wallMs } : {}), ...(reuse ? { adoptedFirst: { at: reuse.at, ...reuse.meta } } : {}) };
+                    const room = budget.check('unplanned');
+                    if (room !== true) throw new RelogBudgetSpent(`${room}; ${where} (${reason})`);
+                    const r = await loginPastHold();
+                    const meta = {
+                        reason,
+                        ...(r.wallMs !== undefined ? { loginWallMs: r.wallMs } : {}),
+                        ...(r.refusals ? { alreadyLoggedIn: { refusals: r.refusals, heldMs: r.heldMs } } : {}),
+                        ...(reuse ? { adoptedFirst: { at: reuse.at, ...reuse.meta } } : {}),
+                    };
                     const fields = { kind: 'unplanned' as const, by: 'run' as const, step: at.step, tick: at.tick, via: r.via, meta };
                     const entry = reuse ? budget.amend(reuse, fields) : budget.record(fields);
                     deps.log?.(`[relog] in-page relog after ${where} (${reason}): in via ${r.via}${reuse ? ', on the adopt\'s entry' : ''}; ${budget.describe()}`);
@@ -198,8 +240,11 @@ export async function recoverDrop(budget: Budget, deps: DropRelogDeps, reason: s
     };
 
     if (page === true) {
-        // In game by its own word: ticking again (it reconnected itself), or not yet aware its socket died.
-        for (let t = 0; t < SETTLE_TICKS; t++) {
+        // In game by its own word: ticking again (its socket resumed, or it reconnected itself), or still
+        // holding a silent socket. Settle for the page's hold window (page-hold.ts): nothing is sent that
+        // could fight the original socket; the page's own timeout reads it out of the world by then.
+        const settle = pageHoldTicks();
+        for (let t = 0; t < settle; t++) {
             if (deps.advanced()) return adopt('the page was back in the world, ticking', null);
             const p = await deps.pageInGame();
             if (p === false) break;
@@ -212,10 +257,10 @@ export async function recoverDrop(budget: Budget, deps: DropRelogDeps, reason: s
         }
         if ((await deps.pageInGame()) !== false) {
             if (deps.advanced()) return adopt('the page was back in the world, ticking', null);
-            const what = `the watchdog path (the page said in game but did not tick for ${SETTLE_TICKS} ticks)`;
+            const what = `the watchdog path (the page said in game but did not tick for ${settle} ticks)`;
             deps.resumeWatchdog();
             if ((await untilBack(RESTORE_WAIT_TICKS, what)) === 'out') return fellOut(what, null);
-            return { outcome: 'default', why: `the page says in game but has not ticked for ${SETTLE_TICKS} ticks: the watchdog path` };
+            return { outcome: 'default', why: `the page says in game but has not ticked for ${settle} ticks: the watchdog path` };
         }
         deps.log?.(`[relog] the page fell out of the world after ${where}`);
     }
@@ -243,7 +288,7 @@ export function liveDropDeps(session: Session, link: Link, log: (line: string) =
         gatewayUp: async () => sdkConnected(session) && (await gatewayStatus(session)) !== null,
         expectInWorld: () => session.expectInWorld,
         login: async () => {
-            const r = await login(session, { inPage: true });
+            const r = await login(session, { inPage: true, stopOnReply: [ALREADY_LOGGED_IN] });
             return { via: r.via, wallMs: r.wallMs };
         },
         adopt: tickBase => adoptSession(session, tickBase),
