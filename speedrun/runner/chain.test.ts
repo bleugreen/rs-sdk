@@ -1114,7 +1114,8 @@ describe('a placed hand-off stays done once the band after it consumes what it b
 
     // H13 gives SCORED's ranged and S15 kit at the mage-arena landing; S18 then fletches rune arrows and
     // pickpockets coins, and H23 brings a magic shortbow and a superantipoison(4). H13's next milestone is
-    // S16's pool, done only in the chamber, so the record carries H13 past S16 (rs/577).
+    // S16's pool, done only in the chamber, so the record carries H13 past S16 (rs/577); the shortbow and
+    // superantipoison count as a rollback only until H23, which brings them, is recorded.
     const h13 = handOffFrom(MANIFEST_TEXT, 'H13');
     const h13Step = (record: HandOffRecord) => buildChain(CONFIG, { cues: recorder().cues, handOffs: record }).find(s => s.name === 'H13 hand-off')!;
     const given = (name: string, n: number): Held => [name, n, h13.give.find(g => g.name === name)!.ids?.[0]];
@@ -1127,8 +1128,11 @@ describe('a placed hand-off stays done once the band after it consumes what it b
         };
         const afterS18 = at(KNIGHTS.x, KNIGHTS.z, { held: [given('coins', 22450), ['shark', 2]], worn: [given('rune arrow', 570)], skills: [level('Thieving', 99)] });
         const afterH23 = at(3105, 3935, { held: [fromH23(/^magic shortbow$/), fromH23(/^superantipoison/), ['shark', 12]], worn: [given('rune arrow', 570)] });
-        const s = h13Step(marked('H13'));
+        const record = marked('H13');
+        const s = h13Step(record);
         expect(s.done!(new Observation(afterS18), {})).toBe(true);
+        expect(s.done!(new Observation(afterH23), {})).toBe(false);
+        record.mark('H23', 2000);
         expect(s.done!(new Observation(afterH23), {})).toBe(true);
     });
 

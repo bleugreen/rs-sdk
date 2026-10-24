@@ -12,6 +12,7 @@ import {
     askFor, giveSpecs, handOffFrom, handOffMissing, handOffPre, handOffRoom, handOffStep, HandOffRecord, HANDOFFS_FILE, itemPattern, loadHandOff, planHandOff, resolvePlan, rollbackWitnesses, runHandOff, runHandOffOnCue, slotPlan, toUnequip, tradeKind, tradeLanded,
     type Given, type HandOffPlan, type HandOffReport,
 } from './handoff';
+import { PLACEMENT } from './chain';
 import { Observation, resolveResume } from './resume';
 import type { Step, StepContext } from './step';
 
@@ -940,28 +941,39 @@ describe('a cue-served hand-off (the cannon holder): the cue, the partner in sig
     });
 });
 
-describe('rollbackWitnesses: the record clause reads only the gives no later ledger row brings back (rs/577)', () => {
+describe('rollbackWitnesses: what the record clause reads as a rollback (rs/577)', () => {
     const text = readFileSync(MANIFEST, 'utf8');
     const rows = parseLedger(text).rows;
     const later = (id: string) => rows.slice(rows.findIndex(r => r.row === id) + 1);
-    const h13 = handOffFrom(text, 'H13');
+    const placed = (row: string) => PLACEMENT[row] !== undefined;
+    const witnesses = (id: string) => rollbackWitnesses(handOffFrom(text, id), later(id), placed).map(w => [w.give.name, w.until]);
 
-    test("H13: S18's rune arrows and coins and H23's magic shortbow and superantipoison(4) come back; the rest stays the evidence", () => {
-        expect(h13.give.map(g => g.name)).toEqual(['magic shortbow', 'rune arrow', 'amulet of magic', 'coins', 'diamond', 'superantipoison', 'fire rune', 'khazard helmet', 'khazard armour']);
-        expect(rollbackWitnesses(h13, later('H13')).map(g => g.name)).toEqual(['amulet of magic', 'diamond', 'fire rune', 'khazard helmet', 'khazard armour']);
+    test("H13: S18's rune arrows and coins are no evidence; H23's shortbow and superantipoison wait for H23; the rest always", () => {
+        expect(witnesses('H13')).toEqual([
+            ['magic shortbow', ['H23']], ['amulet of magic', []], ['diamond', []], ['superantipoison', ['H23']], ['fire rune', []], ['khazard helmet', []], ['khazard armour', []],
+        ]);
     });
 
-    test('with nothing after it, every give and drop is evidence; H11r, whose cannon H23 brings back whole, keeps none', () => {
-        expect(rollbackWitnesses(h13, []).map(g => g.name)).toEqual(h13.give.map(g => g.name));
-        expect(rollbackWitnesses(handOffFrom(text, 'H11r'), later('H11r'))).toEqual([]);
+    test("H14's knife waits for H18 and H23 (rs/562 A's rollback case); H11r's cannon for H23; with nothing after it, every give and drop", () => {
+        expect(witnesses('H14')).toEqual([['knife', ['H18', 'H23']]]);
+        expect(witnesses('H11r').every(([, until]) => (until as string[]).join() === 'H23')).toBe(true);
+        const h13 = handOffFrom(text, 'H13');
+        expect(rollbackWitnesses(h13, [], placed).map(w => w.give.name)).toEqual([...h13.give, ...h13.drop].map(g => g.name));
     });
 
-    test('a recorded hand-off: done with a returned give held only when built with the later rows', () => {
+    test('a recorded hand-off with a returned item held: done only with the witnesses, and H14 only once H18 is recorded', () => {
         const record = new HandOffRecord(mkdtempSync(join(tmpdir(), 'handoff-witness-')), 'attempt-1');
+        const step = (id: string, w: boolean) => handOffStep(handOffFrom(text, id), { partner: 'p', record, ...(w ? { witnesses: rollbackWitnesses(handOffFrom(text, id), later(id), placed) } : {}) });
+        const holding = (id: string, name: string, count: number) => {
+            const g = handOffFrom(text, id).give.find(x => x.name === name)!;
+            return new Observation(baseState({ inventory: [{ slot: 0, id: g.ids?.[0] ?? 995, name: name[0]!.toUpperCase() + name.slice(1), count, optionsWithIndex: [] }] }));
+        };
         record.mark('H13', 1);
-        const coins = h13.give.find(g => g.name === 'coins')!;
-        const s = baseState({ inventory: [{ slot: 0, id: coins.ids?.[0] ?? 995, name: 'Coins', count: 22450, optionsWithIndex: [] }] });
-        expect(handOffStep(h13, { partner: 'p_h13', record }).done!(new Observation(s), {})).toBe(false);
-        expect(handOffStep(h13, { partner: 'p_h13', record, laterRows: later('H13') }).done!(new Observation(s), {})).toBe(true);
+        expect(step('H13', false).done!(holding('H13', 'coins', 22450), {})).toBe(false);
+        expect(step('H13', true).done!(holding('H13', 'coins', 22450), {})).toBe(true);
+        record.mark('H14', 2);
+        expect(step('H14', true).done!(holding('H14', 'knife', 1), {})).toBe(false);
+        record.mark('H18', 3);
+        expect(step('H14', true).done!(holding('H14', 'knife', 1), {})).toBe(true);
     });
 });

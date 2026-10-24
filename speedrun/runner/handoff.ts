@@ -43,11 +43,12 @@
 //   tell that from a hand-off not yet traded: the band's own `inProgress` already holds on arrival
 //   (Thieving 57 at the knights, Fishing 78 at the river). A demo rollback across a swap hands its
 //   given items back, which the second clause sees; across a receive-only trade it leaves the next
-//   step's own kit check to refuse. With the ledger's later rows (`laterRows`, chain.ts) the second
-//   clause reads only the gives none of them brings back (rollbackWitnesses): S18 fletches rune arrows
-//   and pickpockets coins after H13 gave its own, which would read as a rollback for the rest of the
-//   attempt, and H13's next milestone (S16's pool) reads only the chamber, so nothing else holds it.
-//   A row whose every give comes back later is left to the record, as a receive-only row is.
+//   step's own kit check to refuse. Later rows bring some given items back, and those must not read
+//   as a rollback for the rest of the attempt (S18 fletches rune arrows and pickpockets coins after
+//   H13 gave its own, and H13's next milestone, S16's pool, reads only the chamber). So the second
+//   clause reads the row's `witnesses` (rollbackWitnesses, chain.ts): an item a later band makes is
+//   no evidence, since the record cannot date the band; an item a later placed hand-off brings back
+//   is evidence until that hand-off is recorded (H14's knife until H18).
 // A logout after the trade landed but before the equip changes leaves `inProgress`, entered
 // through `resume`, which applies the equip only. A logout mid-trade refunds both sides, and the
 // step runs again.
@@ -372,14 +373,23 @@ function bringsBack(g: ItemMatch, e: InEntry, at: string): boolean {
     return overlaps(g, m) || g.pattern.test(gameName(e.name)) || m.pattern.test(gameName(g.name));
 }
 
+/** A give or drop the record clause reads as a rollback when held, unless a hand-off in `until` is recorded. */
+export interface RollbackWitness {
+    give: Given;
+    /** The later recorded hand-offs that bring it back: once one of them is in the record, holding it is no rollback. */
+    until: string[];
+}
+
 /**
- * What a rollback across `plan`'s trade would hand back that no row of `later` (the ledger's rows after
- * it, in run order) brings in again: the record clause's evidence of a rollback. Every give and drop
- * when nothing later returns any.
+ * The evidence of a rollback across `plan`'s trade, from `later` (the ledger's rows after it, in run
+ * order): each give and drop, except one a later row the record never marks (a band, a module's own
+ * trade) brings back, which cannot be dated; one only `recorded` rows bring back waits for them.
  */
-export function rollbackWitnesses(plan: HandOffPlan, later: readonly LedgerRow[]): Given[] {
-    const back = later.flatMap(r => r.in.filter(e => !e.placeholder).map(e => ({ e, at: `${r.row} (line ${r.line})` })));
-    return leaving(plan).filter(g => !back.some(({ e, at }) => bringsBack(g, e, at)));
+export function rollbackWitnesses(plan: HandOffPlan, later: readonly LedgerRow[], recorded: (row: string) => boolean): RollbackWitness[] {
+    return leaving(plan).flatMap(give => {
+        const by = later.filter(r => r.in.some(e => !e.placeholder && bringsBack(give, e, `${r.row} (line ${r.line})`))).map(r => r.row);
+        return by.every(recorded) ? [{ give, until: by }] : [];
+    });
 }
 
 // ------------------------------------------------------------------ the completion record
@@ -464,8 +474,8 @@ export interface HandOffOptions<C> {
     supersededBy?: ObservedCheck<C>;
     /** The attempt's completion record (run.ts's): marked once the post-hand-off state shows, read by `done`. */
     record?: HandOffRecord;
-    /** The ledger's rows after this one (chain.ts): the record clause then reads only the gives none of them brings back (rollbackWitnesses). */
-    laterRows?: readonly LedgerRow[];
+    /** What the record clause reads as a rollback (default: every give and drop, held at all): chain.ts's rollbackWitnesses. */
+    witnesses?: readonly RollbackWitness[];
     /** Observed ticks to get the screens open (default 30): swap()'s openTicks, receiveFrom()'s openMaxTicks. */
     openTicks?: number;
     /** Observed ticks from the screens opening to the outcome (default 40). */
@@ -616,8 +626,8 @@ export async function runHandOff(sdk: HandOffSdk, rowPlan: HandOffPlan, partner:
 export function handOffStep<C>(plan: HandOffPlan, opts: HandOffOptions<C>): Step<C> {
     const partner = (c: C) => (typeof opts.partner === 'function' ? opts.partner(c) : opts.partner);
     const sdkOf = (sdk: unknown) => sdk as HandOffSdk;
-    const { record, supersededBy, laterRows, ...trade } = opts;
-    const witnesses = laterRows ? rollbackWitnesses(plan, laterRows) : leaving(plan);
+    const { record, supersededBy, witnesses = leaving(plan).map(give => ({ give, until: [] })), ...trade } = opts;
+    const rolledBack = (s: BotWorldState) => witnesses.some(w => held(s, w.give) > 0 && !w.until.some(r => record!.has(r)));
     /** Marked only once the post-hand-off state shows: a mark with the equip pending would skip it. */
     const mark = (sdk: unknown) => {
         const s = sdkOf(sdk).getState();
@@ -632,7 +642,7 @@ export function handOffStep<C>(plan: HandOffPlan, opts: HandOffOptions<C>): Step
             const missing = handOffMissing(s, plan);
             return missing.length ? `${plan.id} after the trade: ${missing.join('; ')}` : true;
         },
-        done: (o, c) => handOffMissing(o.state, plan).length === 0 || !!supersededBy?.(o, c) || (!!record?.has(plan.id) && witnesses.every(g => held(o.state, g) === 0)),
+        done: (o, c) => handOffMissing(o.state, plan).length === 0 || !!supersededBy?.(o, c) || (!!record?.has(plan.id) && !rolledBack(o.state)),
         inProgress: o => tradeLanded(o.state, plan) && handOffMissing(o.state, plan).length > 0,
         async run(ctx) {
             if (trade.cue?.open) await runHandOffOnCue(ctx, plan, partner(ctx.c), trade.cue, trade);

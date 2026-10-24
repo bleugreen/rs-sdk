@@ -63,7 +63,7 @@ import * as start from '../skills/start';
 import * as thieving from '../skills/thieving';
 import * as woodcutting from '../skills/woodcutting';
 import { MANIFEST, parseLedger, type LedgerRow } from '../tools/slot-ledger';
-import { askFor, handOffFrom, handOffStep, type HandOffPlan, type HandOffRecord } from './handoff';
+import { askFor, handOffFrom, handOffStep, rollbackWitnesses, type HandOffPlan, type HandOffRecord } from './handoff';
 import { legById, legsFor, splitLeg, type LegStep } from './legs';
 import { type Probe, stepProbes } from './resume';
 import { scoredLoginStep, scoredLogoutStep } from './scored-relog';
@@ -886,8 +886,8 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         const cue = scope ? { scope, open: (ctx: Pick<StepContext<unknown>, 'sdk'>) => o.cues.open(scope, ctx, { fresh: false }) } : ask;
         const muleRow = !scope && MULE_ROWS.includes(e.row);
         const beforeTrade = muleRow ? { beforeTrade: () => { o.cues.refresh?.(muleScope(e.row)); } } : {};
-        const laterRows = rows.slice(rows.findIndex(r => r.row === e.row) + 1);
-        const s = tag(e.id, 'handoff', handOffStep(plan, { partner: partner(e.row), ...(supersededBy ? { supersededBy } : {}), ...(o.handOffs ? { record: o.handOffs, laterRows } : {}), ...(cue ? { cue } : {}), ...beforeTrade }), cue ? { cue: cue.scope } : {});
+        const witnesses = rollbackWitnesses(plan, rows.slice(rows.findIndex(r => r.row === e.row) + 1), row => PLACEMENT[row] !== undefined);
+        const s = tag(e.id, 'handoff', handOffStep(plan, { partner: partner(e.row), ...(supersededBy ? { supersededBy } : {}), ...(o.handOffs ? { record: o.handOffs, witnesses } : {}), ...(cue ? { cue } : {}), ...beforeTrade }), cue ? { cue: cue.scope } : {});
         out.unshift(muleRow ? mule(s, e.row) : s);
     }
     const tileOf = startTiles(cfg);
