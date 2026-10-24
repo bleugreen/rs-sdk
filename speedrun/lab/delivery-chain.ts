@@ -72,7 +72,7 @@ mkdirSync(options.cueDir, { recursive: true, mode: 0o700 });
 const launcherPath = join(root, 'launcher-config.json');
 writeFileSync(launcherPath, JSON.stringify({ accounts: [{ account: muleName, role: 'mule', cueDir: options.cueDir, options }] }, null, 2));
 
-const partners: Record<string, string> = Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS].map(id => [id, `lab_${id.toLowerCase()}`]));
+const partners: Record<string, string> = Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS, 'H4m'].map(id => [id, `lab_${id.toLowerCase()}`]));
 for (const r of ROWS) partners[r] = muleName;
 const cfg: RunConfig = {
     partners, firemakingTiles: '3240,3296;3239,3296;3238,3296', rings: { giver: 'lab_ring' }, bones: { giver: 'lab_bone' },

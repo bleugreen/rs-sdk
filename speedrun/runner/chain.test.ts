@@ -42,7 +42,7 @@ const MANIFEST_TEXT = readFileSync(MANIFEST, 'utf8');
 const RUN_ORDER = readFileSync(join(import.meta.dir, '../../docs/speedrun/RUN-ORDER.md'), 'utf8');
 
 // Fold-in 23's H12a and H12b share one giver: Monkey Madness's one gtSwap trades both.
-const PARTNERS: Record<string, string> = { ...Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS].map(id => [id, `p_${id.toLowerCase()}`])), H12a: 'p_h12', H12b: 'p_h12' };
+const PARTNERS: Record<string, string> = { ...Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS, 'H4m'].map(id => [id, `p_${id.toLowerCase()}`])), H12a: 'p_h12', H12b: 'p_h12' };
 const CONFIG: RunConfig = {
     partners: PARTNERS,
     // The castle lap's west end (rehearsals/firemaking.md), entered where T02-03 ends.
