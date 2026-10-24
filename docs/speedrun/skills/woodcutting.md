@@ -321,6 +321,60 @@ itself, which the program leaves to the step script (stop, `receiveFrom`, start)
 re-anchors on observed xp, so it may cost a few ticks more than the lite script's bootstrap.
 The willow band is not measured in-page.
 
+### Knife + bury or plain + bury: the on-time switch (rs/643)
+
+knife-cycle has two bury loops. Knife + bury is the one above. Plain + bury (`technique: 'plain'`
+with `bury`, #165) puts a bone in the plain 4-tick cycle's idle ticks: R drops and clicks, R+1 buries,
+R+3 clicks alone and lands on the roll. Both loops depend on a timed Bury. A Bury that lands a tick late
+puts its `p_delay` over the cycle's click, OpLocHandler drops the click, and the roll is lost. A
+burying band (oak or willow with `bury`) therefore never chops without burying. Under `technique`
+auto it runs one loop or the other on the on-time rate it measures in itself, with no probe:
+
+- **The instrument (knife-cycle).** The engine deletes a buried bone on the tick after the Bury lands.
+  So a Bury sent on label S that lands on its tick, S+1, shows the bone gone on label S+2. Each Bury is
+  counted there as `buryOnTime` or `buryLate`. A run whose S+2 label the page decoded together with
+  the next counts that Bury neither way. Every bury cycle sends one Bury, so this rate is the server's
+  on-time rate for that cycle's sends, in either loop.
+- **The switch (woodcutting.ts `OnTimeMeter`).** Tumbling windows of 50 judged Burys, one
+  technique per window. The knife goes to plain + bury as soon as a window has more than 6 late (it can
+  no longer reach 44 of 50, main's break-even of 17.6 of 20), without waiting for the window's end. Plain
+  + bury goes back to the knife on a window with 47 of 50 or more on time. A switch stops the run and
+  starts the other, the way a bone load does, and the loads go on in either loop. Every band and every
+  resume starts on the knife with an empty window. The deadband from 44 to 46 keeps either technique, so
+  noise near the break-even doesn't flap it. Simulated, that is at most one switch per ~200 Burys at
+  rates from 0.88 to 0.92, where the two loops cost nearly the same.
+- **Forced techniques.** `technique: 'knife'` with `bury` is rs/642's forced knife. `'plain'` with
+  `bury` is plain + bury throughout. Neither switches.
+- **The lab's forced lateness.** The runtime's `hold` (a share of sends held one label) reaches each bury
+  cycle's timed sends in both loops: the knife's roll-label bundle and its lone click, and plain + bury's
+  Bury and R+3 click. `measure-woodcutting.ts --hold-ticks=N` makes the hold reach only a band's first N
+  ticks. With `hold` unset or 0, knife-cycle's packets are identical to f6ecd96f's (pinned digests in
+  `knife-cycle.test.ts`).
+
+**Measured** (bgsrv-mac, 400 ms, a headless Chrome tab, four real givers, willow from 80, rune axe,
+2026-10-24 02:40-03:23Z). Ticks per landed roll is chopping ticks over the rolls the logs stand for
+(1 / p each). Base Prayer xp is 72 a dragon bone.
+
+| Run | Burys on time | Ticks per landed roll | Bones a tick | Base Prayer xp a tick |
+|---|---|---|---|---|
+| Knife + bury, no hold (two runs) | 20/20 | 3.05, 3.24 | 0.26, 0.27 | 18.7, 19.3 |
+| Knife + bury forced, hold 0.12 | 18.5/20 | 3.95 | 0.28 | 20.2 |
+| Plain + bury forced, hold 0.12 | 17.5/20 | 6.41 | 0.21 | 15.1 |
+| Knife + bury forced, hold 0.25 (two runs) | 13.9/20, 14.4/20 | 7.56, 9.60 | 0.19, 0.16 | 13.5, 11.9 |
+| Plain + bury after the switch, hold 0.25 | 16.1/20 | 7.06 | 0.22 | 15.7 |
+
+The switching band, hold 0.25 for its first 350 ticks, then none (80 to 87, 996 ticks, 8 loads, none
+refused). The knife went to plain + bury at T529 on 37 of 44, with its 7th late Bury. Plain + bury buried
+every bone of loads 3-7. It went back to the knife at T1066 on its first clean window (50 of 50), and
+the knife then ran 3.13 ticks per landed roll to the end.
+
+What this says about the break-even: plain + bury is not a fixed ~3.87 on a ragged server. Its timed
+Bury loses rolls to late sends just as the knife's does, and faster. In this lab the knife was the
+faster loop at every rate down to about 14-15 of 20, where the two met (hold 0.25). The 17.6 of 20
+threshold assumed plain + bury's cost doesn't move. The samples are small, though: 37-66 logs a run, so
+about ±15% on each figure. And `hold` is a model of a slow server, not a recording of one. The threshold
+is one constant (`BURY_BREAK_EVEN`), priced by rs/158.
+
 ### The giver group (S07's b01-b04 taking turns)
 
 On the run the loads come from four givers taking turns (`helpers/bone-giver.md` "Taking turns":
