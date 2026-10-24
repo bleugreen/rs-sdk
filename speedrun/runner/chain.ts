@@ -65,7 +65,8 @@ import * as start from '../skills/start';
 import * as thieving from '../skills/thieving';
 import * as woodcutting from '../skills/woodcutting';
 import { MANIFEST, parseLedger, type LedgerRow } from '../tools/slot-ledger';
-import { askFor, handOffFrom, handOffStep, type HandOffPlan, type HandOffRecord, type Meeting } from './handoff';
+import type { AttemptRecord } from './attempt-record';
+import { askFor, handOffFrom, handOffStep, rollbackWitnesses, type HandOffPlan, type Meeting } from './handoff';
 import { legById, legsFor, splitLeg, type LegStep } from './legs';
 import { type Probe, stepProbes } from './resume';
 import { scoredLoginStep, scoredLogoutStep } from './scored-relog';
@@ -120,6 +121,12 @@ export interface RunConfig {
     rings: { giver: string; loads?: magic.MagicOptions['loads'] };
     /** S07's bone giver (H4.x). */
     bones: woodcutting.BonesOptions;
+    /**
+     * S07's close target, the Prayer level its last band closes at and its early last load fires at
+     * (an integer from 1 to 99; absent: S07_PRAYER_TO). Below 99 only when a later step buries the
+     * rest: the chain's Prayer-99 check (S25b's fallback) stays where it is.
+     */
+    s07PrayerTo?: number;
     /** S18's courier (H14.x) and the food count below which it tops up. */
     courier: { giver: string; below: number };
     /** S25a's anvil helper (H21a). */
@@ -193,11 +200,11 @@ export interface ChainOptions {
     s21Relog?: boolean;
     relogs?: RelogBudget;
     /**
-     * The attempt's hand-off completion record (run.ts: <run dir>/handoffs.json under `attempt`), which
-     * keeps a placed hand-off done once its band has eaten into what it brought (handoff.ts, Resume).
+     * The attempt record (run.ts: <run dir>/attempt-record.json under `attempt`), whose hand-off rows
+     * keep a placed hand-off done once its band has eaten into what it brought (handoff.ts, Resume).
      * Absent: a hand-off reads done from the state and the next milestone only.
      */
-    handOffs?: HandOffRecord;
+    record?: AttemptRecord;
     /**
      * The attempt's id, the same in every process that resumes it (run.ts: the run id of its tick log's
      * first row). A cue whose givers count work per session takes its session from it (S07's bone cue,
@@ -209,13 +216,24 @@ export interface ChainOptions {
 /** S07's bone cue session for an attempt. */
 export const boneSession = (attempt: string): string => `${attempt}.S07.bone`;
 
+/** S07's close target when the run config names none: Prayer 99 inside S07 (fold-in 23). */
+export const S07_PRAYER_TO = 99;
+
+/** The run config's S07 close target (`s07PrayerTo`), validated; S07_PRAYER_TO when absent. */
+export function s07PrayerTo(cfg: Pick<RunConfig, 's07PrayerTo'>): number {
+    const v = cfg.s07PrayerTo;
+    if (v === undefined) return S07_PRAYER_TO;
+    if (typeof v !== 'number' || !Number.isInteger(v) || v < 1 || v > 99) throw new Error(`run config: s07PrayerTo must be an integer from 1 to 99, got ${JSON.stringify(v)}`);
+    return v;
+}
+
 /**
  * S07's woodcutting options: burying from the oaks to 99 (so the oak and willow bands run the knife,
- * woodcutting.ts bandTechnique), Prayer 99, the axe dropped at the end, and the attempt's bone cue
- * session for a giver group.
+ * woodcutting.ts bandTechnique), Prayer to the run config's s07PrayerTo (99 unless it says), the axe
+ * dropped at the end, and the attempt's bone cue session for a giver group.
  */
-export function s07Woodcutting(cfg: Pick<RunConfig, 'bones'>, attempt?: string): woodcutting.WoodcuttingOptions {
-    return { bury: true, bones: cfg.bones, dropAxe: true, prayerTo: 99, ...(attempt && cfg.bones.group ? { boneSession: boneSession(attempt) } : {}) };
+export function s07Woodcutting(cfg: Pick<RunConfig, 'bones' | 's07PrayerTo'>, attempt?: string): woodcutting.WoodcuttingOptions {
+    return { bury: true, bones: cfg.bones, dropAxe: true, prayerTo: s07PrayerTo(cfg), ...(attempt && cfg.bones.group ? { boneSession: boneSession(attempt) } : {}) };
 }
 
 // ------------------------------------------------------------------ hand-off placement
@@ -895,9 +913,10 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         const cue = scope ? { scope, open: (ctx: Pick<StepContext<unknown>, 'sdk'>) => o.cues.open(scope, ctx, { fresh: false }) } : ask;
         const muleRow = !scope && MULE_ROWS.includes(e.row);
         const beforeTrade = muleRow ? { beforeTrade: () => { o.cues.refresh?.(muleScope(e.row)); } } : {};
+        const witnesses = rollbackWitnesses(plan, rows.slice(rows.findIndex(r => r.row === e.row) + 1), row => PLACEMENT[row] !== undefined);
         // A carrier may come after SCORED: its cue's ready gate waits for it, so the step asks only that SCORED be at the meeting.
         const meeting = muleRow ? { meeting: muleMeeting(e.row) } : {};
-        const s = tag(e.id, 'handoff', handOffStep(plan, { partner: partner(e.row), ...(supersededBy ? { supersededBy } : {}), ...(o.handOffs ? { record: o.handOffs } : {}), ...(cue ? { cue } : {}), ...beforeTrade, ...meeting }), cue ? { cue: cue.scope } : {});
+        const s = tag(e.id, 'handoff', handOffStep(plan, { partner: partner(e.row), ...(supersededBy ? { supersededBy } : {}), ...(o.record ? { record: o.record.handOffs, witnesses } : {}), ...(cue ? { cue } : {}), ...beforeTrade, ...meeting }), cue ? { cue: cue.scope } : {});
         out.unshift(muleRow ? mule(s, e.row) : s);
     }
     const tileOf = startTiles(cfg);

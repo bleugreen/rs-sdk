@@ -33,6 +33,10 @@
 // Timing is on observed ticks (rs/158 fold-in 13). Wall clock appears only as lib/wait's idle
 // bound, a dead-client detector.
 //
+// buryHeld is the one primitive for burying the bones in the pack where they are, outside the booth:
+// S07's close after Woodcutting 99 (woodcutting.ts, the pure-bury tail) runs it. It sends each Bury
+// on the frame that shows the last bone gone, so no click lands in the bury's delay (its comment).
+//
 // One step, logoutSafe between loads. `run` works from any state at the booth (bones held are
 // buried first), so a resume continues from whatever the pack and bank hold; the boneBank probe
 // lets `done` see a closed bank.
@@ -259,6 +263,111 @@ export interface BoothReport {
 }
 
 export type BurySdk = RunnerSession['sdk'];
+
+// ---------------------------------------------------------------- burying the bones held
+
+/**
+ * Observed ticks a Bury may go unanswered before buryHeld sends it again. An accepted Bury's bone
+ * leaves the pack on the tick after the one it lands on, so a Bury sent on frame T shows its bone
+ * gone on T+2 when the round trip fits in a tick; three frames without it means it was lost.
+ */
+export const BURY_RESEND = 3;
+/** Bury sends in a row that bury nothing before buryHeld stops `stalled`. */
+export const BURY_STALL = 5;
+/** buryHeld's default bound in observed ticks: a 27-bone pack buries in about 54. */
+export const BURY_HELD_TICKS = 600;
+
+export type HeldBurySdk = Pick<BurySdk, 'getState' | 'onStateUpdate' | 'sendUseItem' | 'sendClickDialog'>;
+
+export interface HeldBuryOptions {
+    /** Stop once Prayer's base level reaches this. */
+    untilLevel?: number;
+    /** Stop on the first frame, with no Bury pending, on which this says false. */
+    keepOn?: (s: BotWorldState) => boolean;
+    /** The bound in observed ticks (default BURY_HELD_TICKS). */
+    maxTicks?: number;
+    signal?: AbortSignal;
+}
+
+export interface HeldBuryReport {
+    startTick: number;
+    endTick: number;
+    buried: number;
+    /** Bury clicks sent: one per bone, plus the resends. */
+    sends: number;
+    resends: number;
+    /** The tick of each frame that showed a bone gone. */
+    buryTicks: number[];
+    /** none: no bone left; level: untilLevel; target: keepOn said false; stalled: BURY_STALL resends in a row; bound: maxTicks. */
+    stop: 'none' | 'level' | 'target' | 'stalled' | 'bound' | 'aborted';
+}
+
+/**
+ * Bury every bone held that `bones` names, at the engine's rate, never sending a click the bury's
+ * delay would drop. bury_bone.rs2 runs p_delay(0): PlayerOps.ts P_DELAY sets delayedUntil to the next
+ * tick, OpHeldHandler drops any click while the player is delayed, and World.ts clears the delay
+ * only in processPlayers, after that tick's client input, where the script resumes and deletes the
+ * bone. So a Bury accepted on tick T drops every click landing on T+1, its bone leaves on T+1, and
+ * the next click is taken from T+2: one bone per two ticks at best, and nothing to batch, since a
+ * second click on T or T+1 is dropped. This loop sends each Bury on the frame that shows the last
+ * one's bone gone, a frame on which the delay has cleared, so every send can land; with a round trip
+ * inside a tick that is the 2-tick floor. (buryAtBooth's bury half clicks every observed tick
+ * instead and lets the server drop the off-tick click.) The level-up watcher runs throughout and
+ * sends Continue ahead of that frame's Bury (prayer.md section 4). Works from any pack: a pack with
+ * no bones returns at once (`none`).
+ */
+export function buryHeld(sdk: HeldBurySdk, bones: RegExp, o: HeldBuryOptions = {}): Promise<HeldBuryReport> {
+    const first = sdk.getState();
+    const rep: HeldBuryReport = { startTick: first?.tick ?? 0, endTick: first?.tick ?? 0, buried: 0, sends: 0, resends: 0, buryTicks: [], stop: 'none' };
+    const maxTicks = o.maxTicks ?? BURY_HELD_TICKS;
+    const held = (s: BotWorldState) => s.inventory.filter(i => i.count > 0 && bones.test(i.name)).sort((a, b) => a.slot - b.slot);
+    return new Promise(resolve => {
+        const watcher = startLevelUpWatcher(sdk);
+        let pending: { tick: number; held: number } | null = null;
+        let unanswered = 0;
+        let finished = false;
+        let unsub: () => void = () => {};
+        const finish = (s: BotWorldState | null, stop: HeldBuryReport['stop']) => {
+            if (finished) return;
+            finished = true;
+            unsub();
+            watcher.stop();
+            o.signal?.removeEventListener('abort', onAbort);
+            rep.endTick = s?.tick ?? rep.endTick;
+            rep.stop = stop;
+            resolve(rep);
+        };
+        const onAbort = () => finish(sdk.getState(), 'aborted');
+        const step = (s: BotWorldState) => {
+            if (finished) return;
+            if (o.signal?.aborted) return finish(s, 'aborted');
+            const pack = held(s);
+            if (pending) {
+                if (pack.length < pending.held) {
+                    rep.buried += pending.held - pack.length;
+                    rep.buryTicks.push(s.tick);
+                    pending = null;
+                    unanswered = 0;
+                } else if (s.tick - pending.tick >= BURY_RESEND) {
+                    pending = null;
+                    if (++unanswered >= BURY_STALL) return finish(s, 'stalled');
+                    rep.resends++;
+                } else return;
+            }
+            if (s.tick - rep.startTick >= maxTicks) return finish(s, 'bound');
+            if (!pack.length) return finish(s, 'none');
+            if (o.untilLevel !== undefined && reached(s, o.untilLevel)) return finish(s, 'level');
+            if (o.keepOn && !o.keepOn(s)) return finish(s, 'target');
+            const bone = pack[0]!;
+            pending = { tick: s.tick, held: pack.length };
+            rep.sends++;
+            void sdk.sendUseItem(bone.slot, bone.optionsWithIndex?.find(x => /^bury$/i.test(x.text))?.opIndex ?? 1);
+        };
+        o.signal?.addEventListener('abort', onAbort);
+        unsub = sdk.onStateUpdate(step);
+        if (first) step(first);
+    });
+}
 
 /** User events a send costs: the SDK routes every loc click (MOVE_OPCLICK + OPLOC). */
 const BOOTH_EVENTS = 2;

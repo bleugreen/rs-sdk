@@ -765,6 +765,7 @@ export function cannonSessionStep(opts: RangedOptions = {}): Step<any> {
             return true;
         },
         logoutSafe: false,
+        startsInCombat: true,
         done: o => done(o.state) && !owesPickUp(o.state),
         inProgress: o => owesPickUp(o.state) || (!done(o.state) && nearSite(o.state, site) && (assembledCannon(o.state) !== null || xpOf(o.state, 'Ranged') > 0)),
     };
@@ -802,6 +803,7 @@ export function combatFinishStep(opts: RangedOptions = {}): Step<any> {
             return true;
         },
         logoutSafe: false,
+        startsInCombat: true,
         done: o => done(o.state),
         inProgress: o => !done(o.state) && (baseLevel(o.state, 'Ranged') >= S27_STARTED_RANGED || baseLevel(o.state, 'Defence') >= t.defence || (nearSite(o.state, site) && assembledCannon(o.state) !== null)),
     };

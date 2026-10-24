@@ -382,6 +382,31 @@ the manifest against the game on every start, operator restarts included:
    steps (legs, banking) whose effect is already in the state are skipped.
 3. If nothing qualifies, it stops for the operator with every candidate's reason.
 
+**A logout-unsafe step is never re-entered mid-step from the top.** The engine
+keeps a dropped player in the world for 500 ticks (`World.ts`
+TIMEOUT_NO_CONNECTION), so a relogin inside that window is a session takeover:
+the same tile, HP and prayers, and the fight still on. For a step with
+`logoutSafe: false` (a fight, a queued completion) the walk therefore enters
+through `resume` only when the step has one and its `inProgress` holds. When
+`inProgress` holds and the step has no `resume`, or when `run` would start it
+inside the combat window (engaged, or hit within the server's 16-tick logout
+rule: `lib/world.ts` `inCombatWindow`), the walk stops at that step with a
+`MidStepError` instead of walking further back. `runResumable` then waits a
+bounded time (`MID_STEP_HOLD_TICKS`, unmeasured) for the window to end,
+observes again and walks again; if the step is still mid-step, the run stops
+for the operator naming the step and the reason. The wait is idle (nothing eats
+or prays), so a new hit during it ends it at once with the refusal: something is
+still attacking, and idling on is worse than stopping. A step whose `run` picks
+up a fight already on, or already runs under a protect prayer in an aggressive
+zone, declares `startsInCombat` and is never held: the Fight Arena fights and
+arena door, Monkey Madness G, Q and X, Grand Tree N1, Mage Arena C, S14 and S27.
+A step with `inProgress` whose `run` is written to re-enter names it as its
+`resume` (Monkey Madness E, Mage Arena C). The held steps are the ones whose
+`run` would re-talk or walk away mid-fight in a zone that is otherwise safe; no
+chain step is refused outright today.
+`runner/resume-takeover.test.ts` pins the table. Logout-safe steps resolve as
+before.
+
 **A milestone must stay done.** Step 1 stops at the first undone milestone, so
 one that turns false later sends the walk back to a step whose preconditions
 then refuse. Two shapes keep `done` monotonic where the state alone moves on:
@@ -390,15 +415,30 @@ then refuse. Two shapes keep `done` monotonic where the state alone moves on:
   hand-back, S14's cannon pick-up) is owed only at the place it runs: off that
   site the step is done at its level whatever the pack holds. A throw before the
   exit work, still on the site, leaves the step undone and re-entered.
-- **Hand-offs: the attempt's completion record.** The band after a hand-off
-  consumes what it brought (S18's stuns and food after H14, S22's feathers after
-  H18), and the band's own `inProgress` already holds on arrival, before the
-  trade, so the state cannot tell "traded, then used" from "not yet traded". A
-  hand-off step marks `<run dir>/handoffs.json` (`runner/handoff.ts`
-  `HandOffRecord`, keyed by the attempt id run.ts shares across processes) once
-  its post-hand-off state shows, and reads as done from then on unless what it
-  gave is held again (a demo rollback across the swap). It also stays done once
-  the next milestone is (`supersededBy`).
+- **The attempt record.** Some completions leave no lasting game fact, so the
+  attempt keeps one record of them: `<run dir>/attempt-record.json`
+  (`runner/attempt-record.ts` `AttemptRecord`, keyed by the attempt id run.ts
+  shares across processes, so a fresh attempt sees none and a resumed process
+  sees what an earlier one marked). A missing or empty file is nothing recorded;
+  a file that does not parse refuses the run. It holds two kinds of mark, kept
+  apart:
+  - **Hand-off rows.** The band after a hand-off consumes what it brought
+    (S18's stuns and food after H14, S22's feathers after H18), and the band's
+    own `inProgress` already holds on arrival, before the trade, so the state
+    cannot tell "traded, then used" from "not yet traded". A hand-off step marks
+    its row once its post-hand-off state shows, and reads as done from then on
+    unless what it gave is held again (a demo rollback across the swap). It also
+    stays done once the next milestone is (`supersededBy`). The rune census
+    reads the same rows as supplies already served.
+  - **Step names.** `runSteps` marks every step's `name` once its
+    postconditions pass, entered through `run` or `resume`. The walk hands the
+    marks to every `done` and `inProgress` it evaluates as `Observed.record`, and
+    a milestone with no game fact to read uses it: the Mage Arena's pool,
+    statue and guardian segments, whose cape and staff S16's exit drops, and
+    Doric's hand-in. While the observed state is out of the world (S21's relog
+    split, a walk before a login lands), a milestone the record has counts as
+    done without reading the game, since every quest stage and the player read
+    empty there; in the world each `done` decides.
 
 Every walk first waits, bounded in observed ticks (`PLAYER_MAX_TICKS`), for a
 state that carries the player: a relaunched or reloaded client can publish
