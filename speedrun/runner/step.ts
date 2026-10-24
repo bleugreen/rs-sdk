@@ -41,6 +41,8 @@ import {
     type StateSource,
 } from '../lib/wait';
 import { meterDispatch, TickWindow, type WindowSnapshot } from './budget';
+import { raceDeath, watchFrames } from './death';
+import { Fence } from './fence';
 
 export type Check<C> = (s: BotWorldState, c: C) => true | string;
 
@@ -143,6 +145,32 @@ export interface Step<C = Record<string, never>> {
      * after a failure is exactly what it was.
      */
     retreat?(ctx: StepContext<C>): Promise<void>;
+    /**
+     * The step watches for SCORED's death itself and records it on `session.died` (a leg: runLeg's
+     * DeathWatch decides each relocation and writes the travel row). runSteps then does not race its
+     * body against a death (deathWatched); every other step in the world it does.
+     */
+    watchesDeath?: true;
+}
+
+/**
+ * A step's body under a DeathWatch (death.ts watchFrames and raceDeath, the rule in DeathWatch: the
+ * engine's message, hitpoints at 0, a respawn counted, or a jump onto the respawn square that
+ * hitpoints corroborate; a teleport is none of them). A death ends the step at once, failing it with
+ * the death's reason and leaving it on `session.died`, so run.ts writes the one `(death)` row and ends
+ * the attempt with EXIT_DIED. The body cannot be cancelled, so it runs fenced (fence.ts): once SCORED
+ * has died nothing it still sends reaches the game, and its listeners stop, while the runner logs out.
+ */
+export async function deathWatched<T>(session: RunnerSession, name: string, fn: () => Promise<T>): Promise<T> {
+    const sdk = session.sdk;
+    const fence = new Fence();
+    const unfence = typeof (sdk as { sendAction?: unknown }).sendAction === 'function' ? fence.install(sdk) : () => {};
+    const attempt = fence.open();
+    const stretch = watchFrames(sdk, session, `in ${name}`);
+    void stretch.died.then(d => attempt.abort(d.reason));
+    const ran = fence.run(attempt, fn);
+    void ran.then(unfence, unfence);
+    return raceDeath(stretch, 'DIED', () => ran);
 }
 
 export class StepError extends Error {
@@ -324,8 +352,9 @@ export async function runSteps<C>(session: RunnerSession, steps: ReadonlyArray<S
             closeBoundary(opts.log, session, boundary, step.name, i);
 
             const entry = resuming && step.resume ? step.resume.bind(step) : step.run.bind(step);
+            const body = step.offline || step.watchesDeath ? () => entry(ctx) : () => deathWatched(session, step.name, () => entry(ctx));
             try {
-                await measure(opts.log, session, step.name, () => entry(ctx), { index: i, ...(resuming ? { resumed: true } : {}) });
+                await measure(opts.log, session, step.name, body, { index: i, ...(resuming ? { resumed: true } : {}) });
             } catch (e) {
                 throw new StepError(step.name, 'run', e instanceof Error ? e.message : String(e));
             }
