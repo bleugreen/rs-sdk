@@ -201,7 +201,33 @@ handles it itself:
   unplanned, run.ts's and the operator's together. The start gate reads it; past
   it the recovery throws `RelogBudgetSpent` and the run stops with that reason.
   Between the halves of S21's split relog the account is out on purpose: no
-  relog, nothing counted.
+  relog, nothing counted. **Only a login is charged**: an adopt (the page still
+  in the world and ticking again, no login sent) is a row of kind `adopt`,
+  counted against neither planned nor unplanned, so short holds never wear the
+  budget down. An adopt that later falls out and is relogged becomes that
+  relog's one unplanned entry.
+- **The server's hold on a silent socket.** A socket that goes quiet without
+  closing (a network drop with no FIN) keeps the old player in the world until
+  the engine's `TIMEOUT_NO_RESPONSE`, 1,000 ticks after its last packet, not the
+  500-tick bound for a closed one, and every login meanwhile is refused with
+  reply 5, "Your account is already logged in. Try again in 60 secs". A hold
+  under the page's own no-data timeout costs nothing but the hold (the page
+  stays in game and is adopted); a longer one sends the page to the title
+  screen with its reconnect refused. `session.ts` matches the reply on the
+  title screen in one place (`loginReplyCode`); the drop recovery's login asks
+  for it (`stopOnReply`, `LoginRefused`) and, holding the relog lock, retries
+  every 65 s (`ALREADY_IN_RETRY_MS`) for up to 8 min from the first refusal
+  (`ALREADY_IN_BOUND_MS`, the 1,000 ticks at 400 ms plus a margin). The login
+  that lands is one unplanned entry (`meta.alreadyLoggedIn` holds the refusals
+  and the wall they took); past the bound the recovery fails as before. The
+  watchdog stays paused and stands down for the out page throughout, as for any
+  running recovery, and relog-now refuses while the lock is held. Any other
+  refusal is not retried here. The short reply-5 refusal right after a logout
+  ("old session is mid-logout") is still ridden out by `login`'s own retries
+  for every other caller.
+- **Every drop has its `(drop)` row**, written when the recovery returns and
+  also when it throws (`meta.failed`), so a relog that fails past its bound is
+  on the record.
 - **Measured** (bgsrv-mac, 400 ms, the 22:15 shape injected into a knife loop, a
   bank burst and a leg): drop to back in the world 24-26 ticks (9.5-10.3 s), the
   login itself 0.7-1.4 s; every step resumed and finished.
@@ -225,7 +251,8 @@ SDK session (a second controller would take the gateway from run.ts).
   it to go, finds the page in the world, adopts that session
   (`session.ts` `adoptSession`) and resumes exactly as after its own relog.
 - A page already back in the world when run.ts looks is adopted and recorded as
-  a manual relog, the same budget.
+  an adopt, never charged; the operator's relog-now it finds done is the
+  operator's own (charged) entry.
 - relog-now refuses while run.ts holds the lock, while S21's planned relog is
   open, and when the budget is spent, and does nothing in each case.
 
