@@ -6,7 +6,8 @@
 //   exits EXIT_DIED;
 // - the wait upkeep (WaitUpkeep): the run's eat rule (lib/travel.ts eatDue, the legs' rule) and an
 //   antipoison dose when poisoned (quests/segments.ts poisoned / cureDose / noteAntipoison), one
-//   click per frame, nothing while a trade is open (a pack click closes the trade screen).
+//   click per frame, nothing while a trade is open (a pack click closes the trade screen) and nothing
+//   inside a drink's p_delay (drinkDelayOver: a click there is dropped).
 // guardWait is that for one wait; watchStretch is the same over an open-ended stretch (run.ts: from
 // login to the first step's entry), which also holds while a dialogue is open. A guard inside a
 // guard on the same SDK adds nothing: the outer one already watches and feeds every frame.
@@ -18,7 +19,7 @@ import { tradeOf } from '../lib/trade';
 import { EAT_SPACING, eatDue, type EatOptions } from '../lib/travel';
 import { waitUntil, type StateSource } from '../lib/wait';
 import { opIndex } from '../lib/world';
-import { cureDose, noteAntipoison, poisoned } from '../quests/segments';
+import { cureDose, DRINK_DELAY_TICKS, drinkDelayOver, noteAntipoison, poisoned } from '../quests/segments';
 import { raceDeath, watchFrames, type Death, type DeathStretch } from './death';
 
 /** The antipoison helper the upkeep drinks through (quests/segments.ts); tests inject their own. */
@@ -26,9 +27,17 @@ export interface Cure {
     poisoned(s: BotWorldState): boolean;
     cureDose(s: BotWorldState): InventoryItem | null;
     noteAntipoison(tick: number): void;
+    /** Until a drink sent at `sent` has finished its p_delay, inside which any click is dropped (segments.ts drinkDelayOver). */
+    drinkDelayOver(sdk: StateSource, sent: number): Promise<void>;
+    /**
+     * Main's poison-unknown (segments.ts `poisonUnknown`, rs/786): a fresh session since the last dose, no poison seen in
+     * it, an antipoison held. A carried poison shows only at its first hit, up to 30 ticks after login. Read only with
+     * UpkeepOptions.unknownPoisonDose; absent, that dose never goes.
+     */
+    poisonUnknown?(s: BotWorldState): boolean;
 }
 
-export const SEGMENT_CURE: Cure = { poisoned, cureDose, noteAntipoison };
+export const SEGMENT_CURE: Cure = { poisoned, cureDose, noteAntipoison, drinkDelayOver };
 
 /** Ticks after a dose that landed before upkeep drinks again while SCORED still reads poisoned: one poison cycle (poison.rs2's 30-tick timer). */
 export const CURE_SPACING = 30;
@@ -56,24 +65,53 @@ export interface UpkeepOptions {
      * could take SCORED through the floor. The cure always waits for the dialogue to close.
      */
     urgentHp?: number;
+    /**
+     * Drink one dose when the cure reads the poison unknown (Cure.poisonUnknown), not only on a poison seen: run.ts's
+     * login stretch into S15:A or S16:B (main's ruling), where waiting for the carried poison's first hit costs 5-6 HP.
+     */
+    unknownPoisonDose?: boolean;
     onAct?: (a: UpkeepAct) => void;
 }
 
 const use = (i: InventoryItem, op: RegExp) => opIndex(i, op) ?? 1;
 
-/** Eat and cure on SCORED's frames, one click per frame, none while a trade (or with holdInDialog, a dialogue) is open. */
+/** The upkeep's last drink: its dose as clicked, and whether it has been seen to land (the potion left its slot). */
+interface Drink {
+    tick: number;
+    slot: number;
+    id: number;
+    name: string;
+    landed: boolean;
+}
+
+/**
+ * Eat and cure on SCORED's frames, one click per frame, none while a trade (or with holdInDialog, a dialogue) is open,
+ * and none inside a landed drink's p_delay (Cure.drinkDelayOver), which drops any click.
+ */
 export class WaitUpkeep {
     eats = 0;
     cures = 0;
     /** Frames that wanted nothing sent because a trade or dialogue was open, or that sent nothing for it. */
     held = 0;
     private lastEat = -99;
-    private drink: { tick: number; slot: number; id: number } | null = null;
+    private drink: Drink | null = null;
+    /** A landed drink's p_delay still running. */
+    private delaying = false;
+    private lastTick = -Infinity;
 
     constructor(private readonly sdk: UpkeepSdk, private readonly o: UpkeepOptions = {}) {}
 
+    private get cure(): Cure {
+        return this.o.cure ?? SEGMENT_CURE;
+    }
+
     see(s: BotWorldState): void {
         if (!s.inGame || !s.player) return;
+        this.observe(s);
+        if (this.delaying) {
+            this.held++;
+            return;
+        }
         const inDialog = !!this.o.holdInDialog && !!s.dialog?.isOpen;
         const urgent = this.o.urgentHp !== undefined && s.player.hp <= this.o.urgentHp;
         if (tradeOf(s).isOpen || (inDialog && !urgent)) {
@@ -92,31 +130,59 @@ export class WaitUpkeep {
             this.held++;
             return;
         }
-        const cure = this.o.cure ?? SEGMENT_CURE;
-        if (!this.cureDue(s) || !cure.poisoned(s)) return;
-        const dose = cure.cureDose(s);
-        if (!dose) return;
-        if (!this.drink || this.drink.slot !== dose.slot || this.drink.id !== dose.id) this.cures++;
-        this.drink = { tick: s.tick, slot: dose.slot, id: dose.id };
-        cure.noteAntipoison(s.tick);
-        this.act('cure', s, dose, /^drink$/i);
+        const d = this.drink;
+        if (d && !d.landed) {
+            // Sent, not yet landed: the same dose again once CURE_RESEND has passed, whatever `poisoned` reads now
+            // (the dose was noted when it was sent, so the poison it was sent for no longer shows).
+            const held = s.inventory.find(i => i.slot === d.slot && i.id === d.id && i.name === d.name);
+            if (held && s.tick - d.tick >= CURE_RESEND) this.drinkNow(s, held, false);
+            return;
+        }
+        const dose = this.doseDue(s);
+        if (dose) this.drinkNow(s, dose, true);
     }
 
-    /** Whether this frame still wants an eat or a dose (held or not): what a stretch's `settle` waits out. */
+    /** Whether this frame still wants an eat or a dose (held or not), or a drink is still landing: what a stretch's `settle` waits out. */
     wants(s: BotWorldState): boolean {
         if (!s.inGame || !s.player) return false;
+        if (this.delaying || (this.drink && !this.drink.landed)) return true;
         if (eatDue(s, this.o.eat ?? {}, this.lastEat)) return true;
-        const cure = this.o.cure ?? SEGMENT_CURE;
-        return this.cureDue(s) && cure.poisoned(s) && cure.cureDose(s) !== null;
+        return this.doseDue(s) !== null;
     }
 
-    /** No drink in CURE_SPACING ticks, or the last one still held as clicked after CURE_RESEND (it did not land). */
-    private cureDue(s: BotWorldState): boolean {
+    /**
+     * A tick below the last one is a client reload (its tick restarts): the eat and drink records are the old session's.
+     * A drink whose potion has left its slot has landed, and its p_delay holds every click until it is over.
+     */
+    private observe(s: BotWorldState): void {
+        if (s.tick < this.lastTick) {
+            this.lastEat = -99;
+            this.drink = null;
+            this.delaying = false;
+        }
+        this.lastTick = s.tick;
         const d = this.drink;
-        if (!d) return true;
-        const since = s.tick - d.tick;
-        if (since >= CURE_SPACING) return true;
-        return since >= CURE_RESEND && s.inventory.some(i => i.slot === d.slot && i.id === d.id);
+        if (!d || d.landed || s.inventory.some(i => i.slot === d.slot && i.id === d.id && i.name === d.name)) return;
+        d.landed = true;
+        this.delaying = true;
+        void this.cure.drinkDelayOver(this.sdk, d.tick).finally(() => {
+            if (this.drink === d) this.delaying = false;
+        });
+    }
+
+    /** The dose to drink now: none in CURE_SPACING ticks, and poisoned (or, with unknownPoisonDose, the poison unknown). */
+    private doseDue(s: BotWorldState): InventoryItem | null {
+        if (this.drink && s.tick - this.drink.tick < CURE_SPACING) return null;
+        const cure = this.cure;
+        const want = cure.poisoned(s) || (!!this.o.unknownPoisonDose && !!cure.poisonUnknown?.(s));
+        return want ? cure.cureDose(s) : null;
+    }
+
+    private drinkNow(s: BotWorldState, dose: InventoryItem, fresh: boolean): void {
+        if (fresh) this.cures++;
+        this.drink = { tick: s.tick, slot: dose.slot, id: dose.id, name: dose.name, landed: false };
+        this.cure.noteAntipoison(s.tick);
+        this.act('cure', s, dose, /^drink$/i);
     }
 
     private act(kind: UpkeepAct['kind'], s: BotWorldState, item: InventoryItem, op: RegExp): void {
@@ -141,8 +207,8 @@ export interface Stretch extends DeathStretch {
     settle(maxTicks?: number): Promise<void>;
 }
 
-/** Ticks a stretch's settle waits at most: an eat, its EAT_SPACING, a dose and its resend. */
-export const SETTLE_TICKS = EAT_SPACING + CURE_RESEND + 2;
+/** Ticks a stretch's settle waits at most: an eat, its EAT_SPACING, a dose, its resend and its p_delay. */
+export const SETTLE_TICKS = EAT_SPACING + CURE_RESEND + DRINK_DELAY_TICKS + 2;
 
 /** SDKs with a stretch's upkeep running on them: a guard inside one adds nothing. */
 const kept = new WeakMap<object, number>();
