@@ -99,10 +99,11 @@ change can cost ticks if it misbehaves. 'Attempt 4?' says whether the item can m
 - Fight Arena B's door stall: **done**, 37 / 37 / 37 on #419 (rs/484).
 
 **Totals.** Items 1-9, 11-17, 19 and 21-23, without overlap (9c taken over rs/185's H9 into H7), come to
-**~360 expected i/e** across the band, ~145 of it in items 1 and 2 alone. The attempt-4-eligible part
+**~400 expected i/e** across the band (the sum of each item's expected column, taking ranges at
+their midpoints), ~130 of it in items 1 and 2 alone. The attempt-4-eligible part
 is smaller: item 7 (~22, no lab-accepted module), item 19 (1-2, runner only), and the module-local items
 whose own labs are each at most ~2 h (6, 11, 13, 16, Fight Arena's idle 2 inside item 3, and 9c):
-**~75-85 i** if every one of those labs passes by staging. The pricing rows (10, 18, 25) move the
+**~85 i** (22 + 1.5 + 25 + 12 + 6 + 7.5 + 7 + 4) if every one of those labs passes by staging. The pricing rows (10, 18, 25) move the
 row, not the run: -8 to -10 for the unpriced trades, +5 to +6 for H11 and H11r, and +6 to +18 off
 the level-up allowance.
 
