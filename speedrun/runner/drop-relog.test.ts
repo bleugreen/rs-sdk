@@ -380,7 +380,9 @@ describe('a network hold: the page keeps its socket and says in game, and the re
         expect(r.outcome).toBe('adopted');
         // The watchdog paused throughout (never resumed before the adopt), and nothing logged in.
         expect(w.calls).toEqual(['pause watchdog', 'adopt -', 'restored']);
-        expect(w.ticks()).toBe(resume);
+        // Adopted on the tick the ticks resumed, plus at most the adopt's one recheck.
+        expect(w.ticks()).toBeGreaterThanOrEqual(resume);
+        expect(w.ticks()).toBeLessThanOrEqual(resume + RECHECK_TICKS);
         // The adopt is the only record: no login was charged (rs/733 keeps the adopt itself off the budget).
         expect(budget.entries().every(e => e.via === 'adopted')).toBe(true);
     });
