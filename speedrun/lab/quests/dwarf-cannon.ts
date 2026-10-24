@@ -28,7 +28,7 @@ import { arg, result } from '../common';
 import type { BotWorldState, InventoryItem } from '../../../sdk/types';
 import { opLoc } from '../../lib/act';
 import type { Session } from '../../lib/session';
-import { waitTicks } from '../../lib/wait';
+import { waitTicks, waitUntil } from '../../lib/wait';
 import { findNpc } from '../../lib/world';
 import { inWorkshop, LETTERS, newTally, NULODION_AT, QUEST_ITEMS, quest, stepId, steps, type Options, type Tally } from '../../quests/dwarf-cannon';
 import { INVENTORY_SLOTS, slotNeed } from '../../quests/segments';
@@ -120,14 +120,16 @@ async function watchNulodion(session: Session, n: number): Promise<void> {
         for (const npc of s.nearbyNpcs) if (NULODION_RE.test(npc.name)) seen.set(`${npc.x},${npc.z}`, (seen.get(`${npc.x},${npc.z}`) ?? 0) + 1);
     });
     let crossed = 0;
+    // After a crossing the door is an inviswall for 3 ticks (~open_and_close_door): wait for it back before the next click.
+    const doorBack = () => waitUntil(sdk, s => s.nearbyLocs.some(l => l.x === 3015 && l.z === 3453 && /^door$/i.test(l.name) && l.optionsWithIndex.some(o => /^open$/i.test(o.text))), { maxTicks: 10 });
+    const cross = async (inside: boolean) => {
+        await doorBack();
+        return opLoc(sdk as never, { x: 3015, z: 3453, name: /^door$/i, radius: 15 }, /^open$/i, s => inWorkshop(tileOf(s)) === inside, { maxTicks: 20 });
+    };
     try {
         await mustTele(sdk, 3015, 3453);
-        for (let i = 0; i < n; i++) {
-            const inside = !inWorkshop(tileOf(sdk.getState()!));
-            const r = await opLoc(sdk as never, { x: 3015, z: 3453, name: /^door$/i, radius: 15 }, /^open$/i, s => inWorkshop(tileOf(s)) === inside, { maxTicks: 20 });
-            if (r.ok) crossed++;
-        }
-        if (inWorkshop(tileOf(sdk.getState()!))) await opLoc(sdk as never, { x: 3015, z: 3453, name: /^door$/i, radius: 15 }, /^open$/i, s => !inWorkshop(tileOf(s)), { maxTicks: 20 });
+        for (let i = 0; i < n; i++) if ((await cross(!inWorkshop(tileOf(sdk.getState()!)))).ok) crossed++;
+        if (inWorkshop(tileOf(sdk.getState()!))) await cross(false);
         await waitTicks(sdk, 100);
     } finally {
         stop();
