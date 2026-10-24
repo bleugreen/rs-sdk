@@ -95,7 +95,7 @@ describe('one source for the row: the holder\'s serve built from the ledger rows
         // Fold-in 24: H11 carries no sharks, H23 a fixed 2 (no top-up on either cannon row).
         expect(h11.topUps).toEqual([]);
         const h23 = serveFromLedger('H23');
-        expect(h23.balls).toBe(1200);
+        expect(h23.balls).toBe(1500);
         expect(h23.extras.map(e => [e.item, e.count])).toContainEqual(['shark', 2]);
         expect(h23.extras.map(e => e.item)).toContain('magic shortbow');
         expect(h23.topUps).toEqual([]);
@@ -132,7 +132,7 @@ describe('one source for the row: the holder\'s serve built from the ledger rows
         expect(serveDrift(exact, h11)).toEqual(['H11: shark served a fixed 9 against a top-up to 9: SCORED declines unless it holds at least 0 (size it from the ledger walk)']);
         const staged = serveDrift({ balls: 100, extras: [{ item: 'Mithril scimitar', count: 1 }, { item: 'Law rune', count: 4 }, { item: 'Water rune', count: 4 }, { item: 'Shark', count: 2 }] }, h11);
         expect(staged.join('\n')).toContain('shark served a fixed 2 against a top-up to 9');
-        expect(serveDrift({ balls: 1200, extras: [{ item: 'Magic shortbow', count: 1 }] }, serveFromLedger('H23')).length).toBeGreaterThan(1);
+        expect(serveDrift({ balls: 1500, extras: [{ item: 'Magic shortbow', count: 1 }] }, serveFromLedger('H23')).length).toBeGreaterThan(1);
     });
 });
 
