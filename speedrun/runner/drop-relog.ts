@@ -118,12 +118,12 @@ export const ALREADY_IN_BOUND_MS = 8 * 60_000;
 export const PAGE_READ_TIMEOUT_MS = 3_000;
 
 /** A page read: its in-game flag, a page that could not answer (PageGone), or null with no page to ask at all. */
-export type PageRead = boolean | null | PageGone;
+export type PageAnswer = boolean | null | PageGone;
 
-const isGone = (p: PageRead): p is PageGone => typeof p === 'object' && p !== null;
+const isGone = (p: PageAnswer): p is PageGone => typeof p === 'object' && p !== null;
 
 /** The live page read on a browser session's DevTools port (lib/tab.ts probePage). */
-export async function readPage(cdp: string, botName: string, timeoutMs = PAGE_READ_TIMEOUT_MS): Promise<PageRead> {
+export async function readPage(cdp: string, botName: string, timeoutMs = PAGE_READ_TIMEOUT_MS): Promise<PageAnswer> {
     const p = await probePage(cdp, botName, timeoutMs);
     return 'inGame' in p ? p.inGame : p;
 }
@@ -134,7 +134,7 @@ export interface DropRelogDeps {
      * for it in Chrome's targets, a renderer that crashed or hangs, a DevTools port that does not
      * answer. Null only when there is no page to ask at all: a lite client, or no DevTools configured.
      */
-    pageInGame(): Promise<PageRead>;
+    pageInGame(): Promise<PageAnswer>;
     /** Whether the world answers (its /playercount). */
     worldUp(): Promise<boolean>;
     /** Whether our own gateway answers (the SDK's socket to it up, its status read): a login cannot be seen landing without it. */

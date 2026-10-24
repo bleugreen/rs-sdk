@@ -8,7 +8,7 @@ import { ALREADY_LOGGED_IN, LoginRefused, LoginTimedOut, type Session } from '..
 import { closeBotTabs } from '../lib/tab';
 import { tickMs } from '../lib/wait';
 import {
-    ADOPT_WAIT_TICKS, ALREADY_IN_BOUND_MS, ALREADY_IN_RETRY_MS, CLOSE_SETTLE_MS, liveDropDeps, MAX_FALLS, RECHECK_TICKS, readPage, recoverDrop, type DropRelogDeps, type PageRead,
+    ADOPT_WAIT_TICKS, ALREADY_IN_BOUND_MS, ALREADY_IN_RETRY_MS, CLOSE_SETTLE_MS, liveDropDeps, MAX_FALLS, RECHECK_TICKS, readPage, recoverDrop, type DropRelogDeps, type PageAnswer,
 } from './drop-relog';
 import type { Link } from './resume';
 import { NO_DATA_TIMEOUT_MS } from '../../server/webclient/src/client/NoDataTimeout';
@@ -25,7 +25,7 @@ const dir = () => mkdtempSync(join(tmpdir(), 'drop-relog-'));
  */
 function world(
     o: {
-        page?: PageRead;
+        page?: PageAnswer;
         up?: boolean;
         gateway?: (ticks: number) => boolean;
         onTick?: (n: number) => void;
@@ -35,7 +35,7 @@ function world(
     } = {}
 ) {
     const calls: string[] = [];
-    let page: PageRead = o.page === undefined ? false : o.page;
+    let page: PageAnswer = o.page === undefined ? false : o.page;
     let ticks = 0;
     let clock = 1_000_000;
     let expectIn = true;
@@ -98,7 +98,7 @@ function world(
     return {
         deps,
         calls,
-        setPage: (v: PageRead) => (page = v),
+        setPage: (v: PageAnswer) => (page = v),
         setExpectIn: (v: boolean) => (expectIn = v),
         setBackAt: (n: number) => (backAt = n),
         ticks: () => ticks,
@@ -746,9 +746,9 @@ describe('a gone page (rs/752): an absent tab or a crashed or hung renderer is c
         delete process.env.SPEEDRUN_CDP_URL;
         const cdp = fakeCdp(BOT);
         try {
-            expect(await deps({ client: 'lite', name: BOT, env: { CDP_URL: cdp.origin } as Session['env'] }).pageInGame()).toBeNull();
-            expect(await deps({ client: 'browser', name: BOT, env: {} as Session['env'] }).pageInGame()).toBeNull();
-            const browser = deps({ client: 'browser', name: BOT, env: { CDP_URL: cdp.origin } as Session['env'] });
+            expect(await deps({ client: 'lite', name: BOT, env: { CDP_URL: cdp.origin } as unknown as Session['env'] }).pageInGame()).toBeNull();
+            expect(await deps({ client: 'browser', name: BOT, env: {} as unknown as Session['env'] }).pageInGame()).toBeNull();
+            const browser = deps({ client: 'browser', name: BOT, env: { CDP_URL: cdp.origin } as unknown as Session['env'] });
             expect(await browser.pageInGame()).toBe(true);
             cdp.page.renderer = 'crashed';
             expect(await browser.pageInGame()).toEqual({ gone: 'its renderer did not answer (CDP Runtime.evaluate: Target crashed)' });
