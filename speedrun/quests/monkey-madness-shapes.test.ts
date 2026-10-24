@@ -36,6 +36,7 @@ const options = (shape: string) => parseShape(shape).filter(p => p.kind === 'opt
  */
 const CITES: Record<MmShapeName, Cite> = {
     narnodeStart: { pages: [[MM('mm_narnode'), 70, 74], [MM('mm_narnode'), 103, 115], [MM('mm_narnode'), 129, 134]], choices: [[MM('mm_narnode'), 125]] },
+    narnodeSpareSeal: { pages: [[MM('mm_narnode'), 144, 144], [MM('mm_narnode'), 164, 168], [MM('mm_narnode'), 170, 170]], choices: [[MM('mm_narnode'), 152], [MM('mm_narnode'), 175]] },
     shipyardGate: { pages: [['quest_grandtree/scripts/shipyardworker.rs2', 66, 68], [MM('mm_caranock'), 46, 57]] },
     caranock: { pages: [[MM('mm_caranock'), 23, 43]] },
     narnodeOrders: { pages: [[MM('mm_narnode'), 144, 148], [MM('mm_narnode'), 179, 183], [MM('mm_narnode'), 188, 189], [MM('mm_narnode'), 193, 194], [MM('mm_narnode'), 200, 202]] },

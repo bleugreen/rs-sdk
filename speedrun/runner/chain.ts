@@ -523,14 +523,18 @@ export function ledgerCoverage(rows: readonly LedgerRow[]): string[] {
 /**
  * `step`, a module's own trade with a standing mule partner (S15's gtSwap for H12), with the row's
  * top-up ask written on the first frame showing that trade open, as handoff.ts writes a placed row's:
- * mule.ts offers a top-up line (H12's `shark to 15`) only on SCORED's ask. Sized from the state the
- * step starts in; nothing is written when every top-up is met.
+ * mule.ts offers a top-up line (H12's `shark to 15`) only on SCORED's ask. Sized on that open frame,
+ * not at the step's start: the step's upkeep may eat a kit line between the two (attempt 4's S15:A
+ * arrived at ~1 HP and ate a shark after a step-start ask of 12, so the kit closed at 14). So it
+ * always subscribes, and a pack met at the start but eaten below its count before the open still
+ * asks; nothing is written when every top-up is met on the open frame.
  */
 export function askedOnTrade(step: ChainStep, plan: HandOffPlan, partner: string, dir: string): ChainStep {
     const wrap = (f: (ctx: StepContext<unknown>) => Promise<void>) => async (ctx: StepContext<unknown>) => {
-        const s = ctx.sdk.getState();
-        const items = s ? askFor(s, plan) : [];
-        const off = items.length ? monkeyMadness.onTradeOpen(ctx.sdk, partner, () => void writeTopUpAsk(dir, items, Date.now(), muleScope(plan.id))) : () => {};
+        const off = monkeyMadness.onTradeOpen(ctx.sdk, partner, st => {
+            const items = askFor(st, plan);
+            if (items.length) writeTopUpAsk(dir, items, Date.now(), muleScope(plan.id));
+        });
         try {
             await f(ctx);
         } finally {
