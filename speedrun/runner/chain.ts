@@ -546,6 +546,33 @@ export function askedOnTrade(step: ChainStep, plan: HandOffPlan, partner: string
     return { ...step, run: wrap(step.run), resume: wrap(step.resume ?? step.run) };
 }
 
+/** Prayer's base level: the level, not the points (skillLevel reads the current, drained level). */
+const prayerAt = (st: BotWorldState) => st.skills.find(k => k.name.toLowerCase() === 'prayer')?.baseLevel ?? 0;
+/** H4m's loads have nothing left to do: Prayer is at S09_PRAYER_TO (S07 may reach it before its last band closes). */
+export const h4mPrayerMet: Met = st => prayerAt(st) >= S09_PRAYER_TO;
+
+/**
+ * An H4m load skipped when Prayer is already 99 at its cue (attempt 4: S07 reached 99 before
+ * Woodcutting 99, and all five loads were traded and dropped, ~360 ticks). No cue opens, no walk and no
+ * trade: the carrier keeps the load, and the cue sink moves its carry-ahead on, a last row stopping
+ * final as a served one does (CueKeeper.skip). Below 99 the load runs as built.
+ */
+export function skippedAtPrayer99(step: ChainStep, cues: CueSink): ChainStep {
+    const wrap = (f: (ctx: StepContext<unknown>) => Promise<void>) => async (ctx: StepContext<unknown>) => {
+        const st = ctx.sdk.getState();
+        if (!st || !h4mPrayerMet(st)) return f(ctx);
+        noteRow(ctx, `${step.name} (skipped)`, { id: step.id, why: `Prayer ${prayerAt(st)} at its cue: no trade, the carrier keeps the load` });
+        if (step.cue) cues.skip?.(step.cue, { final: step.finalStop ?? false });
+    };
+    return {
+        ...step,
+        preconditions: (st, c) => (h4mPrayerMet(st) ? true : step.preconditions(st, c)),
+        postconditions: (st, c) => (h4mPrayerMet(st) ? true : step.postconditions(st, c)),
+        run: wrap(step.run),
+        resume: wrap(step.resume ?? step.run),
+    };
+}
+
 /** Where SCORED takes each H4m load: the bone lap's east stay, the one tile beside the carrier's stand (rs/705's reach check). */
 export const H4M_TRADE_TILE = { x: mining.BURY_TRADE_TILE[0], z: mining.BURY_TRADE_TILE[1] };
 
@@ -905,9 +932,7 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         // Without the record (a build that never resumes) a bury step is done at Prayer 99 only; run.ts always passes it.
         const record = o.record?.handOffs ?? { has: () => false };
         const bones = new RegExp(h.pattern, 'i');
-        // the level, not the points (skillLevel's current level)
-        const prayerAt = (st: BotWorldState) => st.skills.find(k => k.name.toLowerCase() === 'prayer')?.baseLevel ?? 0;
-        const reached = (st: BotWorldState) => prayerAt(st) >= S09_PRAYER_TO;
+        const reached = h4mPrayerMet;
         const out: Entry[] = [];
         h.rows.forEach((row, i) => {
             const last = i === h.rows.length - 1;
@@ -1089,7 +1114,8 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         out.unshift(muleRow ? mule(placed, e.row) : placed);
     }
     const tileOf = startTiles(cfg);
-    return cueMuleRows(out, muleRows, partner, o.cues).map(censused).map(s => {
+    const h4mLoads = new Set(h4m?.rows ?? []);
+    return cueMuleRows(out, muleRows, partner, o.cues).map(s => (s.kind === 'handoff' && h4mLoads.has(s.id) ? skippedAtPrayer99(s, o.cues) : s)).map(censused).map(s => {
         const t = tileOf(s.name);
         return t ? { ...s, startTile: t } : s;
     });
