@@ -196,6 +196,14 @@ describe('--plan-out and --vitals', () => {
         expect(plan.gaps).toEqual(['a gap']);
     });
 
+    test("with the ledger's H4m row (attempt 4 on), each H4m load is staff-supplied from the one shared row, not refused as 'no ledger row H4m.1'", () => {
+        const real = readFileSync(MANIFEST, 'utf8');
+        const lab = labChain(buildChain(cfg('lab_stub'), { cues, manifest: real }), { manifest: real, stub: null, world });
+        const loads = lab.staffed.filter(r => r.startsWith('H4m.'));
+        expect(loads.length).toBeGreaterThan(0);
+        expect(loads[0]).toBe('H4m.1');
+    });
+
     test('a vitals line each time the hitpoints or the food held change, in game only, keyed by the session', () => {
         const v = new VitalsRecorder();
         const st = (hp: number, sharks: number, tick: number) => {

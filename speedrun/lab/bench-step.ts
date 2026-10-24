@@ -399,9 +399,10 @@ async function rehearse(args: readonly string[], o: { out: string; label: string
     const said: string[] = [];
     const pump = async (stream: ReadableStream<Uint8Array>) => {
         const dec = new TextDecoder();
+        const reader = stream.getReader();
         let carry = '';
-        for await (const chunk of stream) {
-            const text = carry + dec.decode(chunk, { stream: true });
+        for (let r = await reader.read(); !r.done; r = await reader.read()) {
+            const text = carry + dec.decode(r.value, { stream: true });
             const lines = text.split('\n');
             carry = lines.pop()!;
             for (const l of lines) {
@@ -449,9 +450,9 @@ async function main(argv: string[]): Promise<number> {
     }
     const web = process.env.WEB_PORT ?? '9300';
     const agent = process.env.AGENT_PORT ?? '8300';
-    const off = labRefusal({ staffLevel: process.env.LOCAL_STAFF_LEVEL, server: `localhost:${web}`, gateway: `ws://localhost:${agent}` });
-    if (off) {
-        console.error(`[bench] REFUSED: ${off}`);
+    const refusal = labRefusal({ staffLevel: process.env.LOCAL_STAFF_LEVEL, server: `localhost:${web}`, gateway: `ws://localhost:${agent}` });
+    if (refusal) {
+        console.error(`[bench] REFUSED: ${refusal}`);
         return 3;
     }
     // The engine's tick is set when the lab starts (lab.sh NODE_TICKRATE); the bench only checks it.

@@ -128,7 +128,7 @@ import { dropperGaps, launchDroppers, runsS03, stopDroppers } from './fm-row-lau
 import { giverTiles, serveLoads, stageLoad } from './ring-givers';
 import { dropMatching, give, leaveTutorial, mustTele } from './setup';
 import { labRefusal, standInFor, standInStep, type LabWorld } from './stand-ins';
-import { stageRows, type StubPlanFile, type StubRow } from './stub-giver';
+import { stageRows, stubPlanOf, type StubPlanFile, type StubRow } from './stub-giver';
 import { watchChunkEnd, type ChunkEndWatch } from './seam-check';
 
 /** Observed ticks after login within which auto-retaliate must read off (openSession and login turn it off), or the rehearsal refuses. */
@@ -164,7 +164,8 @@ export function meetingTile(chain: readonly ChainStep[], index: number): StubRow
  */
 export function staffSupplyStep(step: ChainStep, manifest: string, planOf?: (s: BotWorldState) => HandOffPlan): ChainStep {
     const row = step.name.replace(/ hand-off.*$/, '');
-    const fixed = planOf ? null : handOffFrom(manifest, row);
+    // H4m's loads share one fallback row (stub-giver.ts stubPlanOf), so each is looked up through it.
+    const fixed = planOf ? null : stubPlanOf(manifest, row);
     const { rows, unresolved } = stageRows(manifest, { rows: [{ row, tile: { x: 0, z: 0 } }] });
     if (unresolved.length) throw new Error(`staff supply ${row}: no ::give name for ${unresolved.join(', ')}`);
     const run = async (ctx: StepContext<unknown>) => {
