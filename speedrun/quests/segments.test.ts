@@ -8,7 +8,7 @@ import * as mageArena from './mage-arena';
 import * as treeGnomeVillage from './tree-gnome-village';
 import type { Step } from '../runner/step';
 import {
-    antipoisonDrunkAt, cureDose, curePoison, entryCured, HITMARK_POISON, noteAntipoison, poisoned, poisonSeenAt, POISON_PERIOD, POISON_WINDOW,
+    antipoisonDrunkAt, cureDose, curePoison, entryCure, entryCured, HITMARK_POISON, noteAntipoison, noteSessionStart, poisoned, poisonSeenAt, poisonUnknown, POISON_PERIOD, POISON_WINDOW,
     allOf, baseLevels, DEFAULT_DIALOGUE, doseRestore, drinkPrayerTo, freeSlots, kitSegment, kitWant, prayerCovers, prayerReserve, questSteps, segmentName, slotNeed, slotsCover, stageAtLeast, stageDone,
     talkShape, within, type QuestItem, type Segment,
 } from './segments';
@@ -376,6 +376,117 @@ describe('poison: the published evidence, the shared dose record and the entry c
         expect(order).toEqual(['drink', 'body']);
         expect(entryCured('S10b', ['K'], [seg('A', 'kit'), seg('K', 'warlord')])[0]!.preconditions).toBeUndefined();
         expect(() => entryCured('S10b', ['Q'], [seg('K', 'warlord')])).toThrow(/no segment Q/);
+    });
+
+    describe('a poison carried across a fresh login (rs/786): poisonUnknown and entryCure', () => {
+        const held = [potion(4, 'Antipoison(3)')];
+        const fresh = (tick: number, o: Partial<BotWorldState> = {}) => baseState({ tick, inventory: held, ...o });
+        /** The server's side of a drink: one dose fewer on the next state, a vial after the last. */
+        const sip = (name: string) => {
+            const m = /^(.*)\((\d)\)$/.exec(name);
+            return !m ? name : Number(m[2]) > 1 ? `${m[1]}(${Number(m[2]) - 1})` : 'Vial';
+        };
+        const drinks = (sdk: FakeSdk, onDrink: () => void = () => {}) => {
+            sdk.onSend = (a, f) => {
+                if (a.method !== 'sendUseItem') return;
+                onDrink();
+                f.state = { ...f.state!, inventory: f.state!.inventory.map(i => (i.slot === a.args[0] ? { ...i, name: sip(i.name) } : i)) };
+            };
+        };
+
+        test('fresh (a launched client under a poison period old) with none seen and a dose held: unknown', () => {
+            noteSessionStart(0); // a launched client counts from 0
+            expect(poisonUnknown(fresh(4))).toBe(true);
+            expect(poisonUnknown(fresh(POISON_PERIOD - 1))).toBe(true);
+            expect(poisonUnknown(fresh(POISON_PERIOD))).toBe(false); // a carried poison has shown its first hit by now
+        });
+
+        test('fresh after a poison hit or the poisoned message: not unknown, the hitmark path (poisoned) decides', () => {
+            expect(poisonUnknown(fresh(12, { combatEvents: [hit(10)] }))).toBe(false);
+            expect(poisoned(fresh(12, { combatEvents: [hit(10)] }))).toBe(true);
+            expect(poisonUnknown(fresh(12, { gameMessages: [msg(11)] }))).toBe(false);
+            expect(poisonUnknown(fresh(12, { combatEvents: [hit(10, 1)] }))).toBe(true); // a melee hit is not poison
+        });
+
+        test('after a dose this session, or with none held: not unknown', () => {
+            expect(poisonUnknown(fresh(5, { inventory: [] }))).toBe(false);
+            expect(poisonUnknown(fresh(5, { inventory: [potion(1, 'Prayer potion(4)'), potion(2, 'Vial')] }))).toBe(false);
+            noteAntipoison(6);
+            expect(poisonUnknown(fresh(8))).toBe(false);
+        });
+
+        test("a new process's first observed tick starts its session (a run.ts restart on a page whose tick counts on); later ticks do not move it", () => {
+            expect(poisonUnknown(fresh(5000))).toBe(true);
+            expect(poisonUnknown(fresh(5010))).toBe(true);
+            expect(poisonUnknown(fresh(5000 + POISON_PERIOD))).toBe(false);
+            expect(poisonUnknown(fresh(5040))).toBe(false); // still the session that began at 5000
+            noteAntipoison(-Infinity);
+            expect(poisonUnknown(fresh(5000, { combatEvents: [hit(4990)] }))).toBe(false); // a hit already on the page: poisoned decides
+            expect(poisoned(fresh(5000, { combatEvents: [hit(4990)] }))).toBe(true);
+        });
+
+        test('a relaunch (the tick falls) starts a new session: the old dose says nothing; an in-page login is named by noteSessionStart', () => {
+            noteAntipoison(480);
+            expect(poisonUnknown(fresh(500))).toBe(false);
+            expect(poisonUnknown(fresh(4))).toBe(true);
+            expect(antipoisonDrunkAt()).toBe(-Infinity);
+            noteAntipoison(-Infinity);
+            noteSessionStart(0);
+            expect(poisonUnknown(fresh(5010))).toBe(false); // a page that counts on: no session start seen since 0
+            noteSessionStart(5000);
+            expect(poisonUnknown(fresh(5010))).toBe(true);
+            expect(poisonUnknown(fresh(5010, { combatEvents: [hit(4990)] }))).toBe(false); // a hit in view: poisoned decides
+            expect(poisonUnknown(fresh(5010, { combatEvents: [hit(4970)] }))).toBe(true); // the last session's, long past
+            expect(poisonUnknown(fresh(5000 + POISON_PERIOD))).toBe(false);
+            expect(poisonUnknown(fresh(3))).toBe(true); // then relaunched
+        });
+
+        test('entryCure, fresh with an antipoison(n) held: one dose at once, noted, so a second caller in the session drinks nothing', async () => {
+            const sdk = new FakeSdk(fresh(4, { inventory: [potion(3, 'Superantipoison(4)'), potion(8, 'Antipoison(3)')] }));
+            drinks(sdk);
+            expect(await drive(sdk, entryCure(sdk as never, 'T'), 10)).toBe('blind');
+            expect(sdk.sent.map(a => [a.method, ...a.args])).toEqual([['sendUseItem', 8, 1]]);
+            expect(sdk.state!.inventory.map(i => i.name)).toEqual(['Superantipoison(4)', 'Antipoison(2)']);
+            expect(antipoisonDrunkAt()).toBe(4);
+            expect(await drive(sdk, entryCure(sdk as never, 'T'), 5)).toBe('clean');
+            expect(sdk.sent).toHaveLength(1);
+        });
+
+        test('entryCure, fresh with only the Superantipoison (S16:B): one super dose', async () => {
+            const sdk = new FakeSdk(fresh(6, { inventory: [potion(3, 'Superantipoison(4)')] }));
+            drinks(sdk);
+            expect(await drive(sdk, entryCure(sdk as never, 'T'), 10)).toBe('blind');
+            expect(sdk.state!.inventory.map(i => i.name)).toEqual(['Superantipoison(3)']);
+        });
+
+        test('entryCure: not fresh and no hit drinks nothing; fresh with none held drinks nothing and does not throw; a seen hit is cured as before', async () => {
+            noteSessionStart(0); // a process that has run since its client's launch
+            const old = new FakeSdk(fresh(300));
+            expect(await entryCure(old as never, 'T')).toBe('clean');
+            expect(old.sent).toEqual([]);
+            const none = new FakeSdk(fresh(4, { inventory: [] }));
+            expect(await entryCure(none as never, 'T')).toBe('clean');
+            expect(none.sent).toEqual([]);
+            const seen = new FakeSdk(fresh(12, { combatEvents: [hit(10)] }));
+            drinks(seen);
+            expect(await drive(seen, entryCure(seen as never, 'T'), 10)).toBe('cured');
+            expect(seen.sent).toHaveLength(1);
+        });
+
+        test("entryCured's fresh letters cure blind before the body; its other letters keep curePoison; a fresh letter must be entry-cured", async () => {
+            const order: string[] = [];
+            const segs = entryCured('S16', ['B', 'C'], [seg('B', 'kolodion', { run: async () => { order.push('B'); } }), seg('C', 'fight', { run: async () => { order.push('C'); } })], { fresh: ['B'] });
+            const [b, c] = questSteps('S16', segs);
+            const sdkC = new FakeSdk(fresh(4, { inventory: [potion(3, 'Superantipoison(4)')] }));
+            drinks(sdkC);
+            await drive(sdkC, c!.run(ctxOf(sdkC)), 10);
+            expect(sdkC.sent).toEqual([]);
+            const sdkB = new FakeSdk(fresh(4, { inventory: [potion(3, 'Superantipoison(4)')] }));
+            drinks(sdkB, () => order.push('drink'));
+            await drive(sdkB, b!.run(ctxOf(sdkB)), 10);
+            expect(order).toEqual(['C', 'drink', 'B']);
+            expect(() => entryCured('S16', ['C'], [seg('B', 'kolodion'), seg('C', 'fight')], { fresh: ['B'] })).toThrow(/fresh-session letters B are not entry-cured/);
+        });
     });
 
     test('each quest step that can be entered poisoned cures first or names it: S10b K, S12 G-J, S16 B-C, S26 L', () => {

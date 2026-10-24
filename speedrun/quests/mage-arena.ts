@@ -871,8 +871,10 @@ export function steps(opts?: Options) {
         },
     ];
     // B is the last safe point before Kolodion's teleport and C the arena on a resume: a poison picked up in the Wilderness
-    // is cured from H12's Superantipoison, kept through S16 (the ledger's H13 and H14 rows), or named.
-    return questSteps(stepId, entryCured(stepId, ['B', 'C'], segs));
+    // is cured from H12's Superantipoison, kept through S16 (the ledger's H13 and H14 rows), or named. A fresh session into
+    // B drinks a dose with no hit seen (poisonUnknown): measured (rs/786), a carried poison's first hit lands 30 ticks into
+    // the session, after the teleport, and nothing in the fight cures it. H14's `superantipoison(*) any` takes the dose change.
+    return questSteps(stepId, entryCured(stepId, ['B', 'C'], segs, { fresh: ['B'] }));
 }
 
 /** The exit's Magic: base level and xp, for the run's record (S18 wants boosted 80; a sip covers 79). */
