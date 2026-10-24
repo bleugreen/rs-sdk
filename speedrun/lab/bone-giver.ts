@@ -17,6 +17,12 @@
 //   --return (with --mix and --givers): S07's trade-and-return rehearsal: the stand-in buries nothing and hands
 //   each load straight back to its giver (bone-receiver.ts returnLoads, bone-giver.ts acceptReturn), paced at a
 //   load's bury time (--pace=T ticks, default 69)
+//   --s07-sites: the givers use bone-giver.ts's own default sites (S07_SITES, the oak then the willow) instead of
+//   the oak tile alone, so they rotate away from an empty site and back,
+//   --receiver-after=S: the stand-in logs in S seconds after the givers, from a launcher of its own (the givers
+//   arrive first and find no receiver, as on the run), and the lab ends when it has taken its loads,
+//   --gate: sample run.ts's role-phase gate (runner/phase-gate.ts) on the givers' status files every second, as
+//   for a run whose next helper step is S07, and print each change and a summary
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -30,6 +36,10 @@ const hold = Number(arg('hold', '6'));
 // --asks=15,21,17: S18's top-ups (the giver in mode on-request) instead of S07's standing loads.
 const asks = arg('asks', '').split(',').filter(Boolean).map(Number);
 const webPort = process.env.WEB_PORT ?? '9300';
+const s07Sites = process.argv.includes('--s07-sites');
+const receiverAfter = Number(arg('receiver-after', '0'));
+const sampleGate = process.argv.includes('--gate');
+if (s07Sites && asks.length) throw new Error('--s07-sites is for the standing mode (S07)');
 
 const base = mkdtempSync(join(tmpdir(), 'bone-lab-'));
 const botsDir = join(base, 'bots');
@@ -85,7 +95,7 @@ const config = {
                       ...stock,
                       // The final giver's bank also gets the runes: with --mix every extra is a real withdrawal too.
                       ...(mix.length && i === finalAt ? { restock: { ...stock.restock, labSeed: [...(stock.restock as { labSeed: unknown[] }).labSeed, ...RUNES.map(r => ({ obj: r.obj, n: r.count }))] } } : {}),
-                      sites,
+                      ...(s07Sites ? {} : { sites }),
                       scope,
                       ...limit,
                       // The returning stand-in idles through its pace, so a standing request goes stale and opens only on a
@@ -100,25 +110,83 @@ const config = {
         return arg('order', 'giver-first') === 'receiver-first' ? [r, ...g] : [...g, r];
     })()
 };
+// --receiver-after: the givers' launcher holds the givers only, and the stand-in gets a launcher (gateway, run dir) of its own.
+const late = receiverAfter > 0;
+const giverConfig = late ? { ...config, accounts: config.accounts.filter(a => a.account !== receiver) } : config;
+const receiverRunDir = late ? join(base, 'run-receiver') : runDir;
+const receiverConfig = late ? { ...config, gatewayPort: config.gatewayPort + 1, runDir: receiverRunDir, accounts: config.accounts.filter(a => a.account === receiver) } : null;
 const configPath = join(base, 'launch.json');
-writeFileSync(configPath, JSON.stringify(config, null, 2));
-console.log(`bone giver lab: ${loads} loads, pages after loads ${pages.join(',') || 'none'} held ${hold} ticks, run files in ${base}`);
+writeFileSync(configPath, JSON.stringify(giverConfig, null, 2));
+console.log(`bone giver lab: ${loads} loads, pages after loads ${pages.join(',') || 'none'} held ${hold} ticks, ${s07Sites ? 'the S07 default sites' : 'the oak tile'}${late ? `, the receiver ${receiverAfter} s after the givers` : ''}, run files in ${base}`);
 
-const child = Bun.spawn([process.execPath, 'speedrun/helpers/standalone.ts', configPath], {
+const cueDir = join(runDir, 'rc-cue');
+const launch = (path: string) => Bun.spawn([process.execPath, 'speedrun/helpers/standalone.ts', path], {
     cwd: ROOT,
-    env: { ...process.env, HELPER_LAB_TELE: '1', RC_CUE_DIR: join(runDir, 'rc-cue') },
+    env: { ...process.env, HELPER_LAB_TELE: '1', RC_CUE_DIR: cueDir },
     stdout: 'inherit',
     stderr: 'inherit'
 });
-const killer = setTimeout(() => child.kill('SIGINT'), Number(process.env.BONE_LAB_TIMEOUT_MS ?? 15 * 60_000));
-const code = await child.exited;
+const t0 = Date.now();
+const child = launch(configPath);
+
+// The role-phase gate as run.ts evaluates it for a run whose next helper step is S07: printed on each change.
+const gate = { refused: 0, passed: 0, changes: [] as string[] };
+let sampler: ReturnType<typeof setInterval> | null = null;
+if (sampleGate) {
+    const { membersFromLauncher, phaseGates, readStatusFile } = await import('../runner/phase-gate');
+    const members = membersFromLauncher(giverConfig);
+    let last = '';
+    let lastVerdict = '';
+    sampler = setInterval(() => {
+        const lines = phaseGates({ path: ['S07'], members, read: readStatusFile(cueDir), launcher: null, now: Date.now(), source: 'the lab launch config' });
+        const ok = lines.length > 0 && lines.every(l => l.ok);
+        if (ok) gate.passed++;
+        else gate.refused++;
+        const secs = Math.round((Date.now() - t0) / 1000);
+        const verdict = ok ? 'PASS' : 'REFUSED';
+        if (verdict !== lastVerdict) gate.changes.push(`+${secs}s ${verdict}`);
+        lastVerdict = verdict;
+        const key = lines.map(l => `${l.ok} ${l.detail.replace(/\d+ s\b/g, '')}`).join('|');
+        if (key === last) return;
+        last = key;
+        console.log(`gate +${secs}s ${verdict}`);
+        for (const l of lines) console.log(`  [gate] ${l.ok ? 'ok     ' : 'REFUSED'} ${l.gate}: ${l.detail}`);
+    }, 1000);
+}
+
+let rchild: ReturnType<typeof launch> | null = null;
+const timeoutMs = Number(process.env.BONE_LAB_TIMEOUT_MS ?? 15 * 60_000);
+const killer = setTimeout(() => {
+    child.kill('SIGINT');
+    rchild?.kill('SIGINT');
+}, timeoutMs);
+let code: number;
+if (receiverConfig) {
+    const receiverPath = join(base, 'launch-receiver.json');
+    writeFileSync(receiverPath, JSON.stringify(receiverConfig, null, 2));
+    // Bounded by the lab's timeout: a givers' launcher that exits early ends the wait too.
+    await Promise.race([Bun.sleep(receiverAfter * 1000), child.exited]);
+    console.log(`receiver: launching at +${Math.round((Date.now() - t0) / 1000)}s`);
+    rchild = launch(receiverPath);
+    code = await rchild.exited;
+    // The givers end on their group's loads; give them a moment to publish 'off', then stop their launcher.
+    await Promise.race([child.exited, Bun.sleep(20_000)]);
+    child.kill('SIGINT');
+    await child.exited;
+} else {
+    code = await child.exited;
+}
 clearTimeout(killer);
+if (sampler) {
+    clearInterval(sampler);
+    console.log(`GATE SUMMARY ${JSON.stringify({ refusedSamples: gate.refused, passedSamples: gate.passed, changes: gate.changes })}`);
+}
 
 // Both sides, line by line: the receiver's loads and pages, the giver's trades, requests and refusals.
-for (const [who, account, re] of [['receiver', receiver, /"message":"(load|page|givers)"/] as const, ...givers.map(g => [`giver ${g}`, g, /"message":"(trade|request|bounce|phase|trip|return|final bank|bank short)"/] as const)]) {
+for (const [who, account, re] of [['receiver', receiver, /"message":"(load|page|givers)"/] as const, ...givers.map(g => [`giver ${g}`, g, /"message":"(trade|request|bounce|phase|trip|return|final bank|bank short|travel fault: next site)"/] as const)]) {
     let text = '';
     try {
-        text = readFileSync(join(runDir, 'logs', `${account}.role.log`), 'utf8');
+        text = readFileSync(join(account === receiver ? receiverRunDir : runDir, 'logs', `${account}.role.log`), 'utf8');
     } catch {
         console.log(`${who}: no role log`);
     }
