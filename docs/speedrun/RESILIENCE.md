@@ -275,7 +275,12 @@ the 0-hp tick, a death within 15 tiles of the square shows only through the
 message.
 
 On a death the account stays out. The watchdog does not log it back in,
-relog refuses, and the drop recovery refuses to relog. The logout line says
+relog refuses, and the drop recovery refuses to relog. A death on a leg reaches
+the logout at once (read from the code, not measured): the hop fails on the
+first state after the corroborated landing, the step fails, and run.ts's
+logout follows with nothing run between. `logoutClean` waits out only the
+16-tick post-combat window from the killing hit, so the click lands at most
+about 12 ticks after the respawn. The logout line says
 DIED, giving the tile before and after. A held logout also reports its combat
 ticks and hp trajectory. run.ts writes one `(death)` row and ends the attempt
 with **exit 6**, whatever the chain ended with. Any later run into the same log
