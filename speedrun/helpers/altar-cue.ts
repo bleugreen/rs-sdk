@@ -118,6 +118,12 @@ export interface Cue {
     open: number;
     /** Every turn of this session so far; a giver acts on the newest one naming it. */
     turns: Turn[];
+    /**
+     * SCORED's stand tile at the step's current site (S07: the burying band's chopping stand). A helper
+     * that waits at one of several sites goes to the one whose receiver tile this is (bone-giver.ts
+     * namedSite). Absent: no site is named, and such a helper keeps its own rotation.
+     */
+    site?: { x: number; z: number };
     /** The batch is over: armed givers stand down. */
     stop?: boolean;
     /**
@@ -641,6 +647,7 @@ function resumableCue(value: unknown): value is Cue {
         && integer(c.ms) && c.ms >= 0 && integer(c.open) && schedule(c.schedule)
         && (c.stop === undefined || typeof c.stop === 'boolean')
         && (c.final === undefined || typeof c.final === 'boolean') && (!c.final || c.stop === true)
+        && (c.site === undefined || (!!c.site && integer(c.site.x) && integer(c.site.z)))
         && Array.isArray(c.beacons) && c.beacons.length > 0
         && c.beacons.every(b => b && integer(b.tick) && integer(b.ms) && b.ms >= 0)
         && Array.isArray(c.turns) && c.turns.every(t => t && typeof t.giver === 'string' && t.giver.length > 0
@@ -688,13 +695,15 @@ export class CueWriter {
         }
     }
 
-    /** Write the cue with `turns` replaced (pass the full list) and fresh beacons. */
-    write(fields: { beacons: Beacon[]; turns: Turn[]; schedule?: Schedule; open?: number; stop?: boolean; final?: boolean }): Cue {
+    /** Write the cue with `turns` replaced (pass the full list) and fresh beacons. A write without `site` keeps the session's last one. */
+    write(fields: { beacons: Beacon[]; turns: Turn[]; schedule?: Schedule; open?: number; stop?: boolean; final?: boolean; site?: { x: number; z: number } }): Cue {
         if (fields.beacons.length === 0) throw new Error('a cue needs at least one beacon');
+        if (fields.site && !(Number.isSafeInteger(fields.site.x) && Number.isSafeInteger(fields.site.z))) throw new Error('a cue site needs integer x and z');
         if (fields.final && !fields.stop) throw new Error('a final cue is a stop: final needs stop');
         if (this.cue?.final && (!fields.stop || fields.final === false)) throw new Error('CueWriter: final session cannot reopen');
         if (!Number.isSafeInteger(this.seq + 1)) throw new Error('CueWriter: sequence exhausted');
         const final = fields.final || this.cue?.final;
+        const site = fields.site ?? this.cue?.site;
         this.cue = {
             v: CUE_VERSION,
             scope: this.scope,
@@ -705,6 +714,7 @@ export class CueWriter {
             schedule: fields.schedule ?? this.cue?.schedule ?? 'tuned',
             open: fields.open ?? this.cue?.open ?? DEFAULT_OPEN,
             turns: fields.turns,
+            ...(site ? { site: { x: site.x, z: site.z } } : {}),
             ...(fields.stop ? { stop: true } : {}),
             ...(final ? { final: true } : {}),
             ms: Date.now()
