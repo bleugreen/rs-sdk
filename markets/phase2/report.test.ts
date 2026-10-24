@@ -90,3 +90,31 @@ describe('Hitpoints in the report', () => {
         expect(hpSummary([])).toBeNull();
     });
 });
+
+import { stallsOf, tripsOf } from './report.ts';
+
+describe('stalls, parks and trips', () => {
+    test('stalls and parks by stage', () => {
+        const s = stallsOf([
+            { kind: 'stall', account: 'a02', stage: 'coins', action: 'abort' },
+            { kind: 'stall', account: 'a02', stage: 'coins', action: 'abort' },
+            { kind: 'stall', account: 'a05', stage: 'method', action: 'abort' },
+            { kind: 'parked', account: 'a02', stage: 'coins', reason: 'stalled in coins' },
+            { kind: 'parked', account: 'a12', stage: 'method', reason: 'unreachable method' }
+        ]);
+        expect(s.byStage).toEqual({ coins: 2, method: 1 });
+        expect(s.parkedByStage).toEqual({ coins: 1, method: 1 });
+        expect(s.lines).toHaveLength(3);
+    });
+    test('trips: each leg counted with its median ticks, and the fares', () => {
+        const t = tripsOf([
+            { kind: 'trip', fares: 60, legs: [{ leg: 'Gnome Stronghold gate', ticks: 40 }, { leg: 'fares', ticks: 100 }, { leg: 'ardougne-brimhaven', ticks: 30 }, { leg: 'musa-sarim', ticks: 250 }, { leg: 'walk', ticks: 200 }] },
+            { kind: 'trip', fares: 30, legs: [{ leg: 'musa-sarim', ticks: 50 }, { leg: 'walk', ticks: 180 }] },
+            { kind: 'account' }
+        ]);
+        expect(t.n).toBe(2);
+        expect(t.fares).toBe(90);
+        expect(t.byLeg['musa-sarim']).toEqual({ n: 2, medianTicks: 150 });
+        expect(t.byLeg['Gnome Stronghold gate']).toEqual({ n: 1, medianTicks: 40 });
+    });
+});
