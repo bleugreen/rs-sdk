@@ -202,7 +202,8 @@ const STALE_THRESHOLD_MS = 8000;  // 8 seconds without state = stale (bots publi
 
 function getSessionStatus(session: BotSession): SessionStatus {
     if (!session.ws) return 'dead';
-    const stateAge = Date.now() - session.lastStateReceivedAt;
+    // A client that has not published yet is judged from when it connected.
+    const stateAge = Date.now() - (session.lastStateReceivedAt || session.connectedAt);
     if (stateAge > STALE_THRESHOLD_MS) return 'stale';
     return 'active';
 }
