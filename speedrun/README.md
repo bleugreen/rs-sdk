@@ -341,7 +341,9 @@ in `lab/`, which `lib/` never imports.
 - `fight` keeps one world-index target, dismisses level-up/unlock pages with
   an attack on the same target in the same tick, and re-engages under a protect
   prayer when outgoing damage stalls despite the client saying it is in combat.
-  A send that reached no tile (the browser's `routed: false`, lite's cant_reach)
+  With the opt-in `unreachable` option (absent, the loop sends exactly what it
+  always has; S12's caged rounds use it), a send that reached no tile (the
+  browser's `routed: false`, lite's cant_reach)
   with the target untouched 6 ticks, or `stuckSends` re-sends with no engine
   effect (no hitsplat with the target, no rune or xp spent, no step), sends the
   player to a tile in range with `approachInRange`; with none, the fight waits

@@ -263,6 +263,10 @@ describe('H and I: a target still in its cage (rs/693)', () => {
     const scorpion = (x: number, z: number) => ({ kind: 'npc', id: 2, index: 9, name: 'Khazard Scorpion', x, z, tileX: x, tileZ: z, size: 2, distance: 3, hp: 40, maxHp: 40, optionsWithIndex: [{ text: 'Attack', opIndex: 2 }], options: ['Attack'] }) as unknown as NearbyNpc;
     const arenaDoor = (): NearbyLoc => ({ id: configId('loc', 'fightarena_door2'), name: 'Door', x: TILES.arenaDoor.x, z: TILES.arenaDoor.z, level: 0, distance: 1, optionsWithIndex: [{ text: 'Open', opIndex: 1 }], options: ['Open'] }) as NearbyLoc;
 
+    test('the fights\' shared options carry no stuck watch: G (the ogre) is the plain fight loop; only H and I opt in', () => {
+        expect(fightOptions(undefined).unreachable).toBeUndefined();
+    });
+
     test('caged: east of the gate line (x 2606|2607), the release tile and the arena are not', () => {
         expect(caged(scorpion(2607, 3159))).toBe(true);
         expect(caged(scorpion(2608, 3160))).toBe(true);
