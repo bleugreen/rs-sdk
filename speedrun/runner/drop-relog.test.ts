@@ -3,7 +3,9 @@ import { mkdtempSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { relogNow, type PageRead, type RelogNowIO } from '../tools/relog-now';
-import { ADOPT_WAIT_TICKS, MAX_FALLS, RECHECK_TICKS, recoverDrop, SETTLE_TICKS, type DropRelogDeps } from './drop-relog';
+import { tickMs } from '../lib/wait';
+import { ADOPT_WAIT_TICKS, MAX_FALLS, RECHECK_TICKS, recoverDrop, type DropRelogDeps } from './drop-relog';
+import { pageHoldTicks } from './page-hold';
 import { RelogBudget, RelogBudgetSpent } from './relog-budget';
 
 const AT = { step: 'S07 woodcutting:oak-15-73', tick: 812 };
@@ -129,7 +131,9 @@ test("out between the halves of S21's split planned relog is not a drop: no relo
     expect(budget.used()).toEqual({ planned: 1, unplanned: 0 });
 });
 
-describe('a page that still says in game after the drop is given SETTLE_TICKS', () => {
+const SETTLE_TICKS = pageHoldTicks();
+
+describe("a page that still says in game after the drop is given its hold window (page-hold.ts)", () => {
     test('it falls to the title screen 7 ticks later: relogged in page then, never relaunched', async () => {
         const budget = new RelogBudget(dir());
         const w = world({ page: true, advanced: () => false, onTick: n => n === 7 && w.setPage(false) });
@@ -267,15 +271,16 @@ describe('every wait keeps asking the page: an out page is relogged, never waite
         expect(budget.used()).toEqual({ planned: 0, unplanned: 1 });
     });
 
-    test('our gateway down for a minute with the page in the world throughout: back when it is, no relog and nothing counted', async () => {
+    test('our gateway down past the hold window with the page in the world throughout: back when it is, no relog and nothing counted', async () => {
         const budget = new RelogBudget(dir());
-        // 150 ticks (60 s at 400 ms) without a published tick; the page never left the world.
-        const w = world({ page: true, advanced: () => false, backAt: 150, gateway: n => n >= 150 });
+        // 150 ticks (60 s at 400 ms) past the settle without a published tick; the page never left the world.
+        const back = SETTLE_TICKS + 150;
+        const w = world({ page: true, advanced: () => false, backAt: back, gateway: n => n >= back });
         const r = await recoverDrop(budget, w.deps, 'no tick for 40 ticks', AT);
         expect(r.outcome).toBe('default');
         expect(w.calls).toEqual(['pause watchdog', 'resume watchdog', 'restored']);
-        expect(w.ticks()).toBeGreaterThanOrEqual(150);
-        expect(w.ticks()).toBeLessThan(150 + RECHECK_TICKS);
+        expect(w.ticks()).toBeGreaterThanOrEqual(back);
+        expect(w.ticks()).toBeLessThan(back + RECHECK_TICKS);
         expect(budget.entries()).toEqual([]);
     });
 
@@ -356,6 +361,50 @@ describe('the race rule: a manual relog is adopted, never fought', () => {
         expect((await recoverDrop(run, w.deps, 'client out of game', AT)).outcome).toBe('relogged');
         expect(refused).toMatch(/^failed: run\.ts \(pid 11\) is relogging scored_env itself/);
         expect(run.entries().map(e => [e.kind, e.by])).toEqual([['unplanned', 'run']]);
+    });
+});
+
+describe('a network hold: the page keeps its socket and says in game, and the recovery waits for it (page-hold.ts)', () => {
+    const ticksOf = (ms: number) => Math.ceil(ms / tickMs());
+
+    test('the window is the page\'s own 120 s no-data timeout plus the margin, in ticks', () => {
+        expect(SETTLE_TICKS * tickMs()).toBeGreaterThanOrEqual(120_000);
+        expect(SETTLE_TICKS * tickMs()).toBeLessThanOrEqual(150_000);
+    });
+
+    test('a 60 s silent hold: no relaunch, no relog; the ticks resume and the original session is adopted', async () => {
+        const budget = new RelogBudget(dir());
+        const resume = ticksOf(60_000);
+        const w = world({ page: true, advanced: n => n >= resume });
+        const r = await recoverDrop(budget, w.deps, 'no tick for ~18 ticks (6800 ms)', AT);
+        expect(r.outcome).toBe('adopted');
+        // The watchdog paused throughout (never resumed before the adopt), and nothing logged in.
+        expect(w.calls).toEqual(['pause watchdog', 'adopt -', 'restored']);
+        expect(w.ticks()).toBe(resume);
+        // The adopt is the only record: no login was charged (rs/733 keeps the adopt itself off the budget).
+        expect(budget.entries().every(e => e.via === 'adopted')).toBe(true);
+    });
+
+    test('a 130 s hold: the page times out at 120 s (lostCon, out of the world), then the usual in-page relog', async () => {
+        const budget = new RelogBudget(dir());
+        const timeout = ticksOf(120_000);
+        const w = world({ page: true, advanced: () => false, backAt: Infinity, onTick: n => n >= timeout && w.setPage(false) });
+        const r = await recoverDrop(budget, w.deps, 'no tick for ~18 ticks', AT);
+        expect(r.outcome).toBe('relogged');
+        expect(named(w.calls)).toEqual(['pause watchdog', 'login']);
+        const loginTick = Number(w.calls.find(c => c.startsWith('login@'))!.split('@')[1]);
+        expect(loginTick).toBe(timeout);
+        expect(budget.entries().map(e => e.kind)).toEqual(['unplanned']);
+    });
+
+    test('a closed socket (the page reads out at once) is relogged at once, not after the window', async () => {
+        const budget = new RelogBudget(dir());
+        const w = world({ page: true, advanced: () => false, backAt: Infinity, onTick: n => n >= 2 && w.setPage(false) });
+        expect((await recoverDrop(budget, w.deps, 'page out of game', AT)).outcome).toBe('relogged');
+        expect(w.calls.filter(c => c.startsWith('login@'))).toEqual(['login@2']);
+        const out = world({ page: false });
+        expect((await recoverDrop(new RelogBudget(dir()), out.deps, 'page out of game', AT)).outcome).toBe('relogged');
+        expect(out.calls).toEqual(['pause watchdog', 'login@0']);
     });
 });
 
