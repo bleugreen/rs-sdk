@@ -78,7 +78,8 @@ function world(o: { fighting: boolean; answer?: (n: number) => Partial<LogoutRes
 const walkOut = (w: { fighting: boolean; sdk: FakeSdk }, calls: number[], logouts: () => number) => async (ctx: StepContext<any>) => {
     calls.push(logouts());
     w.fighting = false;
-    w.sdk.state = { ...w.sdk.state!, player: { ...w.sdk.state!.player!, worldX: 3288, worldZ: 3768, x: 3288, z: 3768 } };
+    const p = w.sdk.state!.player!;
+    w.sdk.state = { ...w.sdk.state!, player: { ...p, worldX: 3288, worldZ: 3768, x: 3288, z: 3768, combat: { ...p.combat, inCombat: false, targetIndex: -1, targetType: 'none' } } };
     await waitUntil(ctx.sdk, st => !inCombatWindow(st), { maxTicks: 40 });
 };
 

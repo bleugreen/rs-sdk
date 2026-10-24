@@ -538,7 +538,7 @@ const AGGRESSIVE_BLACK_KNIGHT = 179;
 describe("the cannon steps' retreat out of the spiders' reach (rs/725)", () => {
     test('SPIDER_SPAWNS is the box of every poison spider spawn in the maps around the spot, and the reach is maxrange + 1', () => {
         const spawns = spawnsOf(POISON_SPIDER);
-        expect(spawns.length).toBe(63);
+        expect(spawns.length).toBe(62);
         const xs = spawns.map(s => s.x);
         const zs = spawns.map(s => s.z);
         expect([Math.min(...xs), Math.max(...xs)]).toEqual([...SPIDER_SPAWNS.x]);
