@@ -31,6 +31,7 @@
 
 import { readFileSync } from 'fs';
 import type { BotWorldState } from '../../sdk/types';
+import { AGILITY_COURSES, zoneAt } from '../../server/webclient/src/bot/programs/agility-courses';
 import { advance } from '../lib/dialogue';
 import { gateSide, GNOME_STRONGHOLD_GATE, passGate, type Gate } from '../lib/travel';
 import { withLevelUpDismissal } from '../lib/levelup';
@@ -246,6 +247,28 @@ export function inWildCourse(s: BotWorldState | null | undefined): boolean {
 
 const atCourse = (course: Band['course'], s: BotWorldState | null | undefined) => (course === 'gnome' ? nearGnome(s) : inWildCourse(s));
 
+/**
+ * On the course partway through a lap: the course zone under the player (agility-courses.ts) names a
+ * step other than the lap's first. A band reaching its level here is not finished: the next leg
+ * cannot leave from an obstacle or a Gnome platform (T11a refused at (2483,3420) on plane 2).
+ */
+/**
+ * Which bands end only at a lap boundary on the ground (the program's `untilLevelAt: 'lap'`): a band
+ * the player leaves for a next step. The Gnome band is followed by T11a (S11a) or the walk to the
+ * Wilderness. The Wilderness band is the run's last (S17): no leg leaves it, the hiscore stamp is
+ * written at the level-up, and an extra lap after 99 is only PvP exposure, so it ends on the level
+ * tick before the final logout. A Wilderness band that ever gains a following leg takes 'lap' too.
+ */
+export const LAP_END: Readonly<Record<Band['course'], boolean>> = { gnome: true, wilderness: false };
+
+export function midLap(course: Band['course'], s: BotWorldState | null | undefined): boolean {
+    const p = s?.player;
+    const c = AGILITY_COURSES[course];
+    if (!p || !c) return false;
+    const step = zoneAt(c, p.worldX, p.worldZ, p.level);
+    return step !== undefined && step !== c.steps[0]!.name;
+}
+
 /** Index of the route point to walk to first: the one after the point nearest the player (or that point, when it is the last). */
 export function routeStart(route: ReadonlyArray<readonly [number, number]>, x: number, z: number): number {
     let best = 0;
@@ -438,6 +461,8 @@ async function bandProgram(ctx: StepContext<unknown>, band: Band, o: AgilityOpti
     const params: Record<string, unknown> = {
         course: band.course,
         untilLevel: band.to,
+        // the level end waits for the lap's close, on the ground; the other ends still fire mid-lap
+        ...(LAP_END[band.course] ? { untilLevelAt: 'lap' } : {}),
         technique: o.technique,
         startStep: 'auto',
         // the longest obstacle takes 18 ticks; a dropped click (the lab saw one at the rocks) costs this much
@@ -488,9 +513,12 @@ function compact(r: AgilityResult): Record<string, unknown> {
 function bandStep(band: Band, o: AgilityOptions, last: boolean): Step {
     const name = `agility:${band.course}`;
     let loggedOut = false;
+    /** The level reached, and (for a lap-end band) not partway through a lap. */
+    const partway = (s: BotWorldState | null | undefined) => LAP_END[band.course] && midLap(band.course, s);
+    const finished = (s: BotWorldState | null | undefined) => agilityLevel(s) >= band.to && !partway(s);
     const run = async (ctx: StepContext<unknown>) =>
         withLevelUpDismissal(ctx.sdk, async () => {
-            if (agilityLevel(ctx.sdk.getState()) >= band.to) return;
+            if (finished(ctx.sdk.getState())) return;
             if (band.course === 'wilderness' && !o.pauseLimitAck && pausesTaken(ctx.log, name) > o.maxPauses) {
                 throw new AgilityStop('pause-limit', `${pausesTaken(ctx.log, name)} pauses in ${name} (limit ${o.maxPauses}); message the coordinator, then resume with --skill-opt=pauseLimitAck=true`);
             }
@@ -521,7 +549,14 @@ function bandStep(band: Band, o: AgilityOptions, last: boolean): Step {
                     await leave(ctx, o);
                     throw new AgilityStop('no-food', `out of food at HP at or below the eat line in ${name}; logged out. Bring more food and resume with --from=${name}`);
                 }
-                if (agilityLevel(ctx.sdk.getState()) >= band.to) break;
+                const s = ctx.sdk.getState();
+                if (finished(s)) break;
+                // The level, mid-lap: a program that ended on the level tick (an older bundle) or a
+                // resume landed partway round. The next run, with the level already reached, finishes the lap.
+                if (agilityLevel(s) >= band.to) {
+                    const p = s?.player;
+                    row(ctx, 'agility:finish-lap', s?.tick ?? -1, { band: name, ended: r.ended, x: p?.worldX, z: p?.worldZ, plane: p?.level });
+                }
             }
             if (last && o.finish === 'final-logout' && band.to >= o.to) {
                 const f = await finalLogout(ctx, o);
@@ -533,9 +568,14 @@ function bandStep(band: Band, o: AgilityOptions, last: boolean): Step {
         name,
         preconditions: s => (agilityLevel(s) >= band.to || atCourse(band.course, s) ? true : `not at the ${band.course} course`),
         run,
-        postconditions: s => (agilityLevel(s) >= band.to || loggedOut ? true : `agility ${agilityLevel(s)} < ${band.to}`),
-        done: o2 => agilityLevel(o2.state) >= band.to,
-        inProgress: o2 => agilityLevel(o2.state) < band.to && atCourse(band.course, o2.state),
+        postconditions: s => {
+            if (loggedOut || finished(s)) return true;
+            if (agilityLevel(s) < band.to) return `agility ${agilityLevel(s)} < ${band.to}`;
+            const p = s.player!;
+            return `agility ${agilityLevel(s)} reached partway through a lap, at (${p.worldX},${p.worldZ}) plane ${p.level}`;
+        },
+        done: o2 => finished(o2.state),
+        inProgress: o2 => (agilityLevel(o2.state) < band.to && atCourse(band.course, o2.state)) || (agilityLevel(o2.state) >= band.to && partway(o2.state)),
         logoutSafe: true
     };
 }
