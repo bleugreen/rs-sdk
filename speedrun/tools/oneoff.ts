@@ -311,9 +311,12 @@ async function capture(argv: string[]): Promise<{ code: number; out: string }> {
 
 async function pump(stream: ReadableStream<Uint8Array>, onLine: (line: string) => void): Promise<void> {
     const decoder = new TextDecoder();
+    const reader = stream.getReader();
     let buf = '';
-    for await (const chunk of stream) {
-        buf += decoder.decode(chunk, { stream: true });
+    for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
         let nl: number;
         while ((nl = buf.indexOf('\n')) >= 0) {
             onLine(buf.slice(0, nl));
