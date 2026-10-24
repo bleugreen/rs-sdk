@@ -1,15 +1,16 @@
 import { describe, expect, test } from 'bun:test';
 import type { BotWorldState, InventoryItem, PlayerState, QuestJournalState } from '../../sdk/types';
 import { QUESTS } from '../data/quest-stages';
-import { baseState, drive, FakeSdk } from '../lib/fake-sdk';
+import { baseState, drive, FakeSdk, simulateWalking } from '../lib/fake-sdk';
 import { journalProbeName } from '../lib/quests';
 import { TickLog } from '../lib/ticks';
 import { Observation, resolveResume } from '../runner/resume';
 import type { Observed, RunnerSession, StepContext } from '../runner/step';
-import { DEFAULT_DIALOGUE, slotNeed } from './segments';
+import { loadHandOff } from '../runner/handoff';
+import { DEFAULT_DIALOGUE, kitWant, slotNeed } from './segments';
 import {
-    ARRIVAL, bravekInReach, CLERK_STAND, DEAD_AT_EXIT, inBasement, inBravekRoom, inCell, inEast, inPlagueHouse, inRehnison, inSewer, inWest, inWestStreets,
-    ITEM, judgeScrollRead, LETTERS, observed, QUEST_ITEMS, quest, stepId, steps,
+    ARRIVAL, bravekInReach, CLERK_STAND, DEAD_AT_EXIT, doorsBetween, inBasement, inBravekRoom, inCell, inEast, inPlagueHouse, inRehnison, inSewer, inWest, inWestStreets,
+    ITEM, judgeScrollRead, KIT, LETTERS, observed, QUEST_ITEMS, quest, stepId, steps,
 } from './plague-city';
 
 // ------------------------------------------------------------------ scripted state
@@ -23,7 +24,7 @@ const NAMES: Record<number, string> = {
 let nextSlot = 0;
 const item = (id: number, count = 1, name = NAMES[id] ?? `obj ${id}`): InventoryItem =>
     ({ slot: nextSlot++, id, name, count, optionsWithIndex: id === ITEM.scroll ? [{ text: 'Read', opIndex: 1 }] : [] }) as unknown as InventoryItem;
-const own = () => [item(946, 1, 'Knife'), item(1511, 1, 'Logs'), item(563, 2, 'Law rune'), item(555, 2, 'Water rune')];
+const own = () => [item(946, 1, 'Knife'), item(1511, 1, 'Logs'), item(563, 2, 'Law rune')];
 const H6 = () => [ITEM.dwellberries, ITEM.water, ITEM.water, ITEM.water, ITEM.water, ITEM.spade, ITEM.rope, ITEM.dust, ITEM.milk, ITEM.snape].map(id => item(id));
 const skill = (name: string, level: number) => ({ name, level, baseLevel: level, experience: 0 });
 const player = (x: number, z: number, level = 0): PlayerState => ({ name: 'lab', x, z, worldX: x, worldZ: z, level, hp: 10, maxHp: 10 }) as PlayerState;
@@ -192,12 +193,116 @@ describe('A: the entry preconditions', () => {
     });
 });
 
+describe("A: H6 as the ledger's row delivers it", () => {
+    const h6 = loadHandOff('H6');
+    /** SCORED after T07-08 (the knife and S07's log, the staff of water worn) with the row's `in` lines added. */
+    const delivered = (): BotWorldState => {
+        const s = arrival({ inventory: own().slice(0, 2) });
+        for (const r of h6.receive) {
+            const name = r.name.charAt(0).toUpperCase() + r.name.slice(1);
+            const id = r.ids?.[0] ?? -1;
+            if (r.kind === 'u') for (let n = 0; n < r.count; n++) s.inventory.push(item(id, 1, name));
+            else s.inventory.push(item(id, r.count, name));
+        }
+        return s;
+    };
+    test('the row brings 2 law runes and no water runes (T08-09 casts on the staff of water)', () => {
+        const runes = h6.receive.filter(r => / rune$/.test(r.name)).map(r => [r.name, r.count]);
+        expect(runes).toEqual([['law rune', 2]]);
+    });
+    test("A's kit check passes on it with the staff of water worn, so A needs no trade and no kitFrom", async () => {
+        const s = delivered();
+        expect(s.equipment.map(i => i.name)).toEqual(['Staff of water']);
+        expect(s.inventory.some(i => /^water rune$/i.test(i.name))).toBe(false);
+        expect(kitWant(s, KIT)).toEqual([]);
+        expect(byLetter('A').preconditions(s, {})).toBe(true);
+        expect(byLetter('A').postconditions(s, {})).toBe(true);
+        const sdk = new FakeSdk(s);
+        const session = { sdk, bot: {}, name: 'lab', sessionId: 0 } as unknown as RunnerSession;
+        const ctx = { session, sdk, bot: session.bot, c: {}, log: TickLog.memory('t') } as unknown as StepContext<unknown>;
+        // Before the fix: 'kit: missing 2 x /^water rune$/i and no kitFrom to receive it from'.
+        await byLetter('A').run(ctx);
+        expect(sdk.sent).toEqual([]);
+    });
+});
+
+describe("Edmond's live tile: the house doors between him and SCORED, then within 1 (B, E, Y)", () => {
+    test('doorsBetween: a door only when the walk crosses its east-edge wall', () => {
+        expect(doorsBetween(2568, 2572)).toEqual([{ x: 2570, z: 3333 }]); // the garden to Alrena's room
+        expect(doorsBetween(2570, 2572)).toEqual([{ x: 2570, z: 3333 }]); // from the door tile, inward
+        expect(doorsBetween(2570, 2566)).toEqual([]); // the door tile is the garden side
+        expect(doorsBetween(2568, 2566)).toEqual([]);
+        expect(doorsBetween(2576, 2566)).toEqual([{ x: 2574, z: 3333 }, { x: 2570, z: 3333 }]); // the picture room out, inner door first
+    });
+
+    const edmond = (x: number, z: number) => ({ index: 7, name: 'Edmond', x, z, distance: 0, options: ['Talk-to'], optionsWithIndex: [{ text: 'Talk-to', opIndex: 1 }] });
+    const WEST_DOOR = { x: 2570, z: 3333, id: 1530, name: 'Door', distance: 0, options: ['Open'], optionsWithIndex: [{ text: 'Open', opIndex: 1 }] };
+    const doorShut = (s: BotWorldState) => s.nearbyLocs.some(l => l.x === WEST_DOOR.x && l.z === WEST_DOOR.z);
+    /**
+     * B up to its Talk-to clicks. The west door opens a tick after a click on it; the house's west wall
+     * (the east edge of x 2570) stops a walk except through the open door; nothing answers the talk, so
+     * B ends 'no dialogue opened'. Returns what B sent, in order.
+     */
+    async function bSends(at: [number, number], ed: [number, number]): Promise<{ sent: string[]; error: string | null }> {
+        const s = arrival({
+            player: player(at[0], at[1]),
+            nearbyNpcs: [edmond(...ed)] as unknown as BotWorldState['nearbyNpcs'],
+            nearbyLocs: [WEST_DOOR] as unknown as BotWorldState['nearbyLocs'],
+        });
+        const sdk = new FakeSdk(s);
+        sdk.onSend = (a, f) => {
+            if (a.method === 'sendInteractLoc') setTimeout(() => f.tick(st => ({ nearbyLocs: st.nearbyLocs.filter(l => !(l.x === WEST_DOOR.x && l.z === WEST_DOOR.z)) })), 1);
+        };
+        simulateWalking(sdk, {
+            speed: 1,
+            blocked: (nx, nz) => {
+                const p = sdk.state!.player!;
+                const crosses = (p.worldX <= 2570) !== (nx <= 2570);
+                return crosses && (doorShut(sdk.state!) || p.worldZ !== 3333 || nz !== 3333);
+            },
+        });
+        const session = { sdk, bot: {}, name: 'lab', sessionId: 0 } as unknown as RunnerSession;
+        const ctx = { session, sdk, bot: session.bot, c: {}, log: TickLog.memory('t') } as unknown as StepContext<unknown>;
+        const error = await drive(sdk, (byLetter('B').run(ctx) as Promise<unknown>).then(() => null, e => String(e)), 400);
+        const sent = sdk.sent.map(a => (a.method === 'sendInteractLoc' ? `door ${a.args[0]},${a.args[1]}` : /npc/i.test(a.method) ? 'talk' : a.method === 'sendWalk' ? 'walk' : a.method));
+        return { sent, error };
+    }
+    const first = (sent: string[], what: string) => sent.indexOf(what);
+
+    test('Edmond shut in Alrena\'s room, SCORED on the door tile: the door opens before the first Talk-to click', async () => {
+        const { sent, error } = await bSends([2570, 3333], [2571, 3333]);
+        expect(first(sent, 'door 2570,3333')).toBeGreaterThanOrEqual(0);
+        expect(first(sent, 'door 2570,3333')).toBeLessThan(first(sent, 'talk'));
+        expect(error).toMatch(/no dialogue opened/); // nothing in the fake answers the talk
+    });
+
+    test("Edmond shut in Alrena's room, SCORED on its live start tile (2568,3335): the door, the walk in beside him, then the talk", async () => {
+        const { sent } = await bSends([2568, 3335], [2572, 3333]);
+        expect(first(sent, 'door 2570,3333')).toBeGreaterThanOrEqual(0);
+        expect(first(sent, 'door 2570,3333')).toBeLessThan(first(sent, 'walk'));
+        expect(first(sent, 'walk')).toBeLessThan(first(sent, 'talk'));
+    });
+
+    test('Edmond at a far garden point (2566,3337): no door, a walk to within 1 of him, then the talk', async () => {
+        const { sent } = await bSends([2568, 3334], [2566, 3337]);
+        expect(sent.some(x => x.startsWith('door'))).toBe(false);
+        expect(first(sent, 'walk')).toBeGreaterThanOrEqual(0);
+        expect(first(sent, 'walk')).toBeLessThan(first(sent, 'talk'));
+    });
+
+    test('the normal arrival, Edmond beside SCORED: no door and no walk, the talk is the first thing sent', async () => {
+        const { sent } = await bSends([ARRIVAL.x, ARRIVAL.z], [2568, 3335]);
+        expect(sent.some(x => x.startsWith('door') || x === 'walk')).toBe(false);
+        expect(sent[0]).toBe('talk');
+    });
+});
+
 describe('free slots (brief addendum 8)', () => {
     test('with H6 held the need peaks at 2, at D: the picture and the gas mask', () => {
         expect(slotNeed(arrival(), QUEST_ITEMS, LETTERS, 'A')).toEqual({ slots: 2, peak: 'D', items: ['1 Picture', '1 Gas mask'] });
     });
-    test("without H6 (SCORED's pack after T07-08: the knife and one log), A also needs the trade's 12 slots: 14 at D", () => {
-        expect(slotNeed(arrival({ inventory: own().slice(0, 2) }), QUEST_ITEMS, LETTERS, 'A').slots).toBe(14);
+    test("without H6 (SCORED's pack after T07-08: the knife and one log), A also needs the trade's 11 slots: 13 at D", () => {
+        expect(slotNeed(arrival({ inventory: own().slice(0, 2) }), QUEST_ITEMS, LETTERS, 'A').slots).toBe(13);
     });
     test("a resume into S peaks at Y, counted conservatively: Edmond's reward takes the papers and adds the scroll in one segment", () => {
         expect(slotNeed(startOf('S').state, QUEST_ITEMS, LETTERS, 'S')).toEqual({ slots: 2, peak: 'Y', items: ['1 Warrant', '1 A small key', '1 A magic scroll'] });
@@ -349,6 +454,6 @@ describe('Z: the exit drops (the slot ledger T08-09 drops, moved into the step; 
         expect(sdk.sent.map(a => a.method)).not.toContain('sendUseItem');
         expect(sdk.sent.filter(a => a.method === 'sendDropItem').map(a => a.args[0] as number).some(slot => keep.includes(slot))).toBe(false);
         expect(byLetter('Z').postconditions(sdk.getState()!, {})).toBe(true);
-        expect(sdk.getState()!.inventory.map(i => i.name).sort()).toEqual(['Knife', 'Law rune', 'Logs', 'Water rune']);
+        expect(sdk.getState()!.inventory.map(i => i.name).sort()).toEqual(['Knife', 'Law rune', 'Logs']);
     });
 });
