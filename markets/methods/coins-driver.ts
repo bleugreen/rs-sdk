@@ -45,6 +45,8 @@ const MAN_FLOOR = 3;
 const MAN_REST_TO = 10;
 /** The Varrock guards' stand (coins.ts SPOTS.guard) and how far from it counts as there. */
 const GUARD_STAND: Tile = { x: 3210, z: 3462 };
+/** Where coins.ts works each target (its SPOTS stands, which it does not export): a stage's start for the router. */
+export const STANDS: Readonly<Record<Target, Tile>> = { man: { x: 3231, z: 3218 }, warrior: { x: 3293, z: 3172 }, guard: GUARD_STAND };
 const AT_GUARDS = 30;
 const FOOD = /^(kebab|shark|lobster|swordfish|tuna|salmon|trout|cake|2\/3 cake|slice of cake|bread|meat pie|half a meat pie|cooked meat|cooked chicken|shrimps)$/i;
 /** Longest a rest waits before the driver lets coins.ts try again (1 Hitpoint a 100 ticks). */
@@ -181,6 +183,9 @@ const cheb = (a: Tile, b: Tile) => Math.max(Math.abs(a.x - b.x), Math.abs(a.z - 
 function standing(s: BotWorldState): Standing {
     return { thieving: thievingOf(s), coins: coinsIn(s), food: foodIn(s).length, east: inAlKharid(s) };
 }
+
+/** Where the driver would work now with these role options: the stand of the target it would pick. */
+export const standFor = (s: BotWorldState, options: Record<string, unknown>): Tile => STANDS[targetFor(standing(s), readOptions(options))];
 
 function condition(s: BotWorldState, target: Target): Condition {
     const p = s.player!;
