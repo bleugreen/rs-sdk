@@ -1582,8 +1582,10 @@ describe("woodcutting: S07's giver group takes turns (rs/383's b01-b04, bones.gr
         status('cairn_b02', { readyAt: 3 });
         expect(groupLoadsDone(readBoneStatuses(dir), GROUP, SESSION)).toBe(1);
         const tried: string[] = [];
+        const named: unknown[] = [];
         const receive = (async (sdk: FakeSdk, partner: string) => {
             tried.push(partner);
+            named.push(readCue(dir)?.site);
             const st = readBoneStatuses(dir).find(x => x.account === partner)!;
             writeJsonAtomicSync(join(dir, `bones-${partner}.json`), { ...st, phase: 'restock', held: 0, readyAt: null, trades: st.trades + 1, ms: Date.now() });
             const s = sdk.getState()!;
