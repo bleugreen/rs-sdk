@@ -9,7 +9,7 @@ import { MANIFEST } from '../tools/slot-ledger';
 import { buildChain, CENSUS_STEP, KIT_PARTNER_ROWS, ledgerRows, PLACEMENT, resolveFrom, type RunConfig } from './chain';
 import { formatCensus, lastCensus, runeCensus, runePlan, runesHeld, type RunePlan } from './rune-census';
 
-const PARTNERS: Record<string, string> = { ...Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS].map(id => [id, `p_${id.toLowerCase()}`])), H12a: 'p_h12', H12b: 'p_h12' };
+const PARTNERS: Record<string, string> = { ...Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS, 'H4m'].map(id => [id, `p_${id.toLowerCase()}`])), H12a: 'p_h12', H12b: 'p_h12' };
 const CONFIG: RunConfig = {
     partners: PARTNERS,
     firemakingTiles: '3222,3219;3221,3219;3220,3219',

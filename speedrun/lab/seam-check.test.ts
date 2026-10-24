@@ -16,7 +16,7 @@ import { CHUNK_END_STEP, checkSeam, formatSeam, lastStepReached, throughChunk, u
 
 const manifest = readFileSync(MANIFEST, 'utf8');
 const runOrder = readFileSync(join(import.meta.dir, '../../docs/speedrun/RUN-ORDER.md'), 'utf8');
-const partners = Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS].map(id => [id, 'p']));
+const partners = Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS, 'H4m'].map(id => [id, 'p']));
 const cfg: RunConfig = { partners, firemakingTiles: '3240,3296', rings: { giver: 'r' }, bones: { giver: 'b' }, courier: { giver: 'c', below: 3 }, anvil: { giver: 'a' }, cueDir: '/tmp/seam-test' };
 const chain = buildChain(cfg, { cues: { open: async () => {}, stop: () => {} } });
 const at = (chunk: string): Boundary => boundaryAt(chain, chunkStart(chain, chunk), { runOrder, manifest });

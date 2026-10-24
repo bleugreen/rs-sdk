@@ -171,7 +171,7 @@ describe('who serves each step, and the gate on the run machine', () => {
         expect(configMembers({ bones: { group: ['b1', 'b2'] }, courier: { giver: 'c', below: 3 }, anvil: { giver: 'a' }, s21Givers: ['s1'] }).map(m => `${m.account} ${m.scope.step}/${m.scope.family}`)).toEqual(['b1 S07/bone', 'b2 S07/bone', 'c S18/courier', 'a S25a/anvil', 's1 S21/altar']);
     });
     test('every phase step id is a step of the built chain', () => {
-        const partners = Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS].map(id => [id, `p_${id}`]));
+        const partners = Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS, 'H4m'].map(id => [id, `p_${id}`]));
         const chain = buildChain({ partners, firemakingTiles: '3240,3296', rings: { giver: 'r' }, bones: { giver: 'b' }, courier: { giver: 'c', below: 3 }, anvil: { giver: 'a' }, cueDir: '/tmp/x' }, { cues: { open: async () => {}, stop: () => {} } });
         const ids = new Set(chain.map(s => s.id));
         for (const id of [...Object.keys(PHASE_STEPS), 'S15']) expect(ids.has(id)).toBe(true);
