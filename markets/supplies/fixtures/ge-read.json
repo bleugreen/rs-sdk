@@ -1,0 +1,12 @@
+[
+ {
+  "id": 565,
+  "at": 1792707927000,
+  "quote": {"id": 565, "name": "Blood rune", "basePrice": 50, "item": 565, "bid": 1301, "ask": 1321, "buyQuantity": 17916, "buyValue": 23308716, "sellQuantity": 100, "sellValue": 150000, "lastSellAt": null, "volume": 12935, "gross": 0, "tax": 0, "trades": 77, "lastPrice": 1258, "lastTradeAt": 1792705260000, "vwap": null, "referencePrice": null, "change": null, "changePercent": null, "marketCap": null},
+  "history": [
+   {"time": 0, "volume": 168, "gross": 0, "tax": 0, "low": 578, "high": 900, "vwap": 700, "trades": 3},
+   {"time": 1, "volume": 840, "gross": 0, "tax": 0, "low": 900, "high": 1258, "vwap": 1000, "trades": 9}
+  ]
+ },
+ {"id": 564, "at": 1792707960000, "quote": null, "error": "Error: Market API 503"}
+]
