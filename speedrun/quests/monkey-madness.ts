@@ -1735,6 +1735,11 @@ export function h12Plan(s: BotWorldState, o: { bow: number; served?: boolean }):
     };
 }
 
+/** Whether the Grand Tree swap trades: h12Plan wants something from `s` (gtSwap trades on exactly that). */
+export function h12Wants(s: BotWorldState, o: { bow: number }): boolean {
+    return h12Plan(s, o).want.length > 0;
+}
+
 /**
  * A's cure before the Grand Tree swap sizes the kit (rs/185's order: the eat, this cure, then the sizing and the trading
  * hold). A poison carried in from S14 is cured from the antipoison held, H7's (it leaves in the swap anyway, GT_HANDBACK),
