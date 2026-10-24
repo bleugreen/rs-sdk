@@ -14,7 +14,7 @@ import { CueKeeper } from './cue-keeper';
 import { DEATH_STEP, deathRow, diedResult, EXIT_DIED, type Death } from './death';
 import { DeliveryOwner, READY_MAX_TICKS } from './delivery-owner';
 import type { RunnerSession, StepContext } from './step';
-import { CURE_RESEND, enteringEnds, guardWait, type Cure } from './wait-guard';
+import { CURE_RESEND, enteringEnds, guardWait, noteLogins, type Cure } from './wait-guard';
 
 const GRAND_TREE_DOOR = { worldX: 2465, worldZ: 3489 };
 const player = (p: Partial<PlayerState> = {}): PlayerState =>
@@ -335,6 +335,25 @@ describe('run.ts: the upkeep from login to the first step', () => {
             expect(served.uses).toEqual([]);
             expect(atBody).toBe(0);
         });
+    });
+
+    test("every login's first in-world tick is the cure's session start: the one just made, then an in-page relog whose tick keeps counting", () => {
+        const sdk = new FakeSdk(state({ tick: 500 }));
+        const starts: number[] = [];
+        const off = noteLogins(sdk, { noteSessionStart: t => void starts.push(t) });
+        sdk.tick();
+        sdk.tick();
+        expect(starts).toEqual([500]);
+        // An in-page relog: out for two ticks, back in at 505 (no tick fall for segments.ts to see).
+        sdk.tick({ inGame: false });
+        sdk.tick({ inGame: false });
+        sdk.tick({ inGame: true });
+        sdk.tick();
+        expect(starts).toEqual([500, 505]);
+        off();
+        sdk.tick({ inGame: false });
+        sdk.tick({ inGame: true });
+        expect(starts).toEqual([500, 505]);
     });
 
     test('a death between login and the first step fails that step\'s entry with it before its body runs', async () => {

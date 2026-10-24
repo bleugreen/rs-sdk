@@ -104,7 +104,7 @@ import { RelogBudget } from './runner/relog-budget';
 import { AttemptRecord } from './runner/attempt-record';
 import { SCORED_LOGIN, SCORED_RELOG } from './runner/scored-relog';
 import { ackRow, deathGate, deathRow, diedResult, operatorLine } from './runner/death';
-import { enteringEnds, watchStretch, type Cure, type Stretch } from './runner/wait-guard';
+import { enteringEnds, noteLogins, watchStretch, type Cure, type Stretch } from './runner/wait-guard';
 
 /**
  * Ticks past the link's stale bound before the watchdog acts, with the drop recovery on; while the page
@@ -1108,6 +1108,8 @@ async function main(argv: string[]): Promise<number> {
         console.log(`[gate] ${t.ok ? 'ok     ' : 'REFUSED'} demo tick rate before login: ${describePreflight(t)}`);
     });
     const session = await openRunSession(a.bot, { client: a.client, chain, relogs, log, beforeLogin });
+    // Each login's first in-world tick is the session a carried poison is unknown in (wait-guard.ts noteLogins).
+    const offLogins = noteLogins(session.sdk);
     // SCORED is logged in from here: withScoredSession abandons it on any way out that leaves it in.
     let unalias = () => {};
     let code = 1;
@@ -1158,6 +1160,7 @@ async function main(argv: string[]): Promise<number> {
             }
         });
     } finally {
+        offLogins();
         unalias();
         (term as Terminated | null)?.disarm();
     }

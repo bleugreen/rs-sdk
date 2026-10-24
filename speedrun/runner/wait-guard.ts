@@ -35,6 +35,11 @@ export interface Cure {
      * UpkeepOptions.unknownPoisonDose; absent, that dose never goes.
      */
     poisonUnknown?(s: BotWorldState): boolean;
+    /**
+     * A login's first in-world tick, the session start poisonUnknown counts from (segments.ts `noteSessionStart`, rs/786).
+     * An in-page login keeps the client's tick counting, so only the caller that sees the login can say when it began.
+     */
+    noteSessionStart?(tick: number): void;
 }
 
 export const SEGMENT_CURE: Cure = { poisoned, cureDose, noteAntipoison, drinkDelayOver };
@@ -244,6 +249,24 @@ export function watchStretch(ctx: GuardContext, during: string, o: UpkeepOptions
             return frames.stop();
         },
     };
+}
+
+/**
+ * Every login on `sdk` as the cure's session start (Cure.noteSessionStart), from now until the returned stop: the first
+ * in-world frame after one that was not, an in-page relog included (its tick does not fall). A session already in the
+ * world when this attaches counts as just logged in (run.ts attaches right after openRunSession's login).
+ */
+export function noteLogins(sdk: StateSource, cure: Pick<Cure, 'noteSessionStart'> = SEGMENT_CURE): () => void {
+    let inWorld = false;
+    const see = (s: BotWorldState) => {
+        const now = s.inGame && !!s.player;
+        if (now && !inWorld) cure.noteSessionStart?.(s.tick);
+        inWorld = now;
+    };
+    const off = sdk.onStateUpdate(see);
+    const s0 = sdk.getState();
+    if (s0) see(s0);
+    return off;
 }
 
 /** Upkeep options that write each eat or dose as a 0-tick note row, `<prefix> upkeep <during>: eat|cure`, in the step's log. */
