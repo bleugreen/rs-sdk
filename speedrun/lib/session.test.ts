@@ -1,5 +1,8 @@
 import { preLoginDeadline, preLoginReady, type RunecraftOptions } from '../skills/runecraft';
-import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import { fakeCdp, fakeWorld } from './fake-cdp';
 import { FakeSdk, flush, runToggleServer } from './fake-sdk';
 import { IF_RUN_ON, runIsOn } from './run-mode';
@@ -28,7 +31,14 @@ import {
     openInterface,
     backoffMs,
     browserUrl,
+    closeSession,
+    formatBotEnv,
     gatewayPath,
+    liteRunnerEnv,
+    loadBotEnv,
+    openSession,
+    ROOT,
+    runnerEnvFor,
     isLoopbackHost,
     loggedOutBy,
     login,
@@ -1793,5 +1803,185 @@ describe("waitOwnLaunch: a launched tab's session is known by its launch id, not
         } finally {
             cdp.stop();
         }
+    });
+});
+
+describe('the lite runner a session launches reads that session’s environment (rs/783)', () => {
+    // Attempt 4's one-offs (02:47Z, 12:54Z): the scored login's alias bots/host-oneoff names the isolated
+    // gateway 7781, its own bots/<login>/bot.env the run's 7780.
+    const DEMO = 'rs-sdk-demo.fly.dev';
+    const RUN_GW = 'ws://127.0.0.1:7780';
+    const ONEOFF_GW = 'ws://127.0.0.1:7781';
+    let bots: string;
+    beforeAll(() => {
+        bots = mkdtempSync(join(tmpdir(), 'rs783-bots-'));
+        const put = (dir: string, gw: string) => {
+            mkdirSync(join(bots, dir));
+            writeFileSync(join(bots, dir, 'bot.env'), `BOT_USERNAME=srtest\nPASSWORD=pw\nSERVER=${DEMO}\nGATEWAY_URL=${gw}\nSHOW_CHAT=false\n`);
+        };
+        put('srtest', RUN_GW);
+        put('host-oneoff', ONEOFF_GW);
+    });
+    afterAll(() => rmSync(bots, { recursive: true, force: true }));
+
+    const defaultFile = () => join(bots, 'srtest', 'bot.env');
+    /** What the runner reads (server/webclient/src/lite/runner.ts main): LITE_BOT_ENV, else bots/<login>/bot.env. */
+    const runnerReads = (env: Record<string, string | undefined>) => env.LITE_BOT_ENV || defaultFile();
+    /** And the gateway it publishes to: that file's GATEWAY_URL, else the process's. */
+    const runnerGateway = (env: Record<string, string | undefined>) => parseBotEnv(readFileSync(runnerReads(env), 'utf-8')).GATEWAY_URL || env.GATEWAY_URL;
+    /** The parent's environment at its worst: a LITE_BOT_ENV and GATEWAY_URL naming the run's own. */
+    const parent = () => ({ PATH: '/usr/bin', LITE_BOT_ENV: defaultFile(), GATEWAY_URL: RUN_GW });
+
+    test('opened with the alias env passed in: the runner reads a private copy of the alias, never bots/<login>/bot.env, and is removed after', () => {
+        const alias = loadBotEnv('host-oneoff', bots);
+        const runnerEnv = runnerEnvFor('srtest', alias, alias, sessionGateway(alias, DEMO), bots);
+        expect(runnerEnv).toEqual({ env: alias, gatewayUrl: ONEOFF_GW });
+        const { env, remove } = liteRunnerEnv({ runnerEnv: runnerEnv! }, parent());
+        const file = runnerReads(env);
+        try {
+            expect(file).not.toBe(defaultFile());
+            expect(parseBotEnv(readFileSync(file, 'utf-8'))).toEqual(alias);
+            expect(statSync(file).mode & 0o777).toBe(0o600);
+            expect(env.GATEWAY_URL).toBe(ONEOFF_GW);
+            expect(runnerGateway(env)).toBe(ONEOFF_GW);
+            expect(env.PATH).toBe('/usr/bin');
+            expect(env.LITE_LOGIN_JITTER_MS).toBe('0');
+        } finally {
+            remove();
+        }
+        expect(existsSync(file)).toBe(false);
+    });
+
+    test('opened from the alias dir: the runner reads the alias file itself', () => {
+        const alias = loadBotEnv('host-oneoff', bots);
+        const runnerEnv = runnerEnvFor('host-oneoff', undefined, alias, sessionGateway(alias, DEMO), bots);
+        expect(runnerEnv).toEqual({ file: join(bots, 'host-oneoff', 'bot.env'), env: alias, gatewayUrl: ONEOFF_GW });
+        const { env } = liteRunnerEnv({ runnerEnv: runnerEnv! }, parent());
+        expect(runnerReads(env)).toBe(join(bots, 'host-oneoff', 'bot.env'));
+        expect(runnerGateway(env)).toBe(ONEOFF_GW);
+    });
+
+    test('an env passed in without GATEWAY_URL: the runner gets the gateway the session resolved, not an inherited one', () => {
+        const lab = parseBotEnv('BOT_USERNAME=srtest\nPASSWORD=pw\nSERVER=localhost:9300\n');
+        const { env, remove } = liteRunnerEnv({ runnerEnv: runnerEnvFor('srtest', lab, lab, 'ws://localhost:9380', bots)! }, parent());
+        try {
+            expect(runnerGateway(env)).toBe('ws://localhost:9380');
+        } finally {
+            remove();
+        }
+    });
+
+    test('opened with no explicit environment: no RunnerEnv, and the runner gets the process env exactly as before', () => {
+        const own = loadBotEnv('srtest', bots);
+        expect(runnerEnvFor('srtest', undefined, own, sessionGateway(own, DEMO), bots)).toBeUndefined();
+        const base = parent();
+        expect(liteRunnerEnv({}, base).env).toEqual({ ...base, LITE_LOGIN_JITTER_MS: '0' });
+        expect(liteRunnerEnv({}, { ...base, LITE_LOGIN_JITTER_MS: '2500' }).env.LITE_LOGIN_JITTER_MS).toBe('2500');
+    });
+
+    test('an env value with a line break is refused, not written where the runner would misread it', () => {
+        expect(() => formatBotEnv({ BOT_USERNAME: 'srtest', PASSWORD: 'pw\nGATEWAY_URL=ws://127.0.0.1:7780' })).toThrow(/PASSWORD holds a line break/);
+    });
+
+    test('openSession records the env it was given for the runner it would launch', async () => {
+        const gw = Bun.serve({
+            port: 0,
+            hostname: '127.0.0.1',
+            fetch: (req, srv) => (srv.upgrade(req) ? undefined : new Response('Gateway Service')),
+            websocket: {
+                message(ws, m) {
+                    const msg = JSON.parse(String(m)) as { type: string; mode?: string };
+                    if (msg.type === 'sdk_connect') ws.send(JSON.stringify({ type: 'sdk_connected', success: true, mode: msg.mode, otherControllers: 0 }));
+                },
+            },
+        });
+        const url = `ws://127.0.0.1:${gw.port}`;
+        const alias = { ...loadBotEnv('host-oneoff', bots), GATEWAY_URL: url };
+        try {
+            const s = await openSession('srtest', { env: alias, awaitInWorld: false, pathfinding: false });
+            try {
+                expect(s.runnerEnv).toEqual({ env: alias, gatewayUrl: url });
+            } finally {
+                await closeSession(s);
+            }
+        } finally {
+            gw.stop(true);
+        }
+    });
+});
+
+describe('an exported LITE_BOT_ENV with no explicit env is refused before any login (rs/783, main’s ruling)', () => {
+    // openSession reads bots/<name>/bot.env under the checkout, so these bot dirs live there for the
+    // test (bots/*/ is gitignored) and are removed after.
+    const login = `rs783${Math.random().toString(36).slice(2, 8)}`;
+    const aliasDir = `${login}-alias`;
+    const own = join(ROOT, 'bots', login, 'bot.env');
+    const alias = join(ROOT, 'bots', aliasDir, 'bot.env');
+    let gw: ReturnType<typeof Bun.serve>;
+    let connections = 0;
+    let saved: string | undefined;
+    beforeAll(() => {
+        gw = Bun.serve({
+            port: 0,
+            hostname: '127.0.0.1',
+            fetch: (req, srv) => (srv.upgrade(req) ? (connections++, undefined) : new Response('Gateway Service')),
+            websocket: {
+                message(ws, m) {
+                    const msg = JSON.parse(String(m)) as { type: string; mode?: string };
+                    if (msg.type === 'sdk_connect') ws.send(JSON.stringify({ type: 'sdk_connected', success: true, mode: msg.mode, otherControllers: 0 }));
+                },
+            },
+        });
+        for (const f of [own, alias]) {
+            mkdirSync(join(f, '..'), { recursive: true });
+            writeFileSync(f, `BOT_USERNAME=${login}\nPASSWORD=pw\nSERVER=localhost:1\nGATEWAY_URL=ws://127.0.0.1:${gw.port}\nSHOW_CHAT=false\n`, { mode: 0o600 });
+        }
+        saved = process.env.LITE_BOT_ENV;
+    });
+    beforeEach(() => {
+        connections = 0;
+    });
+    afterEach(() => {
+        if (saved === undefined) delete process.env.LITE_BOT_ENV;
+        else process.env.LITE_BOT_ENV = saved;
+    });
+    afterAll(() => {
+        gw.stop(true);
+        for (const d of [login, aliasDir]) rmSync(join(ROOT, 'bots', d), { recursive: true, force: true });
+    });
+    const open = async (name: string, opts: Parameters<typeof openSession>[1] = {}) => {
+        const s = await openSession(name, { awaitInWorld: false, pathfinding: false, ...opts });
+        await closeSession(s);
+        return s;
+    };
+
+    test('exported, no env: refused naming both files, before anything reaches the gateway', async () => {
+        process.env.LITE_BOT_ENV = alias;
+        const err = await open(login).then(() => null, (e: Error) => e);
+        expect(err?.message).toContain(`refusing to open ${login}: its SDK reads ${own}, but this process exports LITE_BOT_ENV=${alias}`);
+        expect(err?.message).toContain('Nothing was sent to the account');
+        expect(connections).toBe(0);
+    });
+
+    test('unset: opens as today, with no RunnerEnv', async () => {
+        delete process.env.LITE_BOT_ENV;
+        const s = await open(login);
+        expect(s.runnerEnv).toBeUndefined();
+        expect(connections).toBe(1);
+    });
+
+    test('exported, with an explicit env or from the alias dir: opens, and its runner reads its own file over the export', async () => {
+        process.env.LITE_BOT_ENV = own;
+        const passed = await open(login, { env: loadBotEnv(aliasDir) });
+        const a = liteRunnerEnv(passed);
+        try {
+            expect(a.env.LITE_BOT_ENV).not.toBe(own);
+            expect(parseBotEnv(readFileSync(a.env.LITE_BOT_ENV!, 'utf-8'))).toEqual(loadBotEnv(aliasDir));
+        } finally {
+            a.remove();
+        }
+        const fromDir = await open(aliasDir);
+        expect(liteRunnerEnv(fromDir).env.LITE_BOT_ENV).toBe(alias);
+        expect(connections).toBe(2);
     });
 });
