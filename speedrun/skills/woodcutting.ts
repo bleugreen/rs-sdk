@@ -45,9 +45,9 @@
 // knife-cycle judges each Bury on time or late on the label after it should have landed
 // (`buryOnTime`, `buryLate`). The band starts on the knife, every band and every resume, with an
 // empty window; it goes to plain + bury once a 50-Bury knife window can no longer reach the
-// break-even, 44 of 50 (17.6 of 20, where 3 / r^2 ticks per landed roll, both of the knife cycle's
-// sends on time, meets plain + bury's measured ~3.87), and back to the knife on a plain + bury window
-// of 47 of 50 or better (the switch section's comment says why). A forced `technique` knife or
+// break-even, 37 of 50 (14.5 of 20, where the two loops met in rs/643's lab: a late Bury drops its
+// cycle's click in plain + bury too), and back to the knife on a plain + bury window of 41 of 50 or
+// better (the switch section's comment says why). A forced `technique` knife or
 // plain runs that loop alone, still burying. The giver asks to trade while the account holds 2
 // bones; the account takes the trade on the roll label after its last bury (2 ticks after the pack
 // shows none: knife, the bury lands on R+1 and the cycle's click rolls on R+3; plain + bury, the
@@ -887,18 +887,20 @@ export function summarizeBand(ledger: BandLedger, segments: readonly GatedSegmen
 // ------------------------------------------------------------------ the on-time switch (burying bands)
 
 /**
- * The on-time share at which knife + bury and plain + bury cost the same per landed roll: 17.6 of 20
- * (main's design for rs/643). A knife bury cycle lands its roll only when both of its sends land on
- * their ticks, so it costs about 3 / r^2 ticks per landed roll against plain + bury's measured ~3.87
- * (rs/206): r = 0.88.
+ * The on-time share at which knife + bury and plain + bury cost the same per landed roll: 14.5 of 20
+ * (main's ruling on rs/643's lab). Both loops lose a roll to a late Bury (its p_delay drops the
+ * cycle's click), and plain + bury lost them faster: at 400 ms with forced lateness, knife 3.95 ticks
+ * per landed roll at 18.5/20 against plain + bury's 6.41 at 17.5/20, and about even at hold 0.25
+ * (knife 7.56 at 13.9/20, plain + bury 7.06 at 16.1/20). The first design's 17.6/20 assumed plain +
+ * bury held its clean ~3.87 (rs/206).
  */
-export const BURY_BREAK_EVEN = 17.6 / 20;
+export const BURY_BREAK_EVEN = 14.5 / 20;
 /** Burys judged per window. A window holds one technique's Burys only: a switch starts a new one. */
 export const SWITCH_WINDOW = 50;
-/** On time in a knife window, at least, to keep the knife: the break-even, 44 of 50. */
+/** On time in a knife window, at least, to keep the knife: the break-even, 37 of 50 (36.25 rounded up). */
 export const KNIFE_KEEP = Math.ceil(BURY_BREAK_EVEN * SWITCH_WINDOW - 1e-9);
-/** On time in a plain + bury window, at least, to go back to the knife: 47 of 50 (0.94). */
-export const KNIFE_BACK = 47;
+/** On time in a plain + bury window, at least, to go back to the knife: 41 of 50 (16.4 of 20). */
+export const KNIFE_BACK = 41;
 
 export interface RateWindow {
     /** The tick of the status that closed it. */
@@ -915,22 +917,22 @@ export interface RateWindow {
  * itself, with no probe. It reads knife-cycle's `buryOnTime` and `buryLate` from every status of the
  * technique it holds, into tumbling windows of SWITCH_WINDOW Burys:
  *
- * - knife: once more than SWITCH_WINDOW - KNIFE_KEEP (6) of the window are late it can no longer
+ * - knife: once more than SWITCH_WINDOW - KNIFE_KEEP (13) of the window are late it can no longer
  *   reach the break-even, and the band switches to plain + bury then, not at the window's end: on a
  *   ragged server each late send costs a roll, so the early switch is the window's own verdict, sooner.
- * - plain + bury: a full window of KNIFE_BACK (47) or more on time switches back to the knife.
+ * - plain + bury: a full window of KNIFE_BACK (41) or more on time switches back to the knife.
  *
- * Why a minimum window and a deadband (44 to 46 keeps either technique), not a bare threshold: the
- * on-time share over 50 Burys has a standard error of about 0.046 near the break-even, so a bare
- * threshold re-switches on chop-to-chop noise, and each switch stops and restarts the program (a
- * re-anchor, a few ticks). Simulated against a perfect chooser (knife 3 / r^2 ticks a roll, plain +
- * bury 3.87, 8 ticks a switch): within 3.5% at every rate from 0.7 to 1.0, at most one switch per
- * ~200 Burys (some 650 ticks) at rates from 0.88 to 0.92, where the two loops cost nearly the
- * same, none at 0.8 or below or at 1.0; a ragged start at 0.7 costs about 60 ticks before the early
- * switch. A 100-Bury window switches about a quarter as often but pays some 45 ticks more at every
- * ragged start. The meter lives for one band's run: a resume starts on the knife with an empty
- * window, since a rate measured before the stop says nothing sure about the server now, and the
- * early switch bounds a ragged start at 7 late Burys.
+ * Why a minimum window and a deadband (37 to 40 keeps either technique), not a bare threshold: the
+ * on-time share over 50 Burys has a standard error of about 0.063 (3.2 Burys) near the break-even,
+ * so a bare threshold re-switches on chop-to-chop noise, and each switch stops and restarts the
+ * program (a re-anchor, a few ticks). The return sits about 1.3 standard errors above the keep.
+ * Simulated on the meter alone: at most ~5 switches per 1000 Burys at any rate (most near 0.75),
+ * none at 0.6 or below or at 0.9 and above; the knife holds 83% of the Burys at 0.80 and 99% at
+ * 0.85, where it is the faster loop. A return at 40 switched up to 6.4 per 1000; one at 42 held the
+ * knife only 75% of the time at 0.80. A ragged start switches after about 36 Burys at 0.6 on time
+ * (the 14th late), 29 at 0.5. The meter lives for one band's run: a resume starts on the knife with
+ * an empty window, since a rate measured before the stop says nothing sure about the server now,
+ * and the early switch bounds a ragged start at 14 late Burys.
  */
 export class OnTimeMeter {
     technique: SegmentTechnique = 'knife';
@@ -1257,7 +1259,7 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null, next
         const meter = switching ? new OnTimeMeter() : null;
         const switched = (to: SegmentTechnique, tick: number) => {
             const w = meter!.windows[meter!.windows.length - 1]!;
-            const why = to === 'plain' ? `${w.judged - w.onTime} of ${w.judged} late, past the ${SWITCH_WINDOW - KNIFE_KEEP} a ${SWITCH_WINDOW}-Bury window allows (${KNIFE_KEEP}/${SWITCH_WINDOW}, 17.6/20)` : `${w.onTime}/${w.judged} on time, at least ${KNIFE_BACK}/${SWITCH_WINDOW}`;
+            const why = to === 'plain' ? `${w.judged - w.onTime} of ${w.judged} late, past the ${SWITCH_WINDOW - KNIFE_KEEP} a ${SWITCH_WINDOW}-Bury window allows (${KNIFE_KEEP}/${SWITCH_WINDOW}, ${(BURY_BREAK_EVEN * 20).toFixed(1)}/20)` : `${w.onTime}/${w.judged} on time, at least ${KNIFE_BACK}/${SWITCH_WINDOW}`;
             o.log(`${b.name}: T${tick} ${w.technique} + bury -> ${to} + bury: ${why}`);
             annotation(log, session, `${b.name}:switch`, tick, tick, true, { kind: 'wc-switch', from: w.technique, to, onTime: w.onTime, judged: w.judged, level: wcLevel(sdk.getState()), prayer: levelOf(sdk.getState(), 'prayer') });
         };

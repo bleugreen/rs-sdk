@@ -2064,15 +2064,15 @@ describe("woodcutting: a burying band switches between knife + bury and plain + 
         return out;
     };
 
-    test("the thresholds: 17.6 of 20 is 44 of a 50-Bury window, back to the knife at 47", () => {
-        expect(BURY_BREAK_EVEN).toBeCloseTo(0.88, 9);
-        expect([SWITCH_WINDOW, KNIFE_KEEP, KNIFE_BACK]).toEqual([50, 44, 47]);
+    test("the thresholds (main's ruling): 14.5 of 20 is 37 of a 50-Bury window (36.25 up), back to the knife at 41", () => {
+        expect(BURY_BREAK_EVEN).toBeCloseTo(0.725, 9);
+        expect([SWITCH_WINDOW, KNIFE_KEEP, KNIFE_BACK]).toEqual([50, 37, 41]);
     });
 
     describe('the meter', () => {
-        test('at or above the break-even the knife stays: 44/50 and 45/50 windows, thousands of Burys, no switch', () => {
-            // 3 late in every 25 is exactly 17.6/20; 1 in 10 is 18/20
-            for (const late of [(i: number) => [8, 16, 24].includes(i % 25), (i: number) => i % 10 === 9]) {
+        test('at or above the break-even the knife stays: 37/50, 44/50 and 45/50 windows, thousands of Burys, no switch', () => {
+            // 13 late in every 50 is 37/50 (the keep); 3 in every 25 is 17.6/20; 1 in 10 is 18/20
+            for (const late of [(i: number) => i % 50 % 4 === 3 && i % 50 < 52, (i: number) => [8, 16, 24].includes(i % 25), (i: number) => i % 10 === 9]) {
                 const m = new OnTimeMeter();
                 expect(feed(m, 5000, i => !late(i))).toEqual([]);
                 expect(m.technique).toBe('knife');
@@ -2081,35 +2081,35 @@ describe("woodcutting: a burying band switches between knife + bury and plain + 
             }
         });
 
-        test('below it the knife goes to plain + bury on the 7th late Bury of a window, not at its end', () => {
+        test('below it the knife goes to plain + bury on the 14th late Bury of a window, not at its end', () => {
             const m = new OnTimeMeter();
-            // 7 of 10 on time: the lates are Burys 8-10, 18-20, 28
-            expect(feed(m, 28, i => i % 10 < 7)).toEqual(['knife>plain@28']);
-            expect(m.windows).toEqual([{ tick: 1027, technique: 'knife', onTime: 21, judged: 28, to: 'plain' }]);
-            // 43 of 50, the late ones last: the window can still reach 44 until the 7th late
+            // 7 of 10 on time: the lates are Burys 8-10, 18-20, 28-30, 38-40, 48, 49
+            expect(feed(m, 49, i => i % 10 < 7)).toEqual(['knife>plain@49']);
+            expect(m.windows).toEqual([{ tick: 1048, technique: 'knife', onTime: 35, judged: 49, to: 'plain' }]);
+            // 36 of 50, the late ones last: the window can still reach 37 until the 14th late
             const n = new OnTimeMeter();
-            expect(feed(n, 50, i => i < 43)).toEqual(['knife>plain@50']);
+            expect(feed(n, 50, i => i < 36)).toEqual(['knife>plain@50']);
         });
 
-        test('plain + bury goes back to the knife on a full window of 47 or more on time, and stays on 46', () => {
+        test('plain + bury goes back to the knife on a full window of 41 or more on time, and stays on 40', () => {
             const back = new OnTimeMeter();
             back.technique = 'plain';
-            expect(feed(back, 50, i => i >= 3)).toEqual(['plain>knife@50']);
+            expect(feed(back, 50, i => i >= 9)).toEqual(['plain>knife@50']);
             const stay = new OnTimeMeter();
             stay.technique = 'plain';
-            expect(feed(stay, 500, i => i % 50 >= 4)).toEqual([]);
-            expect(stay.windows.every(w => w.onTime === 46 && w.to === null)).toBe(true);
+            expect(feed(stay, 500, i => i % 50 >= 10)).toEqual([]);
+            expect(stay.windows.every(w => w.onTime === 40 && w.to === null)).toBe(true);
         });
 
         test('both ways in one band: ragged, then clean, then ragged again', () => {
             const m = new OnTimeMeter();
             const rate = (i: number) => (i < 300 || i >= 600 ? i % 10 < 7 : true);
-            // plain's windows close on Burys 78, 128, ...: the first wholly clean one on 378
-            expect(feed(m, 900, rate)).toEqual(['knife>plain@28', 'plain>knife@378', 'knife>plain@628']);
+            // plain's windows close on Burys 99, 149, ...: the first clean enough one (49/50) on 349
+            expect(feed(m, 900, rate)).toEqual(['knife>plain@49', 'plain>knife@349', 'knife>plain@649']);
         });
 
-        test('no flapping near the break-even: steady rates from 0.84 to 0.92 switch at most once in 5000 Burys', () => {
-            for (const per50 of [42, 43, 44, 45, 46]) {
+        test('no flapping near the break-even: steady rates from 0.70 to 0.78 switch at most once in 5000 Burys', () => {
+            for (const per50 of [35, 36, 37, 38, 39]) {
                 const m = new OnTimeMeter();
                 // the late ones spread through each 50
                 const switches = feed(m, 5000, i => Math.floor(((i % 50) * (50 - per50)) / 50) === Math.floor((((i % 50) + 1) * (50 - per50)) / 50));
@@ -2118,15 +2118,15 @@ describe("woodcutting: a burying band switches between knife + bury and plain + 
             }
             // a rate that wanders across the break-even window by window: one switch down, never back
             const m = new OnTimeMeter();
-            expect(feed(m, 5000, i => (Math.floor(i / 50) % 2 ? i % 50 >= 4 : i % 50 >= 8)).length).toBe(1);
+            expect(feed(m, 5000, i => (Math.floor(i / 50) % 2 ? i % 50 >= 11 : i % 50 >= 16)).length).toBe(1);
         });
 
-        test('no flapping near the break-even, by chance: a seeded 0.88 server switches at most once per ~150 Burys', () => {
+        test('no flapping near the break-even, by chance: a seeded 0.725 server switches at most once per ~150 Burys', () => {
             let seed = 643;
             const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
             const m = new OnTimeMeter();
             const n = 20000;
-            const switches = feed(m, n, () => rnd() < 0.88);
+            const switches = feed(m, n, () => rnd() < 0.725);
             expect(switches.length).toBeGreaterThan(0);
             expect(switches.length).toBeLessThan(n / 150);
             // they alternate: every switch is answered by the other
@@ -2135,9 +2135,9 @@ describe("woodcutting: a burying band switches between knife + bury and plain + 
 
         test("a stopped run's last statuses after the switch away from it count for nothing; a new run's counters start from 0", () => {
             const m = new OnTimeMeter();
-            expect(m.observe(st(1, 1000, 10, 7), 'knife')).toBe('plain');
+            expect(m.observe(st(1, 1000, 10, 14), 'knife')).toBe('plain');
             // the knife run's final status, two more judged
-            expect(m.observe(st(1, 1003, 12, 7), 'knife')).toBeNull();
+            expect(m.observe(st(1, 1003, 12, 14), 'knife')).toBeNull();
             expect([m.onTime, m.late]).toEqual([0, 0]);
             expect(m.observe(st(2, 1010, 3, 1), 'plain')).toBeNull();
             expect([m.onTime, m.late]).toEqual([3, 1]);
@@ -2229,19 +2229,19 @@ describe("woodcutting: a burying band switches between knife + bury and plain + 
             const loop = buryLoop(n => n % 10 < 7, 300);
             const h = loop.band();
             await h.byName(OAK_BAND).run(h.ctx);
-            expect(switchRows(h)).toEqual([expect.objectContaining({ from: 'knife', to: 'plain', onTime: 21, judged: 28 })]);
+            expect(switchRows(h)).toEqual([expect.objectContaining({ from: 'knife', to: 'plain', onTime: 35, judged: 49 })]);
             const at = loop.runs.findIndex(r => r.technique === 'plain');
             expect(loop.runs.slice(0, at).every(r => r.technique === 'knife')).toBe(true);
             const plain = loop.runs.slice(at);
             expect(plain.every(r => r.technique === 'plain' && r.params.bury === true && !('dropEach' in r.params))).toBe(true);
-            expect(plain.reduce((a, r) => a + r.burys, 0)).toBe(300 - 28);
+            expect(plain.reduce((a, r) => a + r.burys, 0)).toBe(300 - 49);
             // the loads go on in plain: one per 23 bones, asked on the empty pack as in the knife
             expect(plain[plain.length - 1]!.loadsBefore - plain[0]!.loadsBefore).toBeGreaterThanOrEqual(10);
-            expect(h.lines.some(l => /T\d+ knife \+ bury -> plain \+ bury: 7 of 28 late/.test(l))).toBe(true);
+            expect(h.lines.some(l => /T\d+ knife \+ bury -> plain \+ bury: 14 of 49 late, past the 13 a 50-Bury window allows \(37\/50, 14\.5\/20\)/.test(l))).toBe(true);
             const [s] = summary(h);
             expect(s!.ended).toBe('done');
             expect(s!.onTimeSwitch.finalTechnique).toBe('plain');
-            expect(s!.bury.plain.buried).toBe(272);
+            expect(s!.bury.plain.buried).toBe(251);
             expect(s!.plain.ticks).toBeGreaterThan(0);
         });
 
@@ -2249,7 +2249,8 @@ describe("woodcutting: a burying band switches between knife + bury and plain + 
             const loop = buryLoop(n => (n < 300 ? n % 10 < 7 : true), 600);
             const h = loop.band();
             await h.byName(OAK_BAND).run(h.ctx);
-            expect(switchRows(h).map(r => [r.from, r.to, r.onTime, r.judged])).toEqual([['knife', 'plain', 21, 28], ['plain', 'knife', 50, 50]]);
+            // plain's window 299-348 holds Bury 299, the last ragged one: 49/50
+            expect(switchRows(h).map(r => [r.from, r.to, r.onTime, r.judged])).toEqual([['knife', 'plain', 35, 49], ['plain', 'knife', 49, 50]]);
             const last = loop.runs[loop.runs.length - 1]!;
             expect(last.technique).toBe('knife');
             expect(last.params.bury).toBe(true);
