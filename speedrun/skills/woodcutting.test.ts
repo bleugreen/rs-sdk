@@ -1846,7 +1846,8 @@ describe("woodcutting: S07's giver group takes turns (rs/383's b01-b04, bones.gr
             return [`${p.mode} ${p.step}`, band.done!({ state: s, probed: {} }, {}), band.inProgress!({ state: s, probed: {} }, {})];
         };
         expect(await at(state({ level: 99, prayer: 99 }))).toEqual(['resume woodcutting:willow-73-99', false, true]);
-        expect(await at(state({ level: 99, prayer: 99, items: [...KIT, 'Law rune', 'Air rune'] }))).toEqual(['finished null', true, false]);
+        const paid = state({ level: 99, prayer: 99, items: [...KIT, 'Law rune', 'Air rune'] });
+        expect(await at({ ...paid, inventory: paid.inventory.map(i => (i.name === 'Air rune' ? { ...i, count: 5 } : i)) })).toEqual(['finished null', true, false]);
     });
 
     test('a resume at WC 99 still owing Prayer re-enters the willow band (the walk first when away); paid or spent, the module is finished', async () => {
