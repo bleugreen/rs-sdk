@@ -62,7 +62,8 @@ const dropAfter = Number(flag('drop', '0'));
 const gatewayDownAfter = Number(flag('gateway-down', '0'));
 const downS = Number(flag('down-s', '60'));
 const proxyDown = flag('proxy-down', '0') === '1';
-const logoutAfterAdopt = flag('logout-after-adopt', '0') === '1';
+// 1: raw logout clicks (the socket drop as fallback); socket: the page's game socket dropped in the adopt's own tick.
+const logoutAfterAdopt = flag('logout-after-adopt', '0');
 
 /**
  * The page drop, `--shape=title` (default): the game socket closed with the page's one reconnect
@@ -193,7 +194,7 @@ try {
         }
         const adoptTick = s.sdk.getState()?.tick ?? null;
         injected = { at: new Date().toISOString(), adoptTick, sessionId: s.sessionId, clicks: 0, out: 'never', outAtTick: null };
-        for (let k = 0; k < INJECT_CLICK_TICKS; k++) {
+        for (let k = 0; logoutAfterAdopt !== 'socket' && k < INJECT_CLICK_TICKS; k++) {
             void rawClick(LOGOUT_BUTTON).catch(() => {});
             injected.clicks++;
             await Bun.sleep(tickMs());
@@ -239,7 +240,7 @@ try {
         }
         startTick = s.sdk.getState()?.tick ?? -1;
         xp.start = xpNow();
-        if (logoutAfterAdopt) void injectAfterAdopt(s.sessionId);
+        if (logoutAfterAdopt !== '0') void injectAfterAdopt(s.sessionId);
         if (gatewayDownAfter > 0) {
             const off = s.sdk.onStateUpdate(st => {
                 if (outage.downAt || st.tick < startTick! + gatewayDownAfter) return;
@@ -254,6 +255,14 @@ try {
             drop = { tick: st.tick, at: Date.now(), answer: 'pending' };
             xp.drop = xpNow();
             off();
+            // A dropped page publishes no more ticks: a gateway kill set after the drop goes by wall ticks.
+            if (gatewayDownAfter > dropAfter) {
+                setTimeout(() => {
+                    if (outage.downAt) return;
+                    outage.downAt = 'pending';
+                    void takeDown().catch(e => console.error(`[outage] ${e}`));
+                }, (gatewayDownAfter - dropAfter) * tickMs());
+            }
             void evaluateInTab<string>(cdp, s.name, dropExpression(shape)).then(
                 r => (drop!.answer = r?.value ?? 'no tab'),
                 e => (drop!.answer = `threw ${e}`)
