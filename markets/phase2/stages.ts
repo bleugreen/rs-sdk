@@ -2,17 +2,17 @@
  * What each stage of an account's setup sequence (plan.ts `sequenceFor`) does on a live session, and when its goal
  * already holds. Every stage reuses the code that owns the skill: Tutorial Island through S00's `tutorialSkip`,
  * Hitpoints through hp-train.ts, Thieving and coins through speedrun/helpers/coins.ts (the lite-client earner; the
- * thieving.ts bands need the browser's page programs), Mining through speedrun/skills/mining.ts's lite-client steps,
+ * thieving.ts bands need the browser's page programs) under markets' coins-driver.ts, which owns its target switch
+ * and keeps a phase-2 account's Hitpoints off coins.ts's death paths, Mining through speedrun/skills/mining.ts's lite-client steps,
  * the ship to Ardougne through thieving.ts's `thieving:to-ardougne` leg, and each method through its Role.
  *
  * A stage whose goal holds is skipped, so the runner recomputes the first unmet stage after anything that can undo
  * one (a death in the market loses the ship coins and the place; a redirect changes the method).
  */
 import type { BotActions } from '../../sdk/actions';
-import { abortable, executionContext } from '../../sdk/execution-context';
+import { executionContext } from '../../sdk/execution-context';
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState } from '../../sdk/types';
-import { role as coinsRole } from '../../speedrun/helpers/coins';
 import type { Role, RoleState } from '../../speedrun/helpers/role';
 import type { RunnerSession } from '../../speedrun/runner/step';
 import { steps as miningSteps } from '../../speedrun/skills/mining';
@@ -21,6 +21,8 @@ import { steps as thievingSteps } from '../../speedrun/skills/thieving';
 import { crossTollGate, inAlKharid } from '../../speedrun/lib/toll-gate';
 import { waitUntil } from '../../speedrun/lib/wait';
 import { onTutorialIsland } from '../../speedrun/lib/world';
+import { runRoleUntil as runRole } from '../lib/role-until.ts';
+import { role as coinsRole } from '../methods/coins-driver.ts';
 import { driveSteps, pickSteps } from '../methods/drive-steps.ts';
 import { parseOptions as hpOptions, spec as hpTrain } from '../methods/hp-train.ts';
 import { role as mineRole } from '../methods/mine.ts';
@@ -124,7 +126,7 @@ export async function runStage(st: Stage, x: StageCtx, method: MethodId): Promis
         case 'hp':
             return trainHp(x, st.to);
         case 'thieving':
-            await runRoleUntil(x, coinsRole, { target: 'auto', guardLevel: 40 }, s => (level(s, 'thieving') >= st.to ? `Thieving ${st.to}` : null));
+            await runRoleUntil(x, coinsRole, { target: 'auto' }, s => (level(s, 'thieving') >= st.to ? `Thieving ${st.to}` : null));
             return;
         case 'coins':
             // the Lumbridge men: 3 gp a success at any level, on the way to Port Sarim
@@ -138,7 +140,7 @@ export async function runStage(st: Stage, x: StageCtx, method: MethodId): Promis
             return wield(x, PICKAXE);
         case 'admission':
             // earn on the Varrock guards until the ramp admits this login
-            await runRoleUntil(x, coinsRole, { target: 'auto', guardLevel: 40 }, () => (x.hooks.admitted() ? 'admitted' : null));
+            await runRoleUntil(x, coinsRole, { target: 'auto' }, () => (x.hooks.admitted() ? 'admitted' : null));
             return;
         case 'buy-sharks':
             await leaveAlKharid(x);
@@ -189,48 +191,23 @@ export async function runRoleUntil(
     stop?: (s: BotWorldState) => string | null,
     onLog?: (message: string, data?: Record<string, unknown>) => void
 ): Promise<string> {
-    const ctl = new AbortController();
-    const onParent = () => ctl.abort(x.signal.reason);
-    x.signal.addEventListener('abort', onParent, { once: true });
-    if (x.signal.aborted) onParent();
-    let why: string | null = null;
-    const check = (s: BotWorldState | null) => {
-        if (why || !stop || !s?.inGame || !s.player) return;
-        const r = stop(s);
-        if (r) {
-            why = r;
-            ctl.abort(new Error(r));
-        }
-    };
-    check(x.sdk.getState());
-    const off = x.sdk.onStateUpdate(check);
-    try {
-        if (!ctl.signal.aborted)
-            await executionContext.run({ signal: ctl.signal }, () =>
-                abortable(
-                    role.run({
-                        bot: x.bot,
-                        sdk: x.sdk,
-                        account: x.account,
-                        options,
-                        log: (message, data) => {
-                            x.event(`${role.name}: ${message}`, data);
-                            onLog?.(message, data);
-                        },
-                        reportBank: b => x.reportBank(b.items),
-                        signal: ctl.signal,
-                        state: x.roleState
-                    })
-                )
-            );
-    } catch (e) {
-        if (!ctl.signal.aborted) throw e;
-    } finally {
-        off();
-        x.signal.removeEventListener('abort', onParent);
-    }
-    x.signal.throwIfAborted();
-    return why ?? 'returned';
+    return runRole(
+        role,
+        {
+            bot: x.bot,
+            sdk: x.sdk,
+            account: x.account,
+            options,
+            log: (message, data) => {
+                x.event(`${role.name}: ${message}`, data);
+                onLog?.(message, data);
+            },
+            reportBank: b => x.reportBank(b.items),
+            signal: x.signal,
+            state: x.roleState
+        },
+        stop
+    );
 }
 
 /** hp-train.ts's trainer to `to`, its events into the account's events; its 50-tick samples are the ledger's job. */
