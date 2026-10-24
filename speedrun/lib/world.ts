@@ -31,6 +31,20 @@ export function pos(src: StateLike): Tile {
     return { x: p?.worldX ?? -1, z: p?.worldZ ?? -1, level: p?.level ?? -1 };
 }
 
+/** p_preventlogout(..., 16) after combat (logout.rs2): the server refuses a logout this many ticks after the last hit. */
+export const COMBAT_LOGOUT_TICKS = 16;
+
+/**
+ * In combat as the server's logout rule counts it: engaged, or hit within COMBAT_LOGOUT_TICKS.
+ * lastDamageTick is -1 when the player was never hit (sdk/types.ts): no window then.
+ */
+export function inCombatWindow(src: StateLike): boolean {
+    const s = stateOf(src);
+    const c = s?.player?.combat;
+    if (!s || !c) return false;
+    return c.inCombat || (c.lastDamageTick >= 0 && s.tick - c.lastDamageTick <= COMBAT_LOGOUT_TICKS);
+}
+
 export function chebyshev(a: { x: number; z: number }, b: { x: number; z: number }): number {
     return Math.max(Math.abs(a.x - b.x), Math.abs(a.z - b.z));
 }

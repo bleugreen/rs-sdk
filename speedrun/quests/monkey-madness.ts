@@ -2584,6 +2584,8 @@ interface Body {
     postconditions?: Check<MmContext>;
     inProgress?: (o: Observed) => boolean;
     resume?(ctx: Ctx): Promise<void>;
+    /** Its run picks up a fight already on (runner/step.ts Step.startsInCombat). */
+    startsInCombat?: true;
 }
 
 const onAtoll: Check<MmContext> = s => inArea(s, AREAS.atoll) || `not on Ape Atoll's surface (at ${JSON.stringify(pos(s))})`;
@@ -2897,6 +2899,8 @@ const BODIES: Partial<Record<string, Body>> = {
         postconditions: s => inArea(s, CRASH_ISLAND) || 'not on Crash Island',
     },
     G: {
+        // clearScorpions fights whatever scorpion threatens SCORED before Lumdo's talk.
+        startsInCombat: true,
         preconditions: s => inArea(s, CRASH_ISLAND) || inArea(s, AREAS.atoll) || 'not on Crash Island',
         async run(ctx, o) {
             const { sdk } = ctx;
@@ -3019,6 +3023,8 @@ const BODIES: Partial<Record<string, Body>> = {
         postconditions: atZooknock,
     },
     X: {
+        // demonFight skips the sigil off the arena and fights the demon in view: a takeover mid-fight re-enters through run.
+        startsInCombat: true,
         preconditions: () => true,
         pre: o => all(holding(MM_OBJ.sigil, o.bow), s => invCount(s, MM_OBJ.runeArrow) > 0 || s.equipment.some(i => i.id === MM_OBJ.runeArrow) || 'no rune arrows', prayerCovers('S15:X for the Jungle Demon', X_PRAYER)),
         async run(ctx, o) {
@@ -3122,6 +3128,9 @@ const BODIES: Partial<Record<string, Body>> = {
         postconditions: holding(MM_OBJ.talisman),
     },
     Q: {
+        // Zooknock's dungeon is full of aggressive undead and Q's walk and talk run under Protect from Melee: a
+        // takeover there re-enters through run, never a hold that refuses on the first swing (rs/185).
+        startsInCombat: true,
         preconditions: all(human, s => inArea(s, AREAS.dungeon) || 'not in the dungeon', s => holds(s, MM_OBJ.greegree) || (holds(s, MM_OBJ.talisman) && holds(s, MM_OBJ.monkeyBones)) || 'no talisman and bones'),
         async run(ctx, o) {
             const { sdk } = ctx;
@@ -3379,26 +3388,31 @@ const BODIES: Partial<Record<string, Body>> = {
 export function stepFor(d: SegmentDef, o: Resolved): Step<MmContext> {
     const name = segmentName(d);
     const body = BODIES[d.letter];
+    // The gnome half (A-G) runs under the same upkeep as the atoll segments, which wrap their own bodies.
+    const run: Step<MmContext>['run'] = body ? ctx => {
+        stepNote = o.note;
+        dialogue = o.dialogue;
+        eating = {
+            below: eatBelowFor(o.eating, d.letter),
+            ...(o.eating.topUpBelow !== undefined ? { topUpBelow: o.eating.topUpBelow } : {}),
+        };
+        return d.letter <= 'G' ? upkeep(ctx.sdk, () => body.run(ctx, o)) : body.run(ctx, o);
+    } : async () => {
+        throw new Error(`${name} is not written yet`);
+    };
     const step: Step<MmContext> = {
         name,
         logoutSafe: d.logoutSafe,
         preconditions: body?.pre?.(o) ?? body?.preconditions ?? (() => `${name} is not written yet`),
-        // The gnome half (A-G) runs under the same upkeep as the atoll segments, which wrap their own bodies.
-        run: body ? ctx => {
-            stepNote = o.note;
-            dialogue = o.dialogue;
-            eating = {
-                below: eatBelowFor(o.eating, d.letter),
-                ...(o.eating.topUpBelow !== undefined ? { topUpBelow: o.eating.topUpBelow } : {}),
-            };
-            return d.letter <= 'G' ? upkeep(ctx.sdk, () => body.run(ctx, o)) : body.run(ctx, o);
-        } : async () => {
-            throw new Error(`${name} is not written yet`);
-        },
+        run,
         postconditions: body?.postconditions ?? (() => true),
         ...(d.travel ? {} : { done: doneAt(d.letter), probes: [JOURNAL_PROBE] }),
         ...(body?.inProgress ? { inProgress: body.inProgress } : {}),
-        ...(body?.resume ? { resume: body.resume } : {}),
+        // A body with inProgress and no resume is written to re-enter through run (E reads the journal and
+        // skips Daero's talk): named as the resume entry, since the walk never re-enters a logout-unsafe
+        // step mid-step through run alone (runner/resume.ts).
+        ...(body?.resume ? { resume: body.resume } : body?.inProgress ? { resume: run } : {}),
+        ...(body?.startsInCombat ? { startsInCombat: true as const } : {}),
     };
     return step;
 }

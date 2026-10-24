@@ -382,6 +382,31 @@ the manifest against the game on every start, operator restarts included:
    steps (legs, banking) whose effect is already in the state are skipped.
 3. If nothing qualifies, it stops for the operator with every candidate's reason.
 
+**A logout-unsafe step is never re-entered mid-step from the top.** The engine
+keeps a dropped player in the world for 500 ticks (`World.ts`
+TIMEOUT_NO_CONNECTION), so a relogin inside that window is a session takeover:
+the same tile, HP and prayers, and the fight still on. For a step with
+`logoutSafe: false` (a fight, a queued completion) the walk therefore enters
+through `resume` only when the step has one and its `inProgress` holds. When
+`inProgress` holds and the step has no `resume`, or when `run` would start it
+inside the combat window (engaged, or hit within the server's 16-tick logout
+rule: `lib/world.ts` `inCombatWindow`), the walk stops at that step with a
+`MidStepError` instead of walking further back. `runResumable` then waits a
+bounded time (`MID_STEP_HOLD_TICKS`, unmeasured) for the window to end,
+observes again and walks again; if the step is still mid-step, the run stops
+for the operator naming the step and the reason. The wait is idle (nothing eats
+or prays), so a new hit during it ends it at once with the refusal: something is
+still attacking, and idling on is worse than stopping. A step whose `run` picks
+up a fight already on, or already runs under a protect prayer in an aggressive
+zone, declares `startsInCombat` and is never held: the Fight Arena fights and
+arena door, Monkey Madness G, Q and X, Grand Tree N1, Mage Arena C, S14 and S27.
+A step with `inProgress` whose `run` is written to re-enter names it as its
+`resume` (Monkey Madness E, Mage Arena C). The held steps are the ones whose
+`run` would re-talk or walk away mid-fight in a zone that is otherwise safe; no
+chain step is refused outright today.
+`runner/resume-takeover.test.ts` pins the table. Logout-safe steps resolve as
+before.
+
 **A milestone must stay done.** Step 1 stops at the first undone milestone, so
 one that turns false later sends the walk back to a step whose preconditions
 then refuse. Two shapes keep `done` monotonic where the state alone moves on:

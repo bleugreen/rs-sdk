@@ -955,6 +955,8 @@ export function steps(input: Options = {}): Step<any>[] {
             },
             postconditions: s => (demonInSight(s) ? true : 'no black demon in sight'),
             logoutSafe: false,
+            // With the demon in sight (a takeover mid-fight) run returns at once.
+            startsInCombat: true,
         },
         {
             name: name('N2-demon'),
