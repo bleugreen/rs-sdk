@@ -14,8 +14,9 @@
 // defaults to the level from which Mining 99 comes about 7 loads in, so the last loads are taken at 99
 // and buried by hand at the zoo: the fallback stop.
 //
-//   LAB_RUNNERS=0 LAB_HELPERS=<carrier> NODE_TICKRATE=400 speedrun/lab/lab.sh <scored> \
-//     '<rs/705's carrier spec>' 'speedrun/lab/h4m-s09.ts:--carrier=<carrier>:--manifest=<file>:--run=<id>:--cue-root=<dir>'
+//   GIVERS=<carrier> LAB_BLOCK=<n> NODE_TICKRATE=400 LAB_LOG=<dir> bash docs/speedrun/scripts/tickprog-lab.sh <scored> \
+//     'speedrun/lab/h4m-carrier.ts:--carrier=<carrier>:--delivery-run=<id>:--cue-root=<dir>:--manifest=<file>:--background' \
+//     'speedrun/lab/h4m-s09.ts:--carrier=<carrier>:--manifest=<file>:--run=<id>:--cue-root=<dir>'
 //
 // Exit 0 when every step held its postconditions (the last bury step's is the chain's Prayer 99),
 // at least 4 loads were buried on the lap and at least one by hand at Mining 99.
@@ -27,7 +28,8 @@ import { muleFromLedger, muleRunOptions } from '../helpers/mule-ledger';
 import { readMuleReady } from '../helpers/mule-readiness';
 import { objPack } from '../lib/obj-pack';
 import { awaitProgram, startProgram } from '../lib/programs';
-import { closeSession, isLoopbackHost, loadBotEnv, type Session } from '../lib/session';
+import { runScript } from '../../sdk/runner';
+import { isLoopbackHost, loadBotEnv } from '../lib/session';
 import { TickLog, type TickRow } from '../lib/ticks';
 import { waitUntil } from '../lib/wait';
 import { levelForXp, XP_RATE, xpForLevel } from '../lib/xp';
@@ -37,7 +39,6 @@ import { deliveryOwnerFor, type DeliveryOwner } from '../runner/delivery-owner';
 import { HandOffRecord } from '../runner/handoff';
 import { runSteps } from '../runner/step';
 import * as mining from '../skills/mining';
-import { openSecureLabSession, type SecureLabSession } from './browser';
 import { arg, botArg, result } from './common';
 import { cheat, clearInventory, give, leaveTutorial, mustTele, setStats } from './setup';
 
@@ -86,8 +87,8 @@ const full = buildChain(cfg, { cues, manifest, attempt: runId, handOffs: new Han
 const slice: ChainStep[] = full.slice(full.findIndex(s => s.id === 'H4p'), full.findIndex(s => s.id === 'T09-10'));
 const loads = slice.filter(s => s.name.startsWith('mining.bury')).length;
 
-let scored!: Session;
-let secure: SecureLabSession | null = null;
+/** The bot's tab (tickprog-lab.sh opens it; runScript attaches over its DevTools port), as the runner's session. */
+let scored!: Parameters<typeof runSteps>[0];
 let pass = false;
 const summary: Record<string, unknown> = { host: hostname(), tickRate: process.env.NODE_TICKRATE, runId, level: LEVEL, prayer: PRAYER, loads, steps: slice.map(s => `${s.id}: ${s.name}`) };
 const ready: Array<{ row: string; waitTicks: number }> = [];
@@ -130,10 +131,10 @@ function measure(): Record<string, unknown> {
     };
 }
 
+await runScript(async ({ bot: actions, sdk }) => {
+scored = { sdk, bot: actions, name: scoredName, sessionId: 0 } as never;
 try {
     say('start', { runId, level: LEVEL, loads, lapOres: LAP_ORES, controlOres: CONTROL_ORES, override: 'S09_MINING.respawn 13' });
-    secure = await openSecureLabSession(scoredName);
-    scored = secure.session;
     await leaveTutorial(scored);
     await setStats(scored.sdk, { mining: LEVEL, prayer: PRAYER, magic: 59, hitpoints: 10, defence: 1 });
     summary.control = await control();
@@ -185,10 +186,9 @@ try {
     try { Object.assign(summary, measure()); } catch { /* nothing measured */ }
 } finally {
     try { cues.close({ final: false }); } catch { /* nothing open */ }
-    if (secure) await secure.close();
-    else if (scored) await closeSession(scored);
     summary.pass = pass;
     writeFileSync(join(root, 'result.json'), JSON.stringify(summary, null, 2));
     result('h4m-s09', summary);
 }
+}, { timeout: 2 * 60 * 60_000, printState: false });
 process.exit(pass ? 0 : 1);
