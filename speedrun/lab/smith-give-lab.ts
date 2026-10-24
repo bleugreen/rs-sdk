@@ -8,7 +8,9 @@
 // Account names must be cairn_ shaped (the role's receiver check). Passes when every receiver
 // gained exactly one of each piece by obj id and nothing else, the smith's bank holds no pieces
 // and no bars beyond what it started with less the 24, and the role reports no uncertain trade.
+import { BANKS } from '../helpers/buyer';
 import { memoryRoleState } from '../helpers/role';
+import { pathTiles } from '../lib/paths';
 import { role, PIECES, ADAMANT_MELEE, BAR_OBJ } from '../helpers/smith-give';
 import { openSession, type Session } from '../lib/session';
 import { receiveFrom, type ReceiveResult } from '../lib/trade';
@@ -28,7 +30,13 @@ await setStats(smith.sdk, { smithing: 95 });
 await mustTele(smith.sdk, VARROCK_WEST_BANK.x, VARROCK_WEST_BANK.z);
 await give(smith.sdk, 'adamantite_bar', 24);
 await give(smith.sdk, 'coins', 20);
-for (const [i, r] of receivers.entries()) await mustTele(r.sdk, VARROCK_WEST_BANK.x - 2 + i, VARROCK_WEST_BANK.z - 1);
+// The stand-ins stand where the smith can walk to them from the role's bank tile: a tile behind
+// the booths or in a wall leaves every trade click with no route (no_response).
+const spots = [[3186, 3436], [3184, 3436], [3185, 3435], [3186, 3435], [3184, 3435], [3186, 3437], [3184, 3437]]
+    .filter(([x, z]) => { const p = pathTiles(0, BANKS.varrockWest.x, BANKS.varrockWest.z, x!, z!); return p.reached && p.tiles <= 6; });
+if (spots.length < receivers.length) throw new Error(`only ${spots.length} reachable stand-in tiles near Varrock west bank`);
+for (const [i, r] of receivers.entries()) await mustTele(r.sdk, spots[i]![0]!, spots[i]![1]!);
+log('stand-ins placed', { at: receivers.map((r, i) => ({ name: r.name, x: spots[i]![0], z: spots[i]![1] })) });
 await waitTicks(smith.sdk, 3);
 
 const byId = (items: ReadonlyArray<{ id: number; count: number }>) => {
