@@ -1,9 +1,9 @@
 // Monkey Madness (S15): the shape of every conversation the module answers, in
 // CONVENTIONS.md notation (docs/speedrun/quests/CONVENTIONS.md, Dialogue), read
 // from the game scripts under server/content/scripts/quests/quest_mm/scripts/.
-// The module passes each one to converse through segments.ts `talkShape`, so
-// 'burst' clears the continue runs blind and 'fixed' only checks the pages
-// against the shape.
+// In 'burst' the module passes each one to converse through segments.ts
+// `talkShape`, which clears the continue runs blind and checks every page
+// against the shape; 'fixed' passes none, so its converse calls are unchanged.
 //
 // Reading the scripts:
 // - Every ~chatnpc / ~chatplayer / ~mesbox / ~objbox line on these paths is one

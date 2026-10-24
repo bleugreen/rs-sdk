@@ -838,11 +838,19 @@ let eating: { below: number; topUpBelow?: number } = { below: SEGMENT_EATING.oth
 /** The running segment's dialogue mode, set by stepFor before each body runs. */
 let dialogue: DialogueMode = DEFAULT_OPTIONS.dialogue;
 
-/** Converse options for a conversation of `shape` (MM_SHAPES) in the running segment's dialogue mode. */
-const shaped = (shape: string) => talkShape({ dialogue }, shape);
+/**
+ * Converse options for a conversation of `shape` (MM_SHAPES) in `mode`: talkShape's in burst; none in fixed, so a
+ * fixed run's converse calls carry exactly the options they had before burst existed.
+ */
+export function dialogueOptions(mode: DialogueMode, shape: string): ReturnType<typeof talkShape> | Record<string, never> {
+    return mode === 'burst' ? talkShape({ dialogue: mode }, shape) : {};
+}
 
-/** Note a conversation against its shape: the pages seen, whether they matched, and the bursts. */
+const shaped = (shape: string) => dialogueOptions(dialogue, shape);
+
+/** Note a burst conversation against its shape: the pages seen, whether they matched, and the bursts. */
 function noteShape(label: string, r: ConverseResult | undefined): void {
+    if (dialogue !== 'burst') return;
     const s = r?.shape;
     if (!r || !s) return stepNote(`S15 shape ${label}: no dialogue`);
     const how = s.burst ? `bursts ${s.bursts}, failed ${s.failedBursts}, ${s.burstPages}/${r.pages} pages burst` : 'fixed';

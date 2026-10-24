@@ -3,7 +3,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 
 import { parseShape } from '../lib/converse';
-import { AUNT_BACK_IN, AUNT_BOX, AUNT_DOOR_CLEAR, DEFAULT_OPTIONS, NO_DWELL, steps, tilePrayer } from './monkey-madness';
+import { AUNT_BACK_IN, AUNT_BOX, AUNT_DOOR_CLEAR, DEFAULT_OPTIONS, dialogueOptions, NO_DWELL, steps, tilePrayer } from './monkey-madness';
 import { CHILD_TALISMAN, CHILD_TALKS, childLoops, childTalkNeed, lumdoRefuses, MM_SHAPES, narnodeComplete, shapeTicks, type MmShapeName } from './monkey-madness-shapes';
 import { talkShape } from './segments';
 
@@ -146,6 +146,26 @@ describe('S15 dialogue modes', () => {
     test('talkShape bursts only in burst mode', () => {
         expect(talkShape({ dialogue: 'fixed' }, MM_SHAPES.garkorFirst)).toEqual({ shape: '25c', burst: false });
         expect(talkShape({ dialogue: 'burst' }, MM_SHAPES.garkorFirst)).toEqual({ shape: '25c', burst: true });
+    });
+
+    test('fixed mode adds nothing to any conversation: burst is talkShape, fixed is no option at all', () => {
+        const all = [
+            ...Object.values(MM_SHAPES), ...CHILD_TALKS.map(t => t.shape), CHILD_TALISMAN.shape,
+            lumdoRefuses(true), lumdoRefuses(false), narnodeComplete(true), narnodeComplete(false),
+        ];
+        for (const shape of all) {
+            expect(dialogueOptions('fixed', shape)).toEqual({});
+            expect(dialogueOptions('burst', shape)).toEqual(talkShape({ dialogue: 'burst' }, shape));
+        }
+    });
+
+    test('the module reaches converse\'s shape and burst options only through dialogueOptions', () => {
+        // Every talk spreads `shaped(...)` (dialogueOptions in the running mode) and sets neither key itself, so a fixed
+        // run's calls are main's; `shape:` appears only as the module's own talk() argument, which goes through shaped.
+        expect(SOURCE.match(/\btalkShape\(/g)).toHaveLength(1);
+        expect(SOURCE.match(/\bburst\s*:/g) ?? []).toEqual([]);
+        const shapeKeys = SOURCE.split('\n').filter(l => /\bshape\s*:/.test(l) && !/^\s*(\/\/|\*)/.test(l));
+        for (const l of shapeKeys) expect(l).toMatch(/await talk\(|o: \{ shape: string|shape: t\.shape/);
     });
 
     test("CONVENTIONS' columns: fixed a tick a page; burst ceil(k/5), 1 + ceil((k-1)/5) after an option or state page", () => {
