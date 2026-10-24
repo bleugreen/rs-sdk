@@ -11,10 +11,11 @@ import { baseState, drive, FakeSdk, FakeTradePartner, flush, simulateWalking } f
 import { askFor, handOffFrom } from '../runner/handoff';
 import type { ReceiveResult } from '../lib/trade';
 import { compactJournal } from '../lib/quests';
+import { wield } from '../lib/act';
 import { Observation, resolveResume } from '../runner/resume';
 import type { Observed, RunnerSession } from '../runner/step';
 import {
-    BANANA_TREE_IDS, bananaRoomDrops, cureBeforeSwap, preDose, gtSwap, h12Plan, h12Wants, kitMissing, LOST_SEAL, narnodeTalk, DEFAULT_OPTIONS, roomFor, doneAt, EXIT_DROPS, exitState, h12Kit, H12_POTIONS, H12_SHARKS, waydarIntroWatch, itemMilestone, setStepNote, talkableNpc, JOURNAL_MARKS, JOURNAL_PROBE, journalMilestone, MM_OBJ, mmMilestone, PUZZLE_TILE_IDS,
+    BANANA_TREE_IDS, bananaRoomDrops, cureBeforeSwap, dropDead, preDose, gtSwap, h12Plan, h12Wants, kitMissing, LOST_SEAL, narnodeTalk, DEFAULT_OPTIONS, roomFor, doneAt, EXIT_DROPS, exitState, h12Kit, H12_POTIONS, H12_SHARKS, waydarIntroWatch, itemMilestone, setStepNote, talkableNpc, JOURNAL_MARKS, JOURNAL_PROBE, journalMilestone, MM_OBJ, mmMilestone, PUZZLE_TILE_IDS,
     BELOW_30_EATING, cureWanted, eatBelowFor, sharksToDrop, GARKOR_WEST, isMonkeyChatter, CAGE, CAGE_NORTH_STRIP, CAGE_TILES, inCage, letOut, letOutPick, LET_OUT_ATTEMPTS, MINDER_REACH, nearestFire, sceneBuilt, tileIn, underTemple, scorpionsNear, SCORPION_CLOSE, SCORPION_REACH, sigilRoom, h12oLeg, legCue, pFinalStop, closeLeftTrade, DECLINE_TICKS, H12O_M_ROW, mTopUpCap, ASK_SHARK, ASK_SUPER_ANTIPOISON, H12O_SCOPE, onTradeOpen, P_TOPUP_MAX_SHARKS, pTopUpAsk, immunityWanted,
     AREAS, inArea, inCell, zooknockWay, type ZooknockLegs, CHAT_DRINK_FLOOR, DRINK_BELOW, packClickAllowed, upkeep, X_PRAYER,
     ARCHER_REACH, AUNT_BOX, crateRoute, crateSteps, entersSleepingZone, SLEEPING_DETOURS, sleepingDetour, GUARD_REACH, legPrayerFor, M_TOPUP_TILE, mLegSize, mTopUpSharks, NO_DWELL, pathTiles, pLegSize, POSTED_ARCHERS, prayerRuns, receiveLeg, RELIGIOUS_GUARDS, SLEEPING_ZONE, tilePrayer, TOPUP_TRIES, TOPUP_WAIT, tradeIdle, type Receive, nextBananaTree, SUPER_IMMUNE_TICKS, offAtoll, patrolLeavesLane, SEGMENT_EATING, topUpWanted, resolveOptions, REWARD_ITEMS, seg, segmentName, SEGMENTS, stepId, steps, templeLeft, treeRouteRefusal, yRoom, type MmContext,
@@ -773,13 +774,68 @@ describe('exit', () => {
         expect([...EXIT_DROPS].sort()).toEqual([MM_OBJ.royalSeal, MM_OBJ.amuletMould, MM_OBJ.sigil].sort());
     });
 
-    test('the exit holds none of them, held or worn, and has the training xp', () => {
-        expect(exitState(state([MM_OBJ.amulet, MM_OBJ.greegree]), {} as never)).toBe(true);
+    test('the exit holds none of them, held or worn, has the training xp, and wears the M\'speak amulet', () => {
+        expect(exitState(state([MM_OBJ.greegree], [MM_OBJ.amulet]), {} as never)).toBe(true);
+        expect(exitState(state([MM_OBJ.amulet, MM_OBJ.greegree]), {} as never)).toMatch(/M'speak amulet is not worn/);
         for (const id of EXIT_DROPS) {
-            expect(exitState(state([id]), {} as never)).toMatch(/S15's exit drops/);
+            expect(exitState(state([id], [MM_OBJ.amulet]), {} as never)).toMatch(/S15's exit drops/);
             expect(exitState(state([], [id]), {} as never)).toMatch(/S15's exit drops/);
         }
-        expect(exitState(state([], [], 34_999), {} as never)).toMatch(/below Daero/);
+        expect(exitState(state([], [MM_OBJ.amulet], 34_999), {} as never)).toMatch(/below Daero/);
+    });
+
+    /**
+     * A neck slot as the engine has it for these two objs (quest_mm.obj: both wearpos=front): a wear swaps whatever is in
+     * the slot into the pack. Clicks land a tick later.
+     */
+    test("R's sigil pushes the M'speak amulet into the pack; Z drops the sigil and the amulet is worn at S15's exit", async () => {
+        const NECK = 2;
+        const neck = new Set<number>([MM_OBJ.amulet, MM_OBJ.sigil]);
+        const packed = (id: number, slot: number): InventoryItem => ({ slot, id, name: `obj ${id}`, count: 1, optionsWithIndex: [{ text: 'Wear', opIndex: 2 }] });
+        const worn = (id: number): InventoryItem => ({ slot: NECK, id, name: `obj ${id}`, count: 1, optionsWithIndex: [{ text: 'Remove', opIndex: 1 }] });
+        const freeSlot = (inv: readonly InventoryItem[]) => { for (let q = 0; ; q++) if (!inv.some(i => i.slot === q)) return q; };
+        const sdk = new FakeSdk(baseState({
+            tick: 1,
+            inventory: [packed(MM_OBJ.sigil, 0), ...Array.from({ length: 12 }, (_, i) => ({ ...item(MM_OBJ.shark, i + 1) }))],
+            equipment: [worn(MM_OBJ.amulet), { ...item(MM_OBJ.greegree, 3) }],
+            skills: [strength(35_000)],
+        } as Partial<BotWorldState>));
+        const pending: { method: string; args: unknown[] }[] = [];
+        sdk.onSend = a => pending.push(a);
+        const each = (st: BotWorldState): Partial<BotWorldState> => {
+            let inv = st.inventory;
+            let eq = st.equipment;
+            for (const a of pending.splice(0)) {
+                const slot = a.args[0] as number;
+                if (a.method === 'sendDropItem') inv = inv.filter(i => i.slot !== slot);
+                if (a.method === 'sendUseEquipmentItem') {
+                    const e = eq.find(x => x.slot === slot);
+                    if (e) { eq = eq.filter(x => x !== e); inv = [...inv, packed(e.id, freeSlot(inv))]; }
+                }
+                if (a.method === 'sendUseItem') {
+                    const it = inv.find(i => i.slot === slot);
+                    if (!it || !neck.has(it.id)) continue;
+                    const off = eq.filter(e => e.slot === NECK);
+                    inv = inv.filter(i => i !== it);
+                    for (const o of off) inv = [...inv, packed(o.id, freeSlot(inv))];
+                    eq = [...eq.filter(e => e.slot !== NECK), worn(it.id)];
+                }
+            }
+            return { inventory: inv, equipment: eq };
+        };
+        // R: the sigil goes on (demonFight's wield) and the amulet is in the pack.
+        expect((await drive(sdk, wield(sdk as never, MM_OBJ.sigil), 10, each)).ok).toBe(true);
+        const fought = sdk.getState()!;
+        expect(fought.equipment.some(e => e.id === MM_OBJ.sigil)).toBe(true);
+        expect(fought.inventory.some(i => i.id === MM_OBJ.amulet)).toBe(true);
+        expect(exitState(fought, {} as never)).toMatch(/S15's exit drops/);
+        // Z: the sigil off and dropped, then the amulet back on.
+        await drive(sdk, dropDead(sdk as never, () => {}), 30, each);
+        const end = sdk.getState()!;
+        expect(end.inventory.some(i => i.id === MM_OBJ.sigil || i.id === MM_OBJ.amulet)).toBe(false);
+        expect(end.equipment.map(e => e.id).sort()).toEqual([MM_OBJ.amulet, MM_OBJ.greegree].sort());
+        expect(end.inventory.length).toBe(12);
+        expect(exitState(end, {} as never)).toBe(true);
     });
 });
 
