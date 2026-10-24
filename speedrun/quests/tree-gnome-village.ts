@@ -51,7 +51,7 @@ import { currentTick, waitUntil, type Pred } from '../lib/wait';
 import { chebyshev, configId, findLoc, invCount, opIndex, pos, skillXp, worn, type LocQuery } from '../lib/world';
 import type { StageName } from '../data/quest-stages';
 import type { Check, Observed, StepContext } from '../runner/step';
-import { allOf, baseLevels, drinkPrayerTo, prayerCovers, questSteps, slotsCover, stageAtLeast, talkShape, type QuestItem, type QuestOptions, type Segment } from './segments';
+import { allOf, baseLevels, drinkPrayerTo, entryCured, prayerCovers, questSteps, slotsCover, stageAtLeast, talkShape, type QuestItem, type QuestOptions, type Segment } from './segments';
 
 /**
  * Prayer points B needs for the three protect stretches, the maze (B), the stronghold (H) and the
@@ -729,7 +729,8 @@ export function steps(input: Options = {}) {
             done: o => complete(stateOf(o)),
         },
     ];
-    return questSteps(stepId, segs);
+    // K's warlord fight with H7's Antipoison held: nothing before it poisons on the route, but a poison carried in is cured.
+    return questSteps(stepId, entryCured(stepId, ['K'], segs));
 }
 
 function need(s: BotWorldState, item: ItemPattern, n: number, label: string): true | string {

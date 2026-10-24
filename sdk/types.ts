@@ -510,6 +510,8 @@ export interface CombatEvent {
     observationId?: number;
     type: 'damage_taken' | 'damage_dealt' | 'kill';
     damage: number;
+    /** The hitsplat's type on the player's own damage_taken events: 0 block, 1 damage, 2 poison (the server's hitmark.constant). Absent on other events. */
+    hitmark?: number;
     sourceType: 'player' | 'npc' | 'other_player';
     sourceIndex: number;
     targetType: 'player' | 'npc' | 'other_player';
