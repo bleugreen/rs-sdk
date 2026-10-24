@@ -433,7 +433,11 @@ spiders' severity 27) plus one NPC hit (4), so 25 at SCORED's 38-42 hitpoints.
 The frame an eat is decided on can then lose both before the shark lands and
 still end on the floor. The rule never eats within 10 of the maximum. When
 SCORED reads poisoned (`quests/segments.ts` `poisoned`) it drinks one antipoison
-dose (`cureDose`, `noteAntipoison`). Nothing is clicked while a trade is open.
+dose (`cureDose`, `noteAntipoison`). A last dose leaves an empty vial, which the
+leg drops at its end, so the pack leaves the leg as the slot ledger has it (S15:A
+runs at 27 of 28 slots). Until rs/755's sdk `hitmark` field is on the base, a
+poison carried into a leg does not read as poisoned, so the cure fires only on a
+fresh poisoning. Nothing is clicked while a trade is open.
 A pack click closes an open chat, which would end a tree's or a lever's talk
 part way, so while a chat is open the eat waits unless hitpoints are at or under
 21 (`LEG_URGENT_HP`, the floor plus one poison hit), and the cure always waits.
