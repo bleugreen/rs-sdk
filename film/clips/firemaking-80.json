@@ -1,0 +1,12 @@
+{
+    "about": "S03's step module (speedrun/skills/firemaking.ts) at Firemaking 80 lighting 27 held magic logs westward along the confirmed Falador east lab row (speedrun/helpers/fm-row.ts LAB_ROW). The trade supply's held mode lights without a helper; the clip ends before the first refill, which would wait on a giver that is not there.",
+    "script": "speedrun/skills/firemaking.ts",
+    "opts": { "supply": "trade", "giver": "film_no_giver", "tiles": "3019-2993@3362;2993-3019@3361", "toLevel": 99 },
+    "setup": {
+        "clearInventory": true,
+        "stats": { "firemaking": 80, "hitpoints": 70, "attack": 70, "strength": 70, "defence": 70 },
+        "give": { "tinderbox": 1, "magic_logs": 27 },
+        "tele": [3019, 3362, 0]
+    },
+    "seconds": 55
+}

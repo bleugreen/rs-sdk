@@ -35,7 +35,9 @@ import type { BotActions } from '../../sdk/actions';
 import { PLAYER_CHAT_TYPES, type BotWorldState, type GroundItem, type NearbyLoc, type NearbyNpc } from '../../sdk/types';
 import { converse, dismissInterrupt, matchInterrupt, type ConverseOptions, type ConverseResult, type ConverseSdk, type Interrupt } from './converse';
 import { pageText, type OptionPattern } from './dialogue';
+import { approachNpc, npcTile, unroutedReply } from './approach';
 import { matchesItem, type ItemPattern } from './items';
+import type { TravelSdk } from './travel';
 import { serverClock, waitUntil, type Pred, type StateSource } from './wait';
 import { chebyshev, configIds, findLoc, invCount, invItem, messageCursor, opIndex, pos, replyAfter, tileCounter, waitForNpc, worn, type LocQuery, type NamePattern, type OpPattern, type Tile } from './world';
 
@@ -568,6 +570,12 @@ export interface TalkOptions extends ConverseOptions {
     near?: { x: number; z: number };
     /** Clicks to try when no dialogue opens (default 3). */
     attempts?: number;
+    /**
+     * Finds the talk's approach may make (approach.ts approachNpc: doors opened, a run to within 1
+     * of the live tile) after a click that came back unrouted or cant_reach opened nothing (default
+     * 2; 0 turns it off). A caller that approached before the talk passes what is left of its budget.
+     */
+    refinds?: number;
 }
 
 /**
@@ -576,11 +584,18 @@ export interface TalkOptions extends ConverseOptions {
  * goes out under the jump rules (`ClickGuard`): after a settled position, with a
  * refused send re-sent on the next tick and a post-jump click that draws no
  * reply re-sent once, while the conversation listens. The result's ticks run
- * from the call.
+ * from the call. A click whose send came back unrouted (the browser) or
+ * cant_reach (lite) and opened nothing means the NPC is behind something (a
+ * door shut behind it): before the next click the talk opens the doors toward
+ * its live tile and runs to within 1 of it (approach.ts approachNpc, within
+ * `refinds` finds), then clicks the NPC as found there.
  */
-export async function talkTo(sdk: ActSdk & ConverseSdk, npc: NamePattern | NearbyNpc, choices: OptionPattern[] = [], opts: TalkOptions = {}): Promise<ConverseResult & JumpCounts & { npc: NearbyNpc; clicks: number }> {
-    const n = typeof npc === 'object' && 'index' in npc ? npc : await waitForNpc(sdk, npc, opts.findTicks ?? 10, opts.near);
+export async function talkTo(sdk: ActSdk & ConverseSdk, npc: NamePattern | NearbyNpc, choices: OptionPattern[] = [], opts: TalkOptions = {}): Promise<ConverseResult & JumpCounts & { npc: NearbyNpc; clicks: number; approachFinds?: number }> {
+    let n = typeof npc === 'object' && 'index' in npc ? npc : await waitForNpc(sdk, npc, opts.findTicks ?? 10, opts.near);
     if (!n) throw new Error(`no npc ${String(npc)} near ${JSON.stringify(pos(sdk))}`);
+    const travel = typeof (sdk as Partial<TravelSdk>).findPath === 'function' ? (sdk as unknown as TravelSdk) : null;
+    const budget = opts.refinds ?? 2;
+    let approachFinds = 0;
     const op = opIndex(n, opts.op ?? /^talk-to$/i) ?? 1;
     const t0 = sdk.getState()?.tick ?? 0;
     const attempts = opts.attempts ?? 3;
@@ -589,7 +604,9 @@ export async function talkTo(sdk: ActSdk & ConverseSdk, npc: NamePattern | Nearb
     let remaining = choices;
     for (let clicks = 1; ; clicks++) {
         // The answer is this NPC's conversation opening (replyKind), not any page: see ClickGuard's npc.
-        const guard = new ClickGuard(sdk, () => sdk.sendInteractNpc(n.index, op), undefined, { npc: n.name, interrupts: opts.interrupts });
+        const target = n;
+        let unrouted = false;
+        const guard = new ClickGuard(sdk, () => sdk.sendInteractNpc(target.index, op).then(res => { if (unroutedReply(res)) unrouted = true; return res; }), undefined, { npc: target.name, interrupts: opts.interrupts });
         const conv = converse(sdk, remaining, opts);
         const stop = sdk.onStateUpdate(s => void guard.step(s));
         await guard.send();
@@ -602,9 +619,14 @@ export async function talkTo(sdk: ActSdk & ConverseSdk, npc: NamePattern | Nearb
                 ...(counts.refusedResends ? { refusedResends: counts.refusedResends } : {}),
                 ...(counts.unansweredResends ? { unansweredResends: counts.unansweredResends } : {}),
             };
-            return { ...r, ...jump, startTick: t0, ticks: r.opened ? r.endTick - t0 : 0, npc: n, clicks };
+            return { ...r, ...jump, startTick: t0, ticks: r.opened ? r.endTick - t0 : 0, npc: target, clicks, ...(approachFinds ? { approachFinds } : {}) };
         }
         remaining = r.remaining;
+        if (unrouted && travel && approachFinds < budget) {
+            const a = await approachNpc(travel, target.id, { near: opts.near ?? npcTile(target), findTicks: opts.findTicks ?? 10, refinds: budget - approachFinds - 1, interrupts: opts.interrupts });
+            approachFinds += a.finds;
+            if (a.npc) n = a.npc;
+        }
     }
 }
 

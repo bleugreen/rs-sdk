@@ -11,7 +11,7 @@ import { configId } from '../lib/world';
 import { Observation, resolveResume } from '../runner/resume';
 import type { Observed, RunnerSession, StepContext } from '../runner/step';
 import {
-    AGILITY_AFTER, ardougneTeleport, climbToPillars, crossTreeDoor, DEMON_CASTS, DEMON_MAX_CASTS, entryCheck, exitCheck, FREE_SLOTS, gtStage, H8, ITEM, kitCheck, PILLARS, resolveOptions, ROOTS,
+    AGILITY_AFTER, ardougneTeleport, climbToPillars, crossTreeDoor, DEMON_CASTS, DEMON_MAX_CASTS, DEMON_PRAYER, entryCheck, exitCheck, FREE_SLOTS, gtStage, H8, ITEM, kitCheck, PILLARS, resolveOptions, ROOTS,
     RUNE_NEED, RUNE_STAFF, RUNE_USE, searchRoot, steps, TILES, TREE_DOOR_CLICKS, TREE_DOOR_WAIT,
 } from './grand-tree';
 
@@ -490,5 +490,22 @@ describe('rune pins: RUNE_USE and RUNE_NEED agree with the kit (tools/rune-pins.
         expect(RUNE_USE.N2!.chaosrune).toBe(DEMON_MAX_CASTS);
         expect(DEMON_MAX_CASTS).toBeLessThanOrEqual(DEMON_CASTS);
         expect(RUNE_USE.N2!.firerune).toBeUndefined();
+    });
+});
+
+describe('the prayer points (rs/687)', () => {
+    const n1 = () => steps().find(s => s.name === 'S11b:N1-trapdoor')!;
+    const onPlatform = (points: number, extra: InventoryItem[] = []) => {
+        const s = routeState({ quests: { tree: 'complete', elena: 'complete', grandtree: 'started' }, player: player(2486, 3465, 2) });
+        return { ...s, inventory: [...s.inventory, ...extra], prayers: { ...s.prayers, prayerPoints: points } };
+    };
+    test('H8 brings a Prayer potion(4) for N2 and S12', () => {
+        expect(H8.some(w => String(w.item) === String(/^Prayer potion\(4\)$/i) && w.amount === 1)).toBe(true);
+    });
+    test('N1 wants the trapdoor scene and the demon: ~35 (N2 used 28 live)', () => {
+        expect(DEMON_PRAYER).toBeGreaterThanOrEqual(28 + 5);
+        expect(n1().preconditions(onPlatform(DEMON_PRAYER), {})).toBe(true);
+        expect(n1().preconditions(onPlatform(4), {})).toBe('S11b:N1 for the trapdoor and the demon needs ~35 prayer points, has 4 and no prayer potion');
+        expect(n1().preconditions(onPlatform(4, [item('Prayer potion(4)', 1, ['Drink'])]), {})).toBe(true);
     });
 });

@@ -46,7 +46,7 @@ import { runTo, sumUse, type RuneName, type RuneUse, type RuneUseTable } from '.
 import { currentTick, waitTicks, waitUntil } from '../lib/wait';
 import { findLoc, findNpc, invCount, invItem, messagesSince, npcByIndex, opIndex, pos, skillLevel, skillXp, worn } from '../lib/world';
 import type { Check, Observed } from '../runner/step';
-import { allOf, inBox, kitSegment, questSteps, slotsCover, talkShape, within, type Box, type KitItem, type QuestItem, type QuestOptions, type Segment } from './segments';
+import { allOf, drinkPrayerTo, inBox, kitSegment, prayerLevelOf, prayerReserve, questSteps, slotsCover, talkShape, within, type Box, type KitItem, type QuestItem, type QuestOptions, type Segment } from './segments';
 
 export const quest = 'magearena' as const;
 export const stepId = 'S16';
@@ -109,6 +109,9 @@ export const KOLODION_MAGIC = 60;
  */
 export const PRAYER_BUDGET = 90;
 
+/** The fight drinks a dose below this many points (fightKolodion's default); B drinks up to it before the prayer goes on. */
+export const DRINK_BELOW = 15;
+
 // ------------------------------------------------------------------ places
 
 /** Kolodion's cellar under the mage bank (outside the Wilderness, x < 2944). */
@@ -149,9 +152,10 @@ export const QUEST_ITEMS: readonly QuestItem[] = [
  * S16's exit drops, the inventory ledger's T16-18 row done at F's end (as Dwarf Cannon drops its tool
  * kit and Monkey Madness its seal inside their steps): the god staff (untradeable) and the god cape
  * are dead once %magearena is 8, which the staff's handing-over sets (chamber_guardian.rs2:15);
- * Charge needs neither (charge.rs2 checks the stage). The sharks go down to S18's 2.
+ * Charge needs neither (charge.rs2 checks the stage). The sharks go down to S18's 2. The vials are
+ * what the exit's prayer drink (drinkForElvarg) empties.
  */
-export const EXIT_DROPS: readonly RegExp[] = [GOD_STAFF, GOD_CAPE];
+export const EXIT_DROPS: readonly RegExp[] = [GOD_STAFF, GOD_CAPE, /^vial$/i];
 export const KEEP_SHARKS = 2;
 
 /** The inventory items the exit drops: every EXIT_DROPS item, and the sharks after the first `keepSharks`. */
@@ -374,11 +378,6 @@ const baseOf = (s: BotWorldState, skill: string) => s.skills.find(k => k.name.to
 const boostedOf = (s: BotWorldState, skill: string) => skillLevel(s, skill);
 const held = (s: BotWorldState, p: ItemPattern) => !!invItem(s, p) || !!worn(s, p);
 
-/** Prayer points the fight can draw: points now plus each held dose at its restore. */
-export function prayerBudget(s: BotWorldState): number {
-    const level = s.prayers?.prayerLevel ?? baseOf(s, 'prayer');
-    return (s.prayers?.prayerPoints ?? 0) + prayerDoses(s) * (7 + Math.floor(level / 4));
-}
 
 /** The spell castable for the whole fight: boosted at its level now, or a magic potion held that lifts the base to it. */
 export function spellReady(spell: KolodionSpell): Check<any> {
@@ -393,7 +392,7 @@ export function spellReady(spell: KolodionSpell): Check<any> {
 const kolodionLevel: Check<any> = s => (baseOf(s, 'magic') >= KOLODION_MAGIC ? true : `Kolodion wants base Magic ${KOLODION_MAGIC} (kolodion.rs2:6): base ${baseOf(s, 'magic')}`);
 const fireStaffWorn: Check<any> = s => (worn(s, FIRE_STAFF) ? true : 'the staff of fire is not wielded (it covers the spell\'s fire runes)');
 const protectLevel: Check<any> = s => ((s.prayers?.prayerLevel ?? baseOf(s, 'prayer')) >= PROTECT_PRAYER_LEVEL ? true : `Protect from Magic needs Prayer ${PROTECT_PRAYER_LEVEL}`);
-const prayerEnough: Check<any> = s => (prayerBudget(s) >= PRAYER_BUDGET ? true : `prayer: ${s.prayers?.prayerPoints ?? 0} points and ${prayerDoses(s)} potion doses make ${prayerBudget(s)}, the fight wants ${PRAYER_BUDGET}`);
+const prayerEnough: Check<any> = s => (prayerReserve(s) >= PRAYER_BUDGET ? true : `prayer: ${s.prayers?.prayerPoints ?? 0} points and ${prayerDoses(s)} potion doses make ${prayerReserve(s)}, the fight wants ${PRAYER_BUDGET}`);
 const entryClean: Check<any> = s => entryRefusal(s) ?? true;
 const noGreegree: Check<any> = s => (invItem(s, GREEGREE) ? 'the monkey greegree is still held (dropped at S16\'s start: untradeable and dead)' : true);
 const runeName = (p: string | RegExp) => String(p).replace(/^\/\^?|\$?\/i?$/g, '');
@@ -523,7 +522,7 @@ export async function fightKolodion(sdk: Sdk, o: FightOpts = {}): Promise<FightT
         if (!castable(w.state) && !fallBack(w.state)) throw new Error(`fight: out of ${sp.runeName}s${fb && t.fallback ? ` (after the ${fb} fallback)` : ''} at form ${target.id} (+${tForm - tArena})`);
         const f = await fight(sdk, target, {
             spell: sp.component, castEvery: 2,
-            prayer: 'protect_from_magic', drinkBelow: o.drinkBelow ?? 15,
+            prayer: 'protect_from_magic', drinkBelow: o.drinkBelow ?? DRINK_BELOW,
             food: SHARK, eatBelow: o.eatBelow ?? 30,
             onDialog: 'continue',
             maxTicks: maxTicks - (tForm - tArena),
@@ -609,6 +608,7 @@ async function talkKolodion(sdk: Sdk, opts: Options | undefined, memo: RunMemo):
             await waitUntil(sdk, s => boostedOf(s, 'magic') > baseOf(s, 'magic'), { maxTicks: 5 });
         }
     }
+    await drinkPrayerTo(sdk, DRINK_BELOW);
     const p = await setPrayer(sdk, 'protect_from_magic', true);
     if (!p.ok) throw new Error(`kolodion: Protect from Magic would not go on (${p.reason})`);
     const kol = findNpc(sdk, /^Kolodion$/) ?? undefined;
@@ -764,7 +764,17 @@ async function guardianSegment(sdk: Sdk, opts: Options | undefined, memo: RunMem
             memo.chargeUnlocked = true;
         }
     }
+    await drinkForElvarg(sdk);
     await exitDrop(sdk, opts?.keepSharks ?? KEEP_SHARKS);
+}
+
+/**
+ * The exit drinks every held prayer dose toward full before H14 takes the potions back: nothing
+ * recharges the pool between here and Elvarg (S26 L: 51-65 points under its three prayers, rs/687's
+ * budget), so a dose is worth more drunk now than returned. The emptied vials go with the exit drops.
+ */
+export async function drinkForElvarg(sdk: Sdk): Promise<number> {
+    return drinkPrayerTo(sdk, prayerLevelOf(sdk.getState()!));
 }
 
 /** Drop exitDropItems in one tick (a drop is a 0-tick op standing still), then check none is left. */
@@ -827,7 +837,11 @@ export function steps(opts?: Options) {
             preconditions: allOf(inCellarCheck, () => (memo.fought ? true : 'the fight is not known to be won (%magearena 6 is not transmitted): B asks Kolodion')),
             run: ctx => poolSegment(ctx.sdk, opts),
             postconditions: inChamberCheck,
+            // D, E and F leave no mark the client sees once SCORED leaves the chamber (%magearena is not
+            // transmitted, all.varp; the god cape and staff are dropped at F's exit): past S16 only the
+            // attempt's step record proves them. The live reads are the evidence during S16 itself.
             done: o => inChamber(stateOf(o)) || held(stateOf(o), GOD_CAPE) || held(stateOf(o), GOD_STAFF) || exitedChamber(stateOf(o)),
+            recorded: true,
         },
         {
             letter: 'E', label: 'statue', logoutSafe: true,
@@ -835,6 +849,7 @@ export function steps(opts?: Options) {
             run: ctx => statueSegment(ctx.sdk, opts),
             postconditions: capeHeld,
             done: o => held(stateOf(o), GOD_CAPE) || held(stateOf(o), GOD_STAFF) || exitedChamber(stateOf(o)),
+            recorded: true,
         },
         {
             letter: 'F', label: 'guardian', logoutSafe: true,
@@ -844,6 +859,7 @@ export function steps(opts?: Options) {
             // its only evidence, seen before the exit drops put the staff and cape on the floor.
             postconditions: allOf(chargeSeen(memo), exitClean(keepSharks), inChamberCheck, noDialog),
             done: o => exitedChamber(stateOf(o)),
+            recorded: true,
         },
     ];
     return questSteps(stepId, segs);

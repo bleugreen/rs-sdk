@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { BotWorldState, CombatEvent, DialogState, InventoryItem, NearbyNpc, PlayerState } from '../../sdk/types';
 import { fight, PRAYER_LEVELS, setPrayer, Upkeep } from './combat';
-import { baseState, FakeSdk, flush } from './fake-sdk';
+import { baseState, drive, FakeSdk, flush, simulateWalking } from './fake-sdk';
 
 const player = (hp: number, inCombat = true) => ({ worldX: 0, worldZ: 0, level: 0, hp, maxHp: 20, isDead: false, combat: { inCombat, targetIndex: -1, targetType: 'none', lastDamageTick: -1 } }) as unknown as PlayerState;
 const npc = (index: number, hp: number | null = 10): NearbyNpc =>
@@ -218,5 +218,107 @@ describe('setPrayer', () => {
         expect(sends(sdk, 'sendTogglePrayer').length).toBe(2);
         await tick(sdk, prayers(true));
         expect(await p).toMatchObject({ ok: true, toggles: 2, ticks: 4 });
+    });
+});
+
+describe('fight: a target its sends cannot reach (rs/693)', () => {
+    const UNROUTED = { success: true, message: 'Casting spell on NPC #7 (unrouted - ap-range attempt)', phase: 'dispatch', data: { routed: false } };
+    const CANT_REACH = { success: false, message: 'Failed to interact with NPC: cant_reach', phase: 'routing', reason: 'cant_reach' };
+    /** The send records as before and resolves with `res` (or what `res` gives for the state then). */
+    function reply(sdk: FakeSdk, method: 'sendSpellOnNpc' | 'sendInteractNpc', res: unknown | ((s: BotWorldState) => unknown)) {
+        const orig = (sdk as any)[method].bind(sdk);
+        (sdk as any)[method] = async (...a: unknown[]) => {
+            await orig(...a);
+            return typeof res === 'function' ? (res as (s: BotWorldState) => unknown)(sdk.state!) : res;
+        };
+    }
+    const noRoute = () => ({ success: true, waypoints: [{ x: 0, z: 0, level: 0 }], reachedDestination: false });
+    const bot = { walkTo: async () => ({ success: false, message: 'test: no fallback' }) };
+
+    test('without the opt-in `unreachable` option the loop is the old one: the same stall runs to maxTicks, no approach, only casts sent', async () => {
+        const sdk = arena();
+        reply(sdk, 'sendSpellOnNpc', UNROUTED);
+        sdk.pathTo = () => { throw new Error('no route lookup expected'); };
+        simulateWalking(sdk);
+        const r = await drive(sdk, fight(sdk as never, /mordred/i, { spell: 1181, maxTicks: 60 }), 100);
+        expect(r).toMatchObject({ ok: false, end: 'timeout', approaches: 0 });
+        expect(r.reason).toBeUndefined();
+        expect(new Set(sdk.sent.map(a => a.method))).toEqual(new Set(['sendSpellOnNpc']));
+        expect(sends(sdk, 'sendSpellOnNpc').length).toBe(31);
+    });
+
+    test('the live S12:H shape: every cast unrouted, nothing lands, the own tile the only one: 3 approaches, the wait, then unreachable, not a 600-tick loop', async () => {
+        const sdk = arena();
+        reply(sdk, 'sendSpellOnNpc', UNROUTED);
+        sdk.pathTo = noRoute;
+        const r = await drive(sdk, fight(sdk as never, /mordred/i, { spell: 1181, maxTicks: 600, unreachable: { approach: { sight: () => true, bot } } }), 700);
+        expect(r).toMatchObject({ ok: false, end: 'unreachable', approaches: 3, dealt: 0 });
+        expect(r.ticks).toBeLessThan(45);
+        expect(r.reason).toMatch(/^Sir Mordred untouched by 3 approaches and 15 ticks' wait \(at 1,1\)$/);
+        expect(sends(sdk, 'sendWalk')).toEqual([]);
+    });
+
+    test('no tile in range has line of sight and a route: one approach, the bounded wait, unreachable naming the target and its tile', async () => {
+        const sdk = arena();
+        reply(sdk, 'sendSpellOnNpc', UNROUTED);
+        const r = await drive(sdk, fight(sdk as never, /mordred/i, { spell: 1181, unreachable: { approach: { sight: () => false, bot } } }), 700);
+        expect(r).toMatchObject({ ok: false, end: 'unreachable', approaches: 1, reason: 'Sir Mordred not reachable for a cast from any tile (at 1,1)' });
+        expect(r.ticks).toBe(6 + 15);
+    });
+
+    test('no signal from the client (an older one): after 4 re-sends and 8 ticks with no effect, the same approach', async () => {
+        const sdk = arena();
+        const r = await drive(sdk, fight(sdk as never, /mordred/i, { spell: 1181, unreachable: { approach: { sight: () => false, bot } } }), 700);
+        expect(r).toMatchObject({ end: 'unreachable', approaches: 1 });
+        expect(r.ticks).toBe(8 + 15);
+    });
+
+    test('an unrouted cast out of reach: the run to the nearest tile in range of the live tile, then the casts land', async () => {
+        const sdk = arena({ nearbyNpcs: [{ ...npc(7), x: 14, z: 0 }] });
+        simulateWalking(sdk);
+        let killAt = -1;
+        reply(sdk, 'sendSpellOnNpc', (s: BotWorldState) => {
+            if (s.player!.worldX < 4) return UNROUTED;
+            if (killAt < 0) killAt = s.tick + 2;
+            return { success: true, message: 'ok' };
+        });
+        const each = (s: BotWorldState): Partial<BotWorldState> => (killAt >= 0 && s.tick + 1 >= killAt ? { combatEvents: [hit(s.tick + 1, 'damage_dealt', 5), hit(s.tick + 1, 'kill', 0)] } : {});
+        const r = await drive(sdk, fight(sdk as never, /mordred/i, { spell: 1181, unreachable: { approach: { sight: () => true, bot } } }), 200, each);
+        expect(r).toMatchObject({ ok: true, end: 'killed', approaches: 1 });
+        expect(sdk.state!.player!.worldX).toBe(4);
+        expect(sends(sdk, 'sendWalk').length).toBeGreaterThan(0);
+    });
+
+    test('an unrouted cast that lands (runes spent every cast) is a ranged cast over an obstacle: never an approach', async () => {
+        const sdk = arena({ inventory: [{ ...item(0, 'Death rune', 'Drop'), count: 50 }] });
+        reply(sdk, 'sendSpellOnNpc', UNROUTED);
+        let t = 0;
+        const each = (s: BotWorldState): Partial<BotWorldState> => {
+            t++;
+            const spend = t % 5 === 0 ? { inventory: s.inventory.map(i => ({ ...i, count: i.count - 1 })) } : {};
+            return t >= 30 ? { ...spend, combatEvents: [hit(s.tick + 1, 'kill', 0)] } : spend;
+        };
+        const r = await drive(sdk, fight(sdk as never, /mordred/i, { spell: 1181, unreachable: { approach: { sight: () => { throw new Error('no approach expected'); }, bot } } }), 200, each);
+        expect(r).toMatchObject({ ok: true, end: 'killed', approaches: 0 });
+    });
+
+    test('melee: an attack refused cant_reach on a fenced-off target: no tile beside it routes, so unreachable for an attack', async () => {
+        const sdk = arena({ player: player(20, false), nearbyNpcs: [{ ...npc(7), x: 3, z: 3 }] });
+        reply(sdk, 'sendInteractNpc', CANT_REACH);
+        sdk.pathTo = () => ({ success: false, waypoints: [] });
+        const r = await drive(sdk, fight(sdk as never, /mordred/i, { unreachable: { approach: { sight: () => true, bot } } }), 200);
+        expect(r).toMatchObject({ ok: false, end: 'unreachable', approaches: 1, reason: 'Sir Mordred not reachable for an attack from any tile (at 3,3)' });
+    });
+
+    test('melee with a route: the routed attack walks it (movement is an effect), no approach', async () => {
+        const sdk = arena({ player: player(20, false), nearbyNpcs: [{ ...npc(7), x: 6, z: 0 }] });
+        let at = 0;
+        const each = (s: BotWorldState): Partial<BotWorldState> => {
+            at = Math.min(at + 1, 5);
+            const p = { ...s.player!, worldX: at, x: at } as PlayerState;
+            return at >= 5 && s.tick > 108 ? { player: p, combatEvents: [hit(s.tick + 1, 'damage_dealt', 3), hit(s.tick + 1, 'kill', 0)] } : { player: p };
+        };
+        const r = await drive(sdk, fight(sdk as never, /mordred/i, { unreachable: { approach: { sight: () => { throw new Error('no approach expected'); }, bot } } }), 200, each);
+        expect(r).toMatchObject({ ok: true, end: 'killed', approaches: 0 });
     });
 });

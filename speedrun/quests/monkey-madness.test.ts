@@ -7,14 +7,15 @@ import { findLongPath } from '../../sdk/pathfinding';
 import { nameHash, readCue, readTopUpAsk } from '../helpers/altar-cue';
 
 import type { BotWorldState, InventoryItem, PlayerState, QuestJournalState } from '../../sdk/types';
-import { baseState, drive, FakeSdk, simulateWalking } from '../lib/fake-sdk';
+import { baseState, drive, FakeSdk, flush, simulateWalking } from '../lib/fake-sdk';
 import type { ReceiveResult } from '../lib/trade';
 import { compactJournal } from '../lib/quests';
 import { Observation, resolveResume } from '../runner/resume';
 import type { Observed, RunnerSession } from '../runner/step';
 import {
-    BANANA_TREE_IDS, bananaRoomDrops, h12Plan, DEFAULT_OPTIONS, roomFor, doneAt, EXIT_DROPS, exitState, h12Kit, H12_POTIONS, H12_SHARKS, isWaydarIntroEnd, itemMilestone, setStepNote, talkableNpc, JOURNAL_MARKS, JOURNAL_PROBE, journalMilestone, MM_OBJ, mmMilestone, PUZZLE_TILE_IDS,
+    BANANA_TREE_IDS, bananaRoomDrops, h12Plan, DEFAULT_OPTIONS, roomFor, doneAt, EXIT_DROPS, exitState, h12Kit, H12_POTIONS, H12_SHARKS, waydarIntroWatch, itemMilestone, setStepNote, talkableNpc, JOURNAL_MARKS, JOURNAL_PROBE, journalMilestone, MM_OBJ, mmMilestone, PUZZLE_TILE_IDS,
     BELOW_30_EATING, cureWanted, eatBelowFor, sharksToDrop, GARKOR_WEST, isMonkeyChatter, CAGE, CAGE_NORTH_STRIP, CAGE_TILES, inCage, letOut, letOutPick, LET_OUT_ATTEMPTS, MINDER_REACH, nearestFire, sceneBuilt, tileIn, underTemple, scorpionsNear, SCORPION_CLOSE, SCORPION_REACH, sigilRoom, h12oLeg, legCue, pFinalStop, closeLeftTrade, DECLINE_TICKS, H12O_M_ROW, mTopUpCap, ASK_SHARK, ASK_SUPER_ANTIPOISON, H12O_SCOPE, onTradeOpen, P_TOPUP_MAX_SHARKS, pTopUpAsk, immunityWanted,
+    AREAS, inArea, inCell, zooknockWay, type ZooknockLegs, CHAT_DRINK_FLOOR, DRINK_BELOW, packClickAllowed, upkeep, X_PRAYER,
     ARCHER_REACH, AUNT_BOX, crateRoute, crateSteps, entersSleepingZone, SLEEPING_DETOURS, sleepingDetour, GUARD_REACH, legPrayerFor, M_TOPUP_TILE, mLegSize, mTopUpSharks, NO_DWELL, pathTiles, pLegSize, POSTED_ARCHERS, prayerRuns, receiveLeg, RELIGIOUS_GUARDS, SLEEPING_ZONE, tilePrayer, TOPUP_TRIES, TOPUP_WAIT, tradeIdle, type Receive, nextBananaTree, SUPER_IMMUNE_TICKS, offAtoll, patrolLeavesLane, SEGMENT_EATING, topUpWanted, resolveOptions, REWARD_ITEMS, seg, segmentName, SEGMENTS, stepId, steps, templeLeft, treeRouteRefusal, yRoom, type MmContext,
 } from './monkey-madness';
 import { slotNeed } from './segments';
@@ -109,6 +110,82 @@ describe('antipoison cures', () => {
     });
 });
 
+describe('upkeep holds its pack clicks while a chat is open (a pack click closes the talk)', () => {
+    const MELEE = 9; // protect_from_melee in PRAYER_NAMES order
+    const melee = () => Array.from({ length: 15 }, (_, i) => i === MELEE);
+    const drinkable = (slot: number, name: string): InventoryItem => ({ slot, id: 0, name, count: 1, optionsWithIndex: [{ text: 'Drink', opIndex: 1 }] });
+    const page = { isOpen: true, options: [], isWaiting: false, allComponents: [{ text: 'Has Aunty given you the toy yet?' }] } as unknown as BotWorldState['dialog'];
+    const closed = { isOpen: false, options: [], isWaiting: false } as BotWorldState['dialog'];
+    const pp = (n: number) => ({ activePrayers: melee(), prayerPoints: n, prayerLevel: 94 });
+
+    /** Upkeep running on scripted state from `tick`, `pp` points under Protect from Melee; `end` stops it. */
+    async function running(o: { tick: number; points: number; inventory: InventoryItem[] }) {
+        const sdk = new FakeSdk(baseState({ tick: o.tick, autoRetaliateEnabled: false, prayers: pp(o.points), inventory: o.inventory, player: { hp: 42 } as PlayerState }));
+        let end!: () => void;
+        const done = upkeep(sdk as never, () => new Promise<void>(r => (end = r)));
+        await flush();
+        const uses = () => sdk.sent.filter(a => a.method === 'sendUseItem' || a.method === 'sendDropItem');
+        return { sdk, uses, stop: async () => { end(); await done; } };
+    }
+
+    test('the gate: shut while a chat page is open', () => {
+        expect(packClickAllowed({ dialog: page })).toBe(false);
+        expect(packClickAllowed({ dialog: closed })).toBe(true);
+        expect(CHAT_DRINK_FLOOR).toBeLessThan(DRINK_BELOW);
+    });
+
+    test("rs/513 chain 1's O: the child's page opens as prayer falls to 19; no drink until the chat closes, then one", async () => {
+        const u = await running({ tick: 2134, points: 20, inventory: [drinkable(6, 'Prayer potion(3)')] });
+        u.sdk.tick({ prayers: pp(19), dialog: page }); // t=2135: the page and the crossing in one tick
+        await flush();
+        expect(u.uses()).toEqual([]);
+        u.sdk.tick({ dialog: page });
+        u.sdk.tick({ prayers: pp(18), dialog: page });
+        await flush();
+        expect(u.uses()).toEqual([]);
+        u.sdk.tick({ dialog: closed });
+        await flush();
+        expect(u.uses()).toEqual([{ method: 'sendUseItem', args: [6, 1] }]);
+        expect(u.sdk.state!.tick).toBe(2138);
+        await u.stop();
+    });
+
+    test('a chat still open at the floor gets the drink: only a stuck chat holds prayer that long', async () => {
+        const u = await running({ tick: 500, points: 20, inventory: [drinkable(3, 'Prayer potion(4)')] });
+        u.sdk.tick({ prayers: pp(CHAT_DRINK_FLOOR), dialog: page });
+        await flush();
+        expect(u.uses()).toEqual([]);
+        u.sdk.tick({ prayers: pp(CHAT_DRINK_FLOOR - 1), dialog: page });
+        await flush();
+        expect(u.uses()).toEqual([{ method: 'sendUseItem', args: [3, 1] }]);
+        await u.stop();
+    });
+
+    test('a poisoning during a chat: the antipoison waits for the chat to close, inside the cure window', async () => {
+        const u = await running({ tick: 10_000, points: 60, inventory: [drinkable(4, 'Superantipoison(3)')] });
+        u.sdk.tick(s => ({ dialog: page, gameMessages: [{ type: 0, text: 'You have been poisoned!', tick: s.tick + 1, sender: '', fromSelf: false }] }));
+        u.sdk.tick({ dialog: page });
+        await flush();
+        expect(u.uses()).toEqual([]);
+        u.sdk.tick({ dialog: closed });
+        await flush();
+        expect(u.uses()).toEqual([{ method: 'sendUseItem', args: [4, 1] }]);
+        await u.stop();
+    });
+
+    test('an empty vial is dropped only once the chat closes', async () => {
+        const u = await running({ tick: 700, points: 60, inventory: [{ slot: 8, id: 229, name: 'Vial', count: 1, optionsWithIndex: [] }] });
+        u.sdk.tick({ dialog: page });
+        u.sdk.tick({ dialog: page });
+        await flush();
+        expect(u.uses()).toEqual([]);
+        u.sdk.tick({ dialog: closed });
+        await flush();
+        expect(u.uses()).toEqual([{ method: 'sendDropItem', args: [8] }]);
+        await u.stop();
+    });
+});
+
 describe('O: the banana tree to search', () => {
     const t = (x: number, z: number) => ({ x, z });
     test('the nearest first; after a miss, the nearest other tree; all missed, the nearest again', () => {
@@ -193,17 +270,35 @@ describe("G: Waydar's arrival intro", () => {
     /** Every quoted chat line of Waydar's script and of quest_mm.rs2 (the chapter 2 cutscene's pages). */
     const lines = (file: string) => [...readFileSync(join(scripts, file), 'utf8').matchAll(/~\.?chat(?:npc|player|npcnoturn)\("(?:<p,\w+>)?([^"]*)"/g)].map(m => m[1]!);
 
-    test('ends on the intro\'s last page and on no other page G can show', () => {
-        const waydar = lines('mm_waydar.rs2');
-        expect(waydar.filter(isWaydarIntroEnd)).toEqual(['Of course.']);
-        expect(lines('quest_mm.rs2').filter(isWaydarIntroEnd)).toEqual([]);
+    test('the intro opens on a chat page and holds no state page, so its first close is its end', () => {
+        const src = readFileSync(join(scripts, 'mm_waydar.rs2'), 'utf8');
+        const intro = src.slice(src.indexOf('case ^mm_not_started :'), src.indexOf('[label,waydar_lumdo]'));
+        expect(intro.split('\n')[1]).toMatch(/~chatplayer\(/);
+        expect(intro).not.toMatch(/p_delay|fade|p_teleport|inv_(add|del)/);
+        expect(lines('mm_waydar.rs2').filter(l => l === 'Of course.')).toHaveLength(1);
     });
 
-    test('matches the page as pageText joins it, and not a longer phrase', () => {
-        expect(isWaydarIntroEnd('Waydar Of course. Click here to continue')).toBe(true);
-        expect(isWaydarIntroEnd('Of course.')).toBe(true);
-        expect(isWaydarIntroEnd('Of course not.')).toBe(false);
-        expect(isWaydarIntroEnd('Did our glider survive?')).toBe(false);
+    const page = (kind: 'continue' | 'choice', isWaiting = false) => ({
+        dialog: kind === 'continue'
+            ? { isOpen: true, isWaiting, options: [{ index: 1, text: 'Click here to continue', buttonType: 6, componentId: 1 }] }
+            : { isOpen: true, isWaiting, options: ['What shall we do now?', 'I cannot convince Lumdo to take us to the island...'].map((text, i) => ({ index: i + 1, text, buttonType: 1, componentId: 2 + i })) },
+    });
+    const shut = { dialog: { isOpen: false, isWaiting: false, options: [] } };
+
+    test('the intro, page by page or burst with only its first page published, is over at its close', () => {
+        for (const seen of [[page('continue'), page('continue', true), page('continue'), page('continue'), shut], [page('continue'), shut]]) {
+            const w = waydarIntroWatch();
+            for (const s of seen.slice(0, -1)) w.see(s as never);
+            expect(w.over).toBe(false);
+            w.see(seen.at(-1) as never);
+            expect(w.over).toBe(true);
+        }
+    });
+
+    test('a talk that opens on the menu is never the intro, through the cutscene\'s closed fade', () => {
+        const w = waydarIntroWatch();
+        for (const s of [shut, page('choice'), page('continue'), shut, page('continue'), shut]) w.see(s as never);
+        expect(w.over).toBe(false);
     });
 });
 
@@ -1121,6 +1216,107 @@ describe('the atoll top-ups (H12o)', () => {
     });
 });
 
+describe("P's way to Zooknock: a knockout during H12o-P's wait (zooknockWay)", () => {
+    const at = (p: { x: number; z: number }) => ({ name: 'scored', x: p.x, z: p.z, worldX: p.x, worldZ: p.z, level: 0, hp: 42, maxHp: 42, animId: -1 }) as unknown as PlayerState;
+    const TOWN = { x: 2790, z: 2780 };
+    const LANDING = { x: 2803, z: 2724 };
+    const CELL = { x: 2772, z: 2794 };
+    const LADDER_BOTTOM = { x: 2763, z: 9104 };
+    const ZOOKNOCK = { x: 2804, z: 9145 };
+
+    /**
+     * P from the town with its legs faked as moves, and H12o-P's real leg (its helper never in view), all in P's final-stop
+     * wrap. `knock`: SCORED lands in the cell that many ticks into the leg's wait, or as the first jump ends.
+     */
+    const runP = async (knock: { duringLeg?: number; inFirstJump?: boolean } = {}) => {
+        const notes: string[] = [];
+        setStepNote(l => notes.push(l));
+        const dir = mkdtempSync(join(tmpdir(), 'mm-pko-'));
+        const t = { from: 'Helper', p: true, cueDir: dir };
+        const sdk = new FakeSdk(baseState({ tick: 1, player: at(TOWN), nearbyPlayers: [] } as Partial<BotWorldState>));
+        const move = (p: { x: number; z: number }) => sdk.tick({ player: at(p) });
+        const calls = { jump: 0, pLeg: 0, ladder: 0, walk: 0 };
+        const jumpsFromCell: boolean[] = [];
+        let legFrom = -1;
+        const legs: ZooknockLegs = {
+            roofs: async () => { throw new Error('the roofs are not on the way from the town'); },
+            jump: async () => {
+                calls.jump++;
+                jumpsFromCell.push(inCell(sdk.getState()!));
+                if (knock.inFirstJump && calls.jump === 1) {
+                    move(CELL);
+                    throw new Error('the bridge ladder did not move the player');
+                }
+                move(LANDING);
+            },
+            pLeg: async () => {
+                calls.pLeg++;
+                legFrom = sdk.getState()!.tick;
+                return h12oLeg(sdk as never, t, 'P');
+            },
+            ladder: async () => { calls.ladder++; move(LADDER_BOTTOM); },
+            // As go(): no route from the cell.
+            walk: async () => {
+                calls.walk++;
+                const p = sdk.getState()!.player!;
+                if (!inArea(sdk.getState()!, AREAS.dungeon)) throw new Error(`walk to ${ZOOKNOCK.x},${ZOOKNOCK.z} failed at ${p.worldX},${p.worldZ}`);
+                move(ZOOKNOCK);
+            },
+        };
+        let knocked = false;
+        const each = (s: BotWorldState): Partial<BotWorldState> => {
+            if (knock.duringLeg === undefined || knocked || legFrom < 0 || s.tick < legFrom + knock.duringLeg) return {};
+            knocked = true;
+            return { player: at(CELL) };
+        };
+        const error = await drive(sdk, pFinalStop(sdk as never, t, () => zooknockWay(sdk as never, legs)), 300, each).then(() => null, e => (e as Error).message);
+        setStepNote(() => {});
+        const p = sdk.getState()!.player!;
+        return {
+            error, calls, jumpsFromCell, end: { x: p.worldX, z: p.worldZ }, notes,
+            finalStops: notes.filter(l => /S15:P H12o cue stop final \(H12oP\)/.test(l)).length,
+            skipped: notes.filter(l => /S15:P top-up: not tried again after a knockout/.test(l)).length,
+            cue: readCue(dir),
+        };
+    };
+
+    test('knocked into the cell during the wait: the leg moves on, jailSafe retries from the cell, and P reaches Zooknock', async () => {
+        const r = await runP({ duringLeg: 8 });
+        // The old shape (the walk after a jailSafe errand that returned in the cell) threw here: walk to 2804,9145 failed at 2772,2794.
+        expect(r.error).toBeNull();
+        expect(r.notes.some(l => /S15:P top-up from Helper: moving on without it after 0 attempt\(s\)/.test(l))).toBe(true);
+        expect(r.jumpsFromCell).toEqual([false, true]);
+        expect(r.calls).toEqual({ jump: 2, pLeg: 1, ladder: 1, walk: 1 });
+        expect(r.end).toEqual(ZOOKNOCK);
+    });
+
+    test("the retry does not run the P leg again and writes no second final stop: one skip noted, one final stop", async () => {
+        const r = await runP({ duringLeg: 8 });
+        expect(r.calls.pLeg).toBe(1);
+        expect(r.skipped).toBe(1);
+        expect(r.finalStops).toBe(1);
+        expect(r.cue).toMatchObject({ scope: { step: 'H12oP', family: 'mule' }, stop: true, final: true });
+    });
+
+    test('with no knockout the way is unchanged: one jump, the leg, the ladder and the walk', async () => {
+        const r = await runP();
+        expect(r.error).toBeNull();
+        expect(r.calls).toEqual({ jump: 1, pLeg: 1, ladder: 1, walk: 1 });
+        expect(r.skipped).toBe(0);
+        expect(r.finalStops).toBe(1);
+        expect(r.end).toEqual(ZOOKNOCK);
+    });
+
+    test('a knockout before the leg (in the jump) still runs the leg once on the retry', async () => {
+        const r = await runP({ inFirstJump: true });
+        expect(r.error).toBeNull();
+        expect(r.jumpsFromCell).toEqual([false, true]);
+        expect(r.calls).toEqual({ jump: 2, pLeg: 1, ladder: 1, walk: 1 });
+        expect(r.skipped).toBe(0);
+        expect(r.finalStops).toBe(1);
+    });
+});
+
 describe("the Grand Tree swap's hand-back (GT_HANDBACK) against the ledger's H12 row", () => {
     // H12's before-state and outs, walked from STEP-MANIFEST.md's inventory ledger. The overrides only resolve the
     // row's `any` returns to the walked counts (a wrong count leaves the plan unresolved); the antipoison is H7's Antipoison(3), obj 175.
@@ -1163,5 +1359,23 @@ describe("the Grand Tree swap's hand-back (GT_HANDBACK) against the ledger's H12
         const added = h12.receive.filter(r => r.kind === 'u' || !kept.some(k => k.id === r.id));
         expect(slots(h12.beforeInventory)).toBe(19);
         expect(slots(kept) + slots(added)).toBeLessThanOrEqual(28);
+    });
+});
+
+describe('X: the prayer points (rs/687)', () => {
+    const x = () => steps()[seg('X')]!;
+    const named = (name: string, slot: number): InventoryItem => ({ slot, id: 2434, name, count: 1, optionsWithIndex: [{ text: 'Drink', opIndex: 1 }] });
+    const atX = (points: number, extra: InventoryItem[] = []) => baseState({
+        quests: { mm: 'started' },
+        inventory: [item(MM_OBJ.sigil, 0), item(DEFAULT_OPTIONS.bow, 1), item(MM_OBJ.runeArrow, 2), ...extra],
+        prayers: { activePrayers: [], prayerPoints: points, prayerLevel: 94 },
+    } as Partial<BotWorldState>);
+    test('the demon under Protect from Magic: the five measured kills took 44-64 (94 down to 30-50)', () => {
+        expect(X_PRAYER).toBeGreaterThanOrEqual(64);
+        expect(x().preconditions(atX(X_PRAYER), {} as MmContext)).toBe(true);
+        expect(x().preconditions(atX(10), {} as MmContext)).toBe('S15:X for the Jungle Demon needs ~70 prayer points, has 10 and no prayer potion');
+    });
+    test('held doses count: 10 points and two doses at 30 make 70', () => {
+        expect(x().preconditions(atX(10, [named('Prayer potion(2)', 3)]), {} as MmContext)).toBe(true);
     });
 });

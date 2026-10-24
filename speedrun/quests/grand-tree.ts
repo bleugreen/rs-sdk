@@ -36,7 +36,7 @@ import { receiveFrom, type WantSpec } from '../lib/trade';
 import { waitUntil, type Pred } from '../lib/wait';
 import { chebyshev, configId, findLoc, findNpc, invCount, invItem, opIndex, pos, replyAfter, skillLevel, worn, type LocQuery, type Tile } from '../lib/world';
 import type { Step, StepContext } from '../runner/step';
-import { DEFAULT_DIALOGUE, talkShape, type QuestOptions } from './segments';
+import { DEFAULT_DIALOGUE, drinkPrayerTo, prayerCovers, talkShape, type QuestOptions } from './segments';
 
 export const quest = 'grandtree' as const;
 export const stepId = 'S11b';
@@ -111,9 +111,22 @@ export const ITEM = {
     fire: /^Fire rune$/i,
 } as const;
 
-/** H8 (SUPPLIES.md): an Agility potion(4), Varrock runes for 1 cast, Ardougne runes for 2. */
+/**
+ * Prayer points N1 needs for the trapdoor scene and the demon, counting held doses: N2 used 28 live
+ * (attempt 3, 147 ticks) and N1 ~5, with margin (rs/687's budget). The fight drinks below 8.
+ */
+export const DEMON_PRAYER = 35;
+/** The demon fight's drink threshold; N1 and N2 drink up to it first, so the prayer can go on. */
+const DEMON_DRINK_BELOW = 8;
+
+/**
+ * H8 (SUPPLIES.md): an Agility potion(4), a Prayer potion(4), Varrock runes for 1 cast, Ardougne runes
+ * for 2. The Prayer potion (rs/687) carries N2 and S12's arena fights: S10b and S11b spend ~95 of the
+ * 99 points S07 leaves, and nothing else recharges them before T14-15's altar.
+ */
 export const H8: WantSpec[] = [
     { item: /^Agility potion\(4\)$/i, amount: 1 },
+    { item: /^Prayer potion\(4\)$/i, amount: 1 },
     { item: ITEM.law, amount: 5 },
     { item: ITEM.water, amount: 4 },
     { item: ITEM.air, amount: 3 },
@@ -611,7 +624,7 @@ export async function killDemon(sdk: Sdk, opts: Options, reopened: boolean): Pro
     const castRunes = (s: BotWorldState) => invCount(s, SPELLS.fire_bolt.rune) + invCount(s, SPELLS.fire_blast.rune);
     const runes0 = castRunes(sdk.getState()!);
     const out = (sp: keyof typeof SPELLS): Pred => s => invCount(s, SPELLS[sp].rune) === 0 || invCount(s, ITEM.air) < SPELLS[sp].air;
-    const base = { prayer: 'protect_from_melee' as const, drinkBelow: 8, eatBelow: 14, maxTicks: 1500, findTicks: 10 };
+    const base = { prayer: 'protect_from_melee' as const, drinkBelow: DEMON_DRINK_BELOW, eatBelow: 14, maxTicks: 1500, findTicks: 10 };
     const fights = [await fight(sdk, DEMON, { ...base, spell: SPELLS[first].component, done: out(first) })];
     let fallback = false;
     if (fights[0]!.end === 'done' && first === 'fire_bolt' && demonInSight(sdk.getState()!)) {
@@ -931,10 +944,11 @@ export function steps(input: Options = {}): Step<any>[] {
         {
             // Unsafe from here to the kill: the demon deletes itself on logout.
             name: name('N1-trapdoor'),
-            preconditions: s => all(isStarted(s), spellRunes(s, opts)),
+            preconditions: s => all(isStarted(s), spellRunes(s, opts), prayerCovers('S11b:N1 for the trapdoor and the demon', DEMON_PRAYER)(s, {})),
             run: async ctx => {
                 const { sdk } = ctx;
                 await sceneLoaded(sdk);
+                await drinkPrayerTo(sdk, DEMON_DRINK_BELOW);
                 // A demon already here (re-entry) must not be spawned twice: glough.rs2 adds one without checking.
                 if (demonInSight(sdk.getState()!)) return;
                 note(ctx, name('N1-trapdoor'), { protectOnTicks: await trapdoorScene(sdk, opts) });
@@ -950,6 +964,7 @@ export function steps(input: Options = {}): Step<any>[] {
             run: async ctx => {
                 const { sdk } = ctx;
                 await sceneLoaded(sdk);
+                await drinkPrayerTo(sdk, DEMON_DRINK_BELOW);
                 let reopened = false;
                 if (!demonInSight(sdk.getState()!)) {
                     // Entered after a drop: the demon went with the logout and stage 130 replays the scene.

@@ -1,0 +1,170 @@
+{
+  "tickMs": 400,
+  "fps": 25,
+  "frameMs": 40,
+  "method": "per frame of the decoded clip, the pixels of a gray crop that moved more than 24 grey levels since the previous frame; the first frame inside the search window with more than 4x the region's median count (at least 40) is the change",
+  "chat": {
+    "region": {
+      "x": 22,
+      "y": 360,
+      "w": 470,
+      "h": 80
+    },
+    "window": [
+      -800,
+      1200
+    ],
+    "threshold": 40,
+    "events": 36,
+    "found": 36,
+    "offsetMs": {
+      "n": 36,
+      "median": 41,
+      "p95": 61,
+      "max": 68,
+      "min": 22.009033203125,
+      "p10": 23.009033203125,
+      "medianTicks": 0.1,
+      "maxAbsTicks": 0.17
+    },
+    "sample": [
+      {
+        "videoMs": 2411.990966796875,
+        "changeMs": 2480,
+        "offsetMs": 68,
+        "what": "You attempt to light the logs."
+      },
+      {
+        "videoMs": 4019.990966796875,
+        "changeMs": 4080,
+        "offsetMs": 60,
+        "what": "The fire catches and the logs begin to burn."
+      },
+      {
+        "videoMs": 5610.990966796875,
+        "changeMs": 5640,
+        "offsetMs": 29,
+        "what": "The fire catches and the logs begin to burn."
+      },
+      {
+        "videoMs": 7219.990966796875,
+        "changeMs": 7280,
+        "offsetMs": 60,
+        "what": "The fire catches and the logs begin to burn."
+      },
+      {
+        "videoMs": 7219.990966796875,
+        "changeMs": 7280,
+        "offsetMs": 60,
+        "what": "Congratulations, you just advanced a fire making level."
+      },
+      {
+        "videoMs": 8818.990966796875,
+        "changeMs": 8880,
+        "offsetMs": 61,
+        "what": "The fire catches and the logs begin to burn."
+      },
+      {
+        "videoMs": 10425.990966796875,
+        "changeMs": 10480,
+        "offsetMs": 54,
+        "what": "The fire catches and the logs begin to burn."
+      },
+      {
+        "videoMs": 12030.990966796875,
+        "changeMs": 12080,
+        "offsetMs": 49,
+        "what": "The fire catches and the logs begin to burn."
+      }
+    ]
+  },
+  "action": {
+    "region": {
+      "x": 560,
+      "y": 210,
+      "w": 176,
+      "h": 250
+    },
+    "window": [
+      -100,
+      2000
+    ],
+    "threshold": 40,
+    "events": 27,
+    "found": 27,
+    "offsetMs": {
+      "n": 27,
+      "median": 436,
+      "p95": 466,
+      "max": 481,
+      "min": 419.009033203125,
+      "p10": 423.009033203125,
+      "medianTicks": 1.09,
+      "maxAbsTicks": 1.2
+    },
+    "sample": [
+      {
+        "videoMs": 1998.990966796875,
+        "changeMs": 2480,
+        "offsetMs": 481,
+        "what": "useItemOnItem"
+      },
+      {
+        "videoMs": 4020.990966796875,
+        "changeMs": 4440,
+        "offsetMs": 419,
+        "what": "useItemOnItem"
+      },
+      {
+        "videoMs": 5610.990966796875,
+        "changeMs": 6040,
+        "offsetMs": 429,
+        "what": "useItemOnItem"
+      },
+      {
+        "videoMs": 7220.990966796875,
+        "changeMs": 7680,
+        "offsetMs": 459,
+        "what": "useItemOnItem"
+      },
+      {
+        "videoMs": 8819.990966796875,
+        "changeMs": 9280,
+        "offsetMs": 460,
+        "what": "useItemOnItem"
+      },
+      {
+        "videoMs": 10426.990966796875,
+        "changeMs": 10880,
+        "offsetMs": 453,
+        "what": "useItemOnItem"
+      },
+      {
+        "videoMs": 12031.990966796875,
+        "changeMs": 12480,
+        "offsetMs": 448,
+        "what": "useItemOnItem"
+      },
+      {
+        "videoMs": 13613.990966796875,
+        "changeMs": 14080,
+        "offsetMs": 466,
+        "what": "useItemOnItem"
+      }
+    ]
+  },
+  "feed": {
+    "followedSlot": 1,
+    "matched": 28,
+    "clientMinusFeedMs": {
+      "n": 28,
+      "median": 1,
+      "p95": 8,
+      "max": 409,
+      "min": -1,
+      "p10": 0,
+      "medianTicks": 0,
+      "maxAbsTicks": 1.02
+    }
+  }
+}

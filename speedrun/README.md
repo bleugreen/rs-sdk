@@ -341,10 +341,25 @@ in `lab/`, which `lib/` never imports.
   when clicked twice. `actConverse` composes this with dialogue handling and
   latches a required effect, including one observed while dialogue is open.
   It measures the later of that effect and the final close. `talkTo` handles
-  NPC discovery and retries when no conversation opens.
+  NPC discovery and retries when no conversation opens; a click whose send came
+  back unrouted (browser) or cant_reach (lite) and opened nothing first runs
+  `approachNpc` (doors toward the live tile, a run to within 1) within a
+  `refinds` budget the caller can share with its own approach.
+- `approach` is the one place for getting to an NPC the client cannot route to:
+  `approachNpc` before a talk, `approachInRange` before a re-sent attack or
+  cast (the nearest tile within range of the live footprint with line of sight
+  and an exact SDK route, chosen here, not by the SDK walk's fallback). Both
+  re-find the NPC's live tile a bounded number of times and never throw.
 - `fight` keeps one world-index target, dismisses level-up/unlock pages with
   an attack on the same target in the same tick, and re-engages under a protect
   prayer when outgoing damage stalls despite the client saying it is in combat.
+  With the opt-in `unreachable` option (absent, the loop sends exactly what it
+  always has; S12's caged rounds use it), a send that reached no tile (the
+  browser's `routed: false`, lite's cant_reach)
+  with the target untouched 6 ticks, or `stuckSends` re-sends with no engine
+  effect (no hitsplat with the target, no rune or xp spent, no step), sends the
+  player to a tile in range with `approachInRange`; with none, the fight waits
+  `unreachableTicks` and ends `'unreachable'` with the target's tile in `reason`.
   A quest dialogue stops the fight unless `onDialog: 'continue'` is requested.
   Bosses that heal or trigger a cutscene at zero hitpoints use
   `endOnTargetDeath: false` and an explicit `done` or dialogue outcome.

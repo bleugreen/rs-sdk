@@ -51,7 +51,16 @@ import { currentTick, waitUntil, type Pred } from '../lib/wait';
 import { chebyshev, configId, findLoc, invCount, opIndex, pos, skillXp, worn, type LocQuery } from '../lib/world';
 import type { StageName } from '../data/quest-stages';
 import type { Check, Observed, StepContext } from '../runner/step';
-import { allOf, baseLevels, questSteps, slotsCover, stageAtLeast, talkShape, type QuestItem, type QuestOptions, type Segment } from './segments';
+import { allOf, baseLevels, drinkPrayerTo, prayerCovers, questSteps, slotsCover, stageAtLeast, talkShape, type QuestItem, type QuestOptions, type Segment } from './segments';
+
+/**
+ * Prayer points B needs for the three protect stretches, the maze (B), the stronghold (H) and the
+ * warlord (K), counting held doses: ~20 + ~6 + ~43 measured (rs/342's lab, 94 to 74 to 68 to ~25),
+ * with margin (rs/687's budget). S10b carries no potion, so the pool is what S07's bones left (99).
+ */
+export const PRAYER_B_TO_K = 75;
+/** K's walk and fight: ~43 measured (rs/342); attempt 3's live fight alone used 21 (m) of a 192-tick K. */
+export const PRAYER_K = 45;
 
 export const quest = 'tree' as const;
 export const stepId = 'S10b';
@@ -563,8 +572,9 @@ export function steps(input: Options = {}) {
         },
         {
             letter: 'B', label: 'maze', logoutSafe: true,
-            preconditions: allOf(notStarted, kitEssentials, s => check(pos(s).level === 0 && !inVillage(s), 'already inside the village')),
+            preconditions: allOf(notStarted, kitEssentials, s => check(pos(s).level === 0 && !inVillage(s), 'already inside the village'), prayerCovers('S10b:B for B-K', PRAYER_B_TO_K)),
             run: async ctx => {
+                await drinkPrayerTo(sdkOf(ctx), PRAYER_B_TO_K);
                 // The maze's giants (level 28, spawns 2507,3149, 2545,3144, 2548,3147) and its wolf
                 // (64, 2548,3179) hunt combat 43 within 2 tiles (all.hunt [cowardly]: nottoostrong);
                 // the giant at 2548,3147 hit SCORED 3-5 a pass in 5 of 5 lab passes at 10 HP. All
@@ -648,7 +658,9 @@ export function steps(input: Options = {}) {
                 s => check(pos(s).level === 0, 'still upstairs in the stronghold'),
                 s => check(!prayerActive(s, 'protect_from_melee'), 'Protect from Melee is still on'),
             ),
-            done: o => atLeast(o, 'retrieved_orb') && pos(stateOf(o)).level === 0,
+            // Plane 0 binds only while the orb is in hand: once Bolren has it (returned_first_orb) SCORED is out of
+            // the stronghold for good, and a later upper plane (S11a's platforms, S11b's tree) must not read H undone.
+            done: o => atLeast(o, 'retrieved_orb') && (pos(stateOf(o)).level === 0 || atLeast(o, 'returned_first_orb')),
             probes: PROBES,
         },
         {
@@ -675,8 +687,9 @@ export function steps(input: Options = {}) {
         {
             letter: 'K', label: 'warlord', logoutSafe: true,
             // Also the recovery from a ceremony lost to a logout: stage 8 with no orbs (the warlord gives them again).
-            preconditions: allOf(isStarted, slots('K'), s => check(!holds(s, ITEM.orb) && !holds(s, ITEM.orbs), 'holds an orb'), s => spellRunes(s, spell, WARLORD_CASTS), baseLevels({ magic: COMBAT_SPELLS[spell].magic, prayer: 43 })),
+            preconditions: allOf(isStarted, slots('K'), s => check(!holds(s, ITEM.orb) && !holds(s, ITEM.orbs), 'holds an orb'), s => spellRunes(s, spell, WARLORD_CASTS), baseLevels({ magic: COMBAT_SPELLS[spell].magic, prayer: 43 }), prayerCovers('S10b:K for the walk and the warlord', PRAYER_K)),
             run: async ctx => {
+                await drinkPrayerTo(sdkOf(ctx), PRAYER_K);
                 // Six wolves (level 64, maps m38_51 / m39_51) roam the way to the warlord and hunt
                 // combat 43; at 10 HP they hit SCORED 2-3 in the lab. The prayer goes on standing at
                 // the start and stays on through the fight. The way back (L) is at ~28 HP after

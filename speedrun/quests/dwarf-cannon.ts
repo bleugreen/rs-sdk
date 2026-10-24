@@ -36,7 +36,7 @@ import { CROSSING_HITPOINTS, crossFromKandarin, crossingRestTarget, crossToKanda
 import { logNote } from '../lib/ticks';
 import { addRunes, FOOD, inArea, missingRunes, runTo, runeUseOf, spellUse, SPELLS, teleport, type Area, type RuneUseTable, type Spell, type TravelSdk } from '../lib/travel';
 import { currentTick, waitOrThrow, waitTicks, waitUntil, type StateSource } from '../lib/wait';
-import { chebyshev, findNpc, invCount, invItem, pos, replyAfter, skillLevel, type LocQuery } from '../lib/world';
+import { chebyshev, findNpc, invCount, invItem, pos, replyAfter, skillLevel, waitForNpc, type LocQuery } from '../lib/world';
 import type { Check, Observed, StepContext } from '../runner/step';
 import { allOf, questSteps, slotsCover, stageAtLeast, talkShape, within, type QuestItem, type QuestOptions, type Segment } from './segments';
 
@@ -97,8 +97,17 @@ const CRATE = { x: 2571, z: 9850 } as const;
 const CRATE_STAND: Area = { x: 2571, z: 9849, tol: 1 };
 const MUD_PILE: Area = { x: 2620, z: 9797, tol: 1 };
 const SHED_DOOR = { x: 2576, z: 3461 } as const;
+/**
+ * Nulodion's door (maps/m47_53.jm2 LOC `0 7 61: 3 0`, loc 3 = mcannondoor): a wall on the west edge of
+ * (3015,3453), so the door tile is the corridor side. It is a walk-through door
+ * (mcannon_doors.rs2 → ~open_and_close_door): a click teleports the player to its other side while
+ * the door is an inviswall for 3 ticks, so it is never open to walk through, and a click is a
+ * crossing in whichever direction the player stands.
+ */
 const NULODION_DOOR = { x: 3015, z: 3453 } as const;
 const NULODION_STAND: Area = { x: 3016, z: 3453, tol: 1 };
+/** Nulodion's spawn (maps/m47_53.jm2 NPC `0 3 61: 209`, npc 209 = nulodion). quest_mcannon.npc sets no wanderrange: NpcType's default 5. */
+export const NULODION_AT = { x: 3011, z: 3453 } as const;
 /** The Black Guard base's hut and the ground outside its door. */
 const BASE = { x0: 3005, z0: 3445, x1: 3022, z1: 3460 } as const;
 const NULODION_RE = /^nulodion$/i;
@@ -557,6 +566,70 @@ async function repaired(ctx: Ctx, opts: Options | undefined): Promise<void> {
     if (r.options === 0) throw new Error('Lawgof (repaired): the choice never came');
 }
 
+/**
+ * Nulodion's workshop, the Black Guard base's west wing (maps/m47_53.jm2 LOC, wall loc 1902; its west
+ * wall is m46_53's x 63): x 3008-3010 at z 3449-3454 and x 3011-3014 at z 3452-3454. NULODION_DOOR is
+ * its one way in. Nulodion's wander box (3006-3016, 3448-3458) reaches the corridor outside it only
+ * through that door, which nothing walks through, so he stays inside; the corridor's other door
+ * (loc 1530 on the east edge of 3016,3453) leads to x 3017, outside his box.
+ */
+export function inWorkshop(p: { x: number; z: number }): boolean {
+    if (p.x < 3008 || p.x > 3014 || p.z < 3449 || p.z > 3454) return false;
+    return p.x <= 3010 || p.z >= 3452;
+}
+
+/** The corridor between NULODION_DOOR's wall and the 1530 door (x 3015-3016, z 3452-3454): where a click to go in is sent from. */
+const inCorridor = (p: { x: number; z: number }) => p.x >= 3015 && p.x <= 3016 && p.z >= 3452 && p.z <= 3454;
+
+/** Nulodion as K's talk picks him: the one nearest his spawn. */
+const nulodionOf = (s: BotWorldState) => findNpc(s, NULODION_RE, NULODION_AT);
+
+/** How many more times toNulodion looks for Nulodion when he has moved off the tile it walked to. */
+export const NULODION_REFINDS = 2;
+/** Ticks toNulodion waits for Nulodion to come into view. */
+const NULODION_FIND_TICKS = 10;
+
+/** Within 1 of `n` and on the same side of NULODION_DOOR's wall: a tile across the wall is 1 away too. */
+const besideNulodion = (p: { x: number; z: number }, n: { x: number; z: number }) => chebyshev(p, n) <= 1 && inWorkshop(p) === inWorkshop(n);
+
+/**
+ * Put SCORED on `n`'s side of NULODION_DOOR, crossing it if they are apart. The click is the crossing
+ * (NULODION_DOOR), so it is sent only when SCORED and Nulodion are on opposite sides: sent from inside
+ * the workshop it carries SCORED out and leaves Nulodion shut in. A click to go in is sent from the
+ * corridor (from the east wing it would find no route past the shut 1530 door).
+ */
+async function nulodionDoor(ctx: Ctx, n: { x: number; z: number }): Promise<void> {
+    const sdk = sdkOf(ctx);
+    const inside = inWorkshop(n);
+    if (inWorkshop(pos(sdk)) === inside) return;
+    if (inside && !inCorridor(pos(sdk))) await go(ctx, { ...NULODION_DOOR, tol: 0 }, "to Nulodion's door");
+    const r = await opLoc(sdk, { x: NULODION_DOOR.x, z: NULODION_DOOR.z, name: /^door$/i, radius: 15 }, /^open$/i, s => inWorkshop(pos(s)) === inside, { maxTicks: 30, interrupts: interrupts() });
+    if (!r.ok) throw new Error(`Nulodion's door at ${NULODION_DOOR.x},${NULODION_DOOR.z} did not carry SCORED ${inside ? 'in' : 'out'} within 30 ticks, at ${JSON.stringify(pos(sdk))}`);
+}
+
+/**
+ * Before K's talk: find Nulodion's live tile (the one nearest his spawn), cross NULODION_DOOR if he is
+ * on its other side, and run to within 1 of him on his side, finding him again up to NULODION_REFINDS
+ * times if he has moved off the tile walked to. A talk across the door finds no route (lite
+ * `cant_reach`, the browser's 'unrouted - ap-range attempt') and ends with no dialogue.
+ */
+async function toNulodion(ctx: Ctx): Promise<void> {
+    const sdk = sdkOf(ctx);
+    for (let i = 0; i <= NULODION_REFINDS; i++) {
+        const n = await waitForNpc(sdk, NULODION_RE, NULODION_FIND_TICKS, NULODION_AT);
+        if (!n) throw new Error(`Nulodion is not in sight within ${NULODION_FIND_TICKS} ticks of ${JSON.stringify(pos(sdk))}`);
+        await nulodionDoor(ctx, n);
+        if (besideNulodion(pos(sdk), n)) return;
+        const r = await runTo(sdk, { x: n.x, z: n.z, tol: 1 }, { bot: ctx.bot });
+        const now = nulodionOf(sdk.getState()!);
+        if (r.ok && now && besideNulodion(pos(sdk), now)) return;
+    }
+    // A walk's stall can open the nearest door (travel.ts runTo), which here carries SCORED out.
+    const last = nulodionOf(sdk.getState()!);
+    if (last) await nulodionDoor(ctx, last);
+    logNote(ctx.log, ctx.session, `${stepId}:K`, { nulodion: `moved off each tile walked to (${NULODION_REFINDS + 1} finds); talking from here` });
+}
+
 /** Segment K: Falador teleport (or the walk), the Black Guard base, Nulodion's notes and mould (stage 10). */
 async function nulodion(ctx: Ctx, opts: Options | undefined, tally: Tally): Promise<void> {
     const sdk = sdkOf(ctx);
@@ -567,8 +640,8 @@ async function nulodion(ctx: Ctx, opts: Options | undefined, tally: Tally): Prom
         } else await cast(ctx, 'falador');
         await go(ctx, NULODION_STAND, 'to the Black Guard base');
     }
-    await openDoor(sdk, NULODION_DOOR.x, NULODION_DOOR.z);
-    const r = await talkTo(sdk, NULODION_RE, [], { openTicks: 30, interrupts: interrupts(), ...talkShape(opts, SHAPES.nulodion) });
+    await toNulodion(ctx);
+    const r = await talkTo(sdk, NULODION_RE, [], { openTicks: 30, near: NULODION_AT, interrupts: interrupts(), ...talkShape(opts, SHAPES.nulodion) });
     if (!r.opened || !r.ok) throw new Error(`Nulodion: ${r.reason ?? 'no dialogue opened'}`);
 }
 

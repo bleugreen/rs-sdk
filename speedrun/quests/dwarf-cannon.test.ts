@@ -1,13 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import type { BotWorldState, InventoryItem, PlayerState, QuestJournalState } from '../../sdk/types';
-import { baseState, drive, FakeSdk, runeNeedProblems } from '../lib/fake-sdk';
+import { baseState, drive, FakeSdk, runeNeedProblems, simulateWalking } from '../lib/fake-sdk';
 import { sumUse } from '../lib/travel';
 import { journalProbeName } from '../lib/quests';
 import { TickLog } from '../lib/ticks';
 import { Observation, resolveResume } from '../runner/resume';
 import type { Observed, RunnerSession, StepContext } from '../runner/step';
 import { DEFAULT_DIALOGUE } from './segments';
-import { ARRIVAL, DEAD_AT_EXIT, defaultEatAt, eatForCrossing, LETTERS, MIN_FOOD, newTally, observed, QUEST_ITEMS, quest, railingDamage, RUNE_NEED, RUNE_USE, stepId, steps } from './dwarf-cannon';
+import { ARRIVAL, DEAD_AT_EXIT, defaultEatAt, eatForCrossing, inWorkshop, LETTERS, MIN_FOOD, newTally, NULODION_AT, observed, QUEST_ITEMS, quest, railingDamage, RUNE_NEED, RUNE_USE, stepId, steps } from './dwarf-cannon';
 
 let nextSlot = 0;
 const item = (name: string, count = 1): InventoryItem => ({ slot: nextSlot++, id: 1000 + nextSlot, name, count, optionsWithIndex: [] }) as unknown as InventoryItem;
@@ -517,6 +517,110 @@ describe('K and L re-run after their teleport landed: no second cast', () => {
     test('the normal path is unchanged: K from the camp and L from the Black Guard base each cast', async () => {
         expect((await casts(startOf('K'), 'K', 80)).clicks).toBeGreaterThan(0);
         expect((await casts(startOf('L'), 'L', 80)).clicks).toBeGreaterThan(0);
+    });
+});
+
+describe("K: Nulodion's live tile, on his side of the walk-through door", () => {
+    test('inWorkshop: the west wing from the map walls; the door tile and the corridor are outside', () => {
+        expect(inWorkshop(NULODION_AT)).toBe(true);
+        expect(inWorkshop({ x: 3014, z: 3453 })).toBe(true); // inside the door's wall
+        expect(inWorkshop({ x: 3015, z: 3453 })).toBe(false); // the door tile: the wall is on its west edge
+        expect(inWorkshop({ x: 3016, z: 3453 })).toBe(false); // NULODION_STAND, the corridor
+        expect(inWorkshop({ x: 3008, z: 3449 })).toBe(true); // the wing's south-west arm
+        expect(inWorkshop({ x: 3011, z: 3451 })).toBe(false); // the courtyard south of the wing
+        expect(inWorkshop({ x: 3007, z: 3453 })).toBe(false); // west of its west wall
+        expect(inWorkshop({ x: 3011, z: 3455 })).toBe(false); // north of its north wall
+    });
+
+    const nulodion = (x: number, z: number) => ({ index: 9, name: 'Nulodion', x, z, distance: 0, options: ['Talk-to', 'Trade'], optionsWithIndex: [{ text: 'Talk-to', opIndex: 1 }, { text: 'Trade', opIndex: 3 }] });
+    const DOOR = { x: 3015, z: 3453, id: 3, name: 'Door', distance: 0, options: ['Open'], optionsWithIndex: [{ text: 'Open', opIndex: 1 }] };
+    const tileOf = (s: BotWorldState) => ({ x: s.player!.worldX, z: s.player!.worldZ });
+    type Sent = { what: string; x: number; z: number };
+    /**
+     * K at the Black Guard base up to its Talk-to clicks. The door is mcannondoor: a click teleports
+     * SCORED to its other side a tick later and it never opens to walk through, so no step crosses
+     * the workshop's walls. Nothing answers the talk, so K ends 'no dialogue opened'. `moveTo`:
+     * Nulodion steps there the first tick SCORED stands beside him. Returns each send with where
+     * SCORED stood when it went out.
+     */
+    async function kSends(at: [number, number], nu: [number, number] | null, moveTo?: [number, number]): Promise<{ sent: Sent[]; error: string | null }> {
+        const s = startOf('K').state;
+        s.player = player(...at);
+        s.nearbyNpcs = (nu ? [nulodion(...nu)] : []) as unknown as BotWorldState['nearbyNpcs'];
+        s.nearbyLocs = [DOOR] as unknown as BotWorldState['nearbyLocs'];
+        const sdk = new FakeSdk(s);
+        const sent: Sent[] = [];
+        sdk.onSend = (a, f) => {
+            const what = a.method === 'sendInteractLoc' ? `door ${a.args[0]},${a.args[1]}` : /npc/i.test(a.method) ? 'talk' : a.method === 'sendWalk' ? 'walk' : a.method;
+            sent.push({ what, ...tileOf(f.state!) });
+            if (a.method === 'sendInteractLoc' && a.args[0] === DOOR.x && a.args[1] === DOOR.z) {
+                setTimeout(() => f.tick(st => {
+                    const to = inWorkshop(tileOf(st)) ? { x: 3015, z: 3453 } : { x: 3014, z: 3453 };
+                    return { player: { ...st.player!, x: to.x, z: to.z, worldX: to.x, worldZ: to.z } };
+                }), 1);
+            }
+        };
+        simulateWalking(sdk, { speed: 2, blocked: (nx, nz) => inWorkshop(tileOf(sdk.state!)) !== inWorkshop({ x: nx, z: nz }) });
+        let moved = false;
+        const each = (st: BotWorldState): Partial<BotWorldState> => {
+            const n = st.nearbyNpcs[0];
+            if (!moveTo || moved || !n || Math.max(Math.abs(n.x - st.player!.worldX), Math.abs(n.z - st.player!.worldZ)) > 1) return {};
+            moved = true;
+            return { nearbyNpcs: [nulodion(...moveTo)] as unknown as BotWorldState['nearbyNpcs'] };
+        };
+        const session = { sdk, bot: {}, name: 'lab', sessionId: 0 } as unknown as RunnerSession;
+        const ctx = { session, sdk, bot: session.bot, c: {}, log: TickLog.memory('t') } as unknown as StepContext<unknown>;
+        const error = await drive(sdk, (byLetter('K').run(ctx) as Promise<unknown>).then(() => null, e => String(e)), 400, each);
+        return { sent, error };
+    }
+    const first = (sent: Sent[], what: string) => sent.findIndex(x => x.what === what);
+    const doors = (sent: Sent[]) => sent.filter(x => x.what.startsWith('door')).length;
+    const talks = (sent: Sent[]) => sent.filter(x => x.what === 'talk');
+
+    test('the normal arrival: SCORED in the corridor, Nulodion at his spawn behind the shut door: the door once, then the talk from inside', async () => {
+        const { sent, error } = await kSends([3016, 3452], [NULODION_AT.x, NULODION_AT.z]);
+        expect(doors(sent)).toBe(1);
+        expect(first(sent, 'door 3015,3453')).toBeLessThan(first(sent, 'talk'));
+        expect(talks(sent).length).toBeGreaterThan(0);
+        for (const t of talks(sent)) expect(inWorkshop(t)).toBe(true);
+        expect(error).toMatch(/no dialogue opened/); // nothing in the fake answers the talk
+    });
+
+    test('K re-run from inside the workshop (the old K clicked the door and walked out, shutting Nulodion in): no door, the talk from inside', async () => {
+        const { sent } = await kSends([3012, 3453], [NULODION_AT.x, NULODION_AT.z]);
+        expect(doors(sent)).toBe(0);
+        expect(sent[0]!.what).toBe('talk'); // already beside him: no walk either
+        for (const t of talks(sent)) expect(inWorkshop(t)).toBe(true);
+    });
+
+    test('Nulodion at a far wander point (3008,3454), SCORED inside by the door: no door, a walk to within 1 of him, then the talk', async () => {
+        const { sent } = await kSends([3014, 3453], [3008, 3454]);
+        expect(doors(sent)).toBe(0);
+        expect(first(sent, 'walk')).toBeGreaterThanOrEqual(0);
+        expect(first(sent, 'walk')).toBeLessThan(first(sent, 'talk'));
+        const t = talks(sent)[0]!;
+        expect(Math.max(Math.abs(t.x - 3008), Math.abs(t.z - 3454))).toBeLessThanOrEqual(1);
+    });
+
+    test('Nulodion outside the door, SCORED inside: the door carries SCORED out, then the talk from his side', async () => {
+        const { sent } = await kSends([3012, 3453], [3016, 3454]);
+        expect(doors(sent)).toBe(1);
+        expect(first(sent, 'door 3015,3453')).toBeLessThan(first(sent, 'talk'));
+        for (const t of talks(sent)) expect(inWorkshop(t)).toBe(false);
+    });
+
+    test('he moves off the tile walked to: found again and walked to, the talk beside where he went', async () => {
+        const { sent } = await kSends([3016, 3452], [NULODION_AT.x, NULODION_AT.z], [3009, 3454]);
+        expect(doors(sent)).toBe(1);
+        const t = talks(sent)[0]!;
+        expect(Math.max(Math.abs(t.x - 3009), Math.abs(t.z - 3454))).toBeLessThanOrEqual(1);
+        expect(inWorkshop(t)).toBe(true);
+    });
+
+    test('Nulodion not in sight: K fails saying so, with no door and no talk', async () => {
+        const { sent, error } = await kSends([3016, 3452], null);
+        expect(error).toMatch(/Nulodion is not in sight/);
+        expect(sent.some(x => x.what.startsWith('door') || x.what === 'talk')).toBe(false);
     });
 });
 

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test';
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -1354,6 +1354,17 @@ describe('S15: Monkey Madness on the chain', () => {
         expect(full.some(s => s.kind === 'missing')).toBe(false);
         expect(missingOnPath(full)).toEqual([]);
         expect(() => chainProbes(full)).not.toThrow();
+    });
+
+    test("S15 is chained in burst dialogue: buildChain passes dialogue 'burst' to monkey-madness's steps", () => {
+        const spy = spyOn(monkeyMadness, 'steps');
+        try {
+            buildChain(COMPLETE, { cues: recorder().cues });
+            expect(spy.mock.calls.length).toBeGreaterThan(0);
+            expect(spy.mock.calls.map(c => c[0]?.dialogue)).toEqual(spy.mock.calls.map(() => 'burst'));
+        } finally {
+            spy.mockRestore();
+        }
     });
 
     test("h45's login trigger is the one step between segments L and M; its done is past M, so a resume into N..Z walks past it and one into M fires it", () => {
