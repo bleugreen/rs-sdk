@@ -35,7 +35,9 @@ describe('pieces', () => {
         expect(resolveTool('speedrun/tools/oneoff/walk.ts')).toEndWith('speedrun/tools/oneoff/walk.ts');
         expect(resolveTool('speedrun/tools/relog-now.ts')).toBeNull();
         expect(resolveTool('../relog-now')).toBeNull();
-        expect(resolveTool('rekit')).toBeNull();
+        expect(resolveTool('rekit')).toEndWith('speedrun/tools/oneoff/rekit.ts');
+        expect(resolveTool('rekit.test')).toBeNull();
+        expect(resolveTool('no-such-tool')).toBeNull();
     });
 
     test('summarize: login and logout UTC and the ticks in the world', () => {
