@@ -135,15 +135,15 @@ async function startGroup(n: number, final: number | null, tree: 'oak' | 'willow
         mkdirSync(join(botsDir, account), { recursive: true, mode: 0o700 });
         writeFileSync(join(botsDir, account, 'bot.env'), `BOT_USERNAME=${account}\nPASSWORD=${randomBytes(6).toString('hex')}\nSERVER=localhost:${webPort}\nSHOW_CHAT=false\nTELEMETRY=false\nPROFANITY_FILTER=false\n`, { mode: 0o600 });
     }
-    const [sx, sz] = sites[tree].stand;
-    const [gx, gz] = HELPER_TILE[tree];
+    // Both sites in run order, as the run's givers have them (bone-giver.ts S07_SITES): the cue names the one SCORED is at.
+    const giverSites = (['oak', 'willow'] as const).map(t => ({ giver: { x: HELPER_TILE[t][0], z: HELPER_TILE[t][1] }, receiver: { x: sites[t].stand[0], z: sites[t].stand[1] } }));
     const runes = [{ item: 'Law rune', count: 1, obj: 'lawrune' }, { item: 'Air rune', count: 5, obj: 'airrune' }];
     const accounts = group.map((account, i) => ({
         account,
         role: 'bone-giver',
         options: {
             restock: { kind: 'cheat' },
-            sites: [{ giver: { x: gx, z: gz }, receiver: { x: sx, z: sz } }],
+            sites: giverSites,
             scope: S07_BONE_CUE,
             group,
             ...(bone ? { item: bone.item, obj: bone.obj } : {}),
@@ -361,7 +361,7 @@ await runScript(async ({ bot: actions, sdk }) => {
     // A stopped attempt's S07 session: its cue, and each counted giver's status in it (restocking, its loads given).
     const prestage = boneSession
         ? (cueDir: string) => {
-              new BoneCue(cueDir, boneSession).write(sdk.getState(), bot);
+              new BoneCue(cueDir, boneSession).write(sdk.getState(), bot, sites[tree as 'oak' | 'willow'].stand);
               for (const [account, n] of counted) {
                   writeJsonAtomicSync(join(cueDir, `bones-${account}.json`), {
                       v: 1, account, phase: 'restock', held: 0, n: load, trades: Number(n), bounces: 0, tile: null, readyAt: null, session: boneSession,
