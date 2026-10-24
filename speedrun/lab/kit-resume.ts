@@ -30,7 +30,7 @@ import { openRoleState } from '../helpers/role';
 import { depositAll } from '../lib/bank';
 import { ReservationWatch, reservationPath } from '../lib/host-reservation';
 import { objPack } from '../lib/obj-pack';
-import { closeSession, isLoopbackHost, loadBotEnv, openSession, relog, ROOT, type Session } from '../lib/session';
+import { closeSession, isLoopbackHost, loadBotEnv, login, openSession, relog, ROOT, type Session } from '../lib/session';
 import { TickLog } from '../lib/ticks';
 import { waitTicks, waitUntil } from '../lib/wait';
 import { opIndex } from '../lib/world';
@@ -251,6 +251,8 @@ try {
         if (!record.handOffs.has('H12')) throw new Error('the serve did not record H12');
         await stopCarrier();
         const cueAfterServe = readCue(options.cueDir);
+        // The chain logged SCORED out at its end: back in to stage the resume.
+        await login(scored);
         // Attempt 4's resume: A to run again, SCORED relogged (the tab reset) low and freshly poisoned.
         // Attempt 4's A never reached Narnode: no seal held, the quest unstarted.
         await dropMatching(scored.sdk, [/^Gnome royal seal$/i]);
