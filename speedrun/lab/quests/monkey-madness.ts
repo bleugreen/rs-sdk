@@ -35,7 +35,8 @@
 // DRINK_BELOW - 1, so upkeep's prayer drink falls due while the talk is open (mm_talisman_drain reports it).
 // --poison=SEV: SCORED is poisoned (::~poison, cheat_other.rs2) before the first segment and carries it in: the run starts
 // --poisonAge=N ticks (default 4) after the first poison hit, so 'You have been poisoned!' is over 32 ticks old and only the
-// hitsplat shows it, as at attempt 4's A. --hp=N lowers current HP to N (::~hit) after it. mm_run reports the poison hits
+// hitsplat shows it, as at attempt 4's A. Any --poison first resets %poison to 0 (a carried poison or an antipoison's
+// immunity), so --poison=0 stages a clean run. --hp=N lowers current HP to N (::~hit) after it. mm_run reports the poison hits
 // taken during the run and the antipoison doses before and after.
 // --h45 on a chain with P and not M: M's cues are written first (M's open, then its stop and P's open), as M leaves them
 // when it trades nothing, so h45 is logged in and serving P when P lands.
@@ -752,7 +753,8 @@ async function main(): Promise<void> {
     const predose = process.argv.includes('--predose');
     const spawn = arg('spawn', '');
     const spawnAt = arg('spawnAt', '');
-    const poisonSeverity = Number(arg('poison', '0'));
+    const poisonArg = arg('poison', '');
+    const poisonSeverity = Number(poisonArg || '0');
     const poisonAge = Number(arg('poisonAge', '4'));
     const hpTo = arg('hp', '');
     const loadCap = Number(arg('loadCap', '0'));
@@ -836,6 +838,8 @@ async function main(): Promise<void> {
             await cheat(sdk, `npcadd ${spawn}`, 2);
             if (at) await mustTele(sdk, back.x, back.z, back.level);
         }
+        // %poison is perm and outlives a relog, and an antipoison leaves it negative (immune, poison_player ignored): reset first.
+        if (poisonArg) await cheat(sdk, 'setvar poison 0', 2);
         if (poisonSeverity > 0) {
             const t0 = sdk.getState()!.tick;
             await cheat(sdk, `~poison ${poisonSeverity}`);
