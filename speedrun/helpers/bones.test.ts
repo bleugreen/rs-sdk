@@ -7,7 +7,7 @@ import { Run } from './bones';
 import { memoryRoleState } from './role';
 import { summarizeWindow } from '../../docs/speedrun/scripts/bones-dev/stats';
 import { carryReached, fishingHaul, foodOverCap, lootWanted, gearRank, healOf, inBabyBlueRoom, inDesert, isClutter, keepOnBank, parseOptions, patrolTour, SPOTS, tollWithdraw, UGTHANKI_SPAWNS } from './bones';
-import { ANTI_DRAGON_SHIELD, inAdultReach, roomFull } from './bones';
+import { ANTI_DRAGON_SHIELD, inAdultReach, roomFull, SWING_GIVE_UP_TICKS, SWING_STALE_TICKS, swingCheck } from './bones';
 import { ROOM, SAFE_ROUTE, SAFE_TILE, TAVERLEY_ADULTS, TAVERLEY_BABIES } from './dragons';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -425,6 +425,24 @@ describe('preferred spot recovery', () => {
     });
 });
 
+
+describe('swingCheck', () => {
+    // Lab, 2026-10-24, adult blues: after eats the attack never resumed, the dragon kept hitting, and
+    // fights ran to the 120 s deadline (kill ticks p50 300 against p10 63), 4 sharks a kill.
+    test('splats every swing: keep fighting', () => {
+        expect(swingCheck({ now: 120, start: 100, lastAttack: 100, lastSplat: 117 })).toBe('ok');
+        expect(swingCheck({ now: 105, start: 100, lastAttack: 100, lastSplat: null })).toBe('ok'); // still walking in
+    });
+    test('no splat for two swings since the last hit or click: attack again', () => {
+        expect(swingCheck({ now: 100 + SWING_STALE_TICKS + 1, start: 100, lastAttack: 100, lastSplat: null })).toBe('reattack');
+        expect(swingCheck({ now: 140, start: 100, lastAttack: 100, lastSplat: 130 })).toBe('reattack');
+        expect(swingCheck({ now: 140, start: 100, lastAttack: 136, lastSplat: 130 })).toBe('ok');
+    });
+    test('a splat from before the fight is not progress; no splat at all for long: give up', () => {
+        expect(swingCheck({ now: 100 + SWING_GIVE_UP_TICKS + 1, start: 100, lastAttack: 150, lastSplat: 40 })).toBe('give_up');
+        expect(swingCheck({ now: 200, start: 100, lastAttack: 195, lastSplat: 150 })).toBe('ok');
+    });
+});
 
 describe('blue_dragon spot', () => {
     const spot = SPOTS.blue_dragon!;

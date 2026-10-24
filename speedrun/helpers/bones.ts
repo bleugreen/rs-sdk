@@ -789,6 +789,25 @@ export function parseOptions(o: Record<string, unknown>): Options {
 interface Target { npc: RegExp; area: Box; centre: Tile; loot: RegExp | null }
 type Outcome = 'killed' | 'lost' | 'flee' | 'none' | 'full';
 
+/** Ticks without a hitsplat on the target before the attack is sent again (two scimitar swings). */
+export const SWING_STALE_TICKS = 8;
+/** Ticks without any hitsplat on the target before the fight is given up. */
+export const SWING_GIVE_UP_TICKS = 60;
+
+/**
+ * Whether the player is still hitting a live target. Every swing shows as a hitsplat on the target,
+ * a miss as a 0 (NearbyNpc.lastCombatTick), so a target with none for SWING_STALE_TICKS since the
+ * fight began or the last attack click is not being hit: an eat cleared the attack, or the click
+ * was dropped, while the target keeps hitting back. Then attack again, and with no splat at all
+ * for SWING_GIVE_UP_TICKS give the fight up.
+ */
+export function swingCheck(t: { now: number; start: number; lastAttack: number; lastSplat: number | null }): 'ok' | 'reattack' | 'give_up' {
+    const hit = Math.max(t.lastSplat ?? -1, t.start);
+    if (t.now - hit > SWING_GIVE_UP_TICKS) return 'give_up';
+    if (t.now - Math.max(hit, t.lastAttack) > SWING_STALE_TICKS) return 'reattack';
+    return 'ok';
+}
+
 /** One account's live session; the dragons role (dragons.ts) reuses its walking, climbing, fighting and training. */
 export class Run {
     readonly bot: BotActions;
@@ -1215,9 +1234,11 @@ export class Run {
         }
         let last: Tile = { x: target.x, z: target.z };
         const startTick = this.state().tick;
+        let lastAttack = startTick;
         const deadline = Date.now() + 120_000;
         let idleTicks = 0;
         let eatsSeen = this.guard.eats;
+        let dead = false;
         while (Date.now() < deadline && !this.aborted()) {
             await this.sdk.waitForTicks(1);
             const s = this.state();
@@ -1227,19 +1248,32 @@ export class Run {
                 // The guard ate, which clears the attack (OPHELD clears the interaction); re-engage.
                 eatsSeen = this.guard.eats;
                 const again = s.nearbyNpcs.find(n => n.index === target.index);
-                if (again && again.hp !== 0) await this.bot.attack(again);
+                if (again && again.hp !== 0) {
+                    await this.bot.attack(again);
+                    lastAttack = this.state().tick;
+                }
             }
-            const npc = this.state().nearbyNpcs.find(n => n.index === target.index);
-            if (!npc) break; // despawned: dead (or out of view)
+            const now = this.state();
+            const npc = now.nearbyNpcs.find(n => n.index === target.index);
+            if (!npc) { dead = true; break; } // despawned: dead (or out of view)
             last = { x: npc.x, z: npc.z };
             if (npc.hp === 0) {
                 await this.waitFor(st => !st.nearbyNpcs.some(n => n.index === target.index), 6);
+                dead = true;
                 break;
             }
-            if (!s.player!.combat.inCombat && !npc.inCombat) {
+            if (!now.player!.combat.inCombat && !npc.inCombat) {
                 if (++idleTicks > 8) return 'lost';
             } else idleTicks = 0;
+            const swing = swingCheck({ now: now.tick, start: startTick, lastAttack, lastSplat: npc.lastCombatTick });
+            if (swing === 'give_up') return 'lost';
+            if (swing === 'reattack') {
+                await this.bot.attack(npc);
+                lastAttack = this.state().tick;
+            }
         }
+        // Out of time (or stopped) with the target still standing: no kill, nothing to loot.
+        if (!dead) return 'lost';
         this.kills++;
         this.killTicks.push(this.state().tick - startTick);
         if (this.kills % 25 === 0) this.ctx.log('progress', this.summary());
