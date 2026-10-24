@@ -68,7 +68,7 @@ import type { BotWorldState, InventoryItem, TradeItem } from '../../sdk/types';
 import { INVENTORY_SIZE, noteOf, objIdsNamed, objName, untradeable } from '../lib/items';
 import { DROPPED_TICKS, receiveFrom, sameName, swap, tradeOf, type GiveSpec, type SwapSdk, type WantSpec } from '../lib/trade';
 import { waitOrThrow, waitUntil } from '../lib/wait';
-import { guardWait } from './wait-guard';
+import { guardWait, loggedActs } from './wait-guard';
 import { writeTopUpAsk, type AskItem, type CueScope, type TopUpAsk } from '../helpers/altar-cue';
 import type { WorldTile } from '../helpers/mule-readiness';
 import { opIndex } from '../lib/world';
@@ -676,7 +676,7 @@ export function handOffStep<C>(plan: HandOffPlan, opts: HandOffOptions<C>): Step
                     if (opts.meeting) await partnerInSight(sdkOf(ctx.sdk), plan, partner(ctx.c), opts.meeting);
                     await runHandOff(sdkOf(ctx.sdk), plan, partner(ctx.c), trade);
                 }
-            });
+            }, loggedActs(ctx, during));
             mark(ctx.sdk);
         },
         async resume(ctx) {
