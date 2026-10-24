@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import type { BotWorldState, DialogState } from '../../sdk/types';
-import { burstTicks, converse, dialogueRuns, levelUpInterrupt, parseShape, shapeRuns, type Interrupt } from './converse';
+import type { BotWorldState, DialogState, PlayerState } from '../../sdk/types';
+import { burstTicks, converse, dialogueRuns, HIT_CLOSE_TICKS, levelUpInterrupt, parseShape, shapeRuns, type ConverseOptions, type Interrupt } from './converse';
 import { baseState, FakeSdk, flush } from './fake-sdk';
 import { fakeClock, peek, tickEvery, useFakeTicks } from './fake-ticks';
 import { IDLE_TICKS, STALLED } from './wait';
@@ -494,5 +494,215 @@ describe("converse expect: 'interrupt'", () => {
         expect(at).toBe(49);
         expect(r).toMatchObject({ ok: true, opened: false, interrupts: 0, endTick: -1, ticks: 0, reason: 'no dialogue opened' });
         await expect(converse(sdk as never, [], { expect: 'interrupt' })).rejects.toThrow(/needs interrupts/);
+    });
+});
+
+/** The player as the hit rule reads it: `lastDamageTick` is the tick of the last hitsplat on them. */
+const you = (lastDamageTick = -1) => ({ hp: 30, maxHp: 50, combat: { inCombat: false, targetIndex: -1, targetType: 'none', lastDamageTick } }) as unknown as PlayerState;
+
+/**
+ * An NPC's talk as the engine runs it: tickServer's paging (at most 5 dialogue clicks a tick, a continue refused at a
+ * choice) plus the script's life. Page 0 shows at once (the talk click already went out); an interact (a re-engage)
+ * opens page 0 again on the next tick; the click on the last page ends the script, closing the chat and running
+ * `done`. Reaching a page index listed in `cuts` (each entry once) closes the chat on that tick instead, with a
+ * poison hitsplat unless `hit` is false, and drops the script and the clicks owed to it (Player.closeModal).
+ */
+function npcTalk(sdk: FakeSdk, pages: DialogState[], o: { cuts?: number[]; hit?: boolean; done?: (tick: number) => Partial<BotWorldState> } = {}) {
+    let i = 0;
+    let opening = false;
+    const cuts = [...(o.cuts ?? [])];
+    const owed: Array<'continue' | 'option'> = [];
+    const interacts: number[] = [];
+    sdk.onSend = a => {
+        if (a.method === 'sendInteractNpc') {
+            opening = true;
+            interacts.push(sdk.state!.tick);
+        } else if (a.method === 'sendClickDialog') owed.push('continue');
+        else if (a.method === 'clickDialogByText') owed.push(/continue/i.test(String(a.args[0])) ? 'continue' : 'option');
+    };
+    sdk.tick({ dialog: pages[0]! });
+    return {
+        interacts,
+        async run(ticks: number) {
+            for (let t = 0; t < ticks; t++) {
+                await flush();
+                await flush();
+                const tick = sdk.state!.tick + 1;
+                let patch: Partial<BotWorldState> = {};
+                if (i < 0) {
+                    owed.length = 0;
+                    if (opening) i = 0;
+                } else {
+                    for (let n = 0; n < 5 && owed.length && i >= 0; n++) {
+                        const kind = owed.shift()!;
+                        if (kind === 'continue' && pages[i]!.options.some(op => op.buttonType === 1)) continue;
+                        i++;
+                        const cut = cuts.indexOf(i);
+                        if (i >= pages.length) {
+                            i = -1;
+                            patch = { ...patch, ...o.done?.(tick) };
+                        } else if (cut >= 0) {
+                            cuts.splice(cut, 1);
+                            i = -1;
+                            if (o.hit !== false) patch = { ...patch, player: you(tick) };
+                        }
+                    }
+                    if (i < 0) owed.length = 0;
+                }
+                opening = false;
+                sdk.tick({ ...patch, dialog: i >= 0 ? pages[i]! : closed });
+            }
+        },
+    };
+}
+
+const ORDERS = { slot: 0, id: 4005, name: 'Narnode\'s orders', count: 1, optionsWithIndex: [] };
+const holdsOrders = (s: BotWorldState) => s.inventory.some(i => i.id === ORDERS.id);
+/** S15:C, Narnode's orders (MM_SHAPES.narnodeOrders '10c, state, 3c'), handing over the orders as the script ends. */
+const narnodeOrders = () => [...conts('o', 10), cont('state'), ...conts('p', 3)];
+/** S15:F, Waydar's flight (MM_SHAPES.waydarFly '3c, opt, 1c, state'). */
+const waydarFly = () => [...conts('w', 3), choice('fly', 'Yes', 'No'), cont('x'), cont('glider')];
+
+describe('converse re-engage (a chat closed mid-talk with until unmet)', () => {
+    const talk = (sdk: FakeSdk, o: ConverseOptions = {}, choices: Array<string | RegExp> = []) =>
+        converse(sdk as never, choices, { idle: 6, maxTicks: 200, until: holdsOrders, reopen: () => sdk.sendInteractNpc(7, 1), ...o });
+
+    test('the fixed chain: closed by a poison tick after page 2, one re-engage of the same NPC, the replay answered to its end', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, player: you() }));
+        const p = talk(sdk);
+        const srv = npcTalk(sdk, narnodeOrders(), { cuts: [2], done: () => ({ inventory: [ORDERS] }) });
+        await srv.run(40);
+        const r = await p;
+        // Pages 1-2 at ticks 2-3, the hit's close at 4, the re-engage idle (6) ticks on at 10, the replay from 11.
+        expect(srv.interacts).toEqual([10]);
+        expect(r).toMatchObject({ ok: true, opened: true, pages: 2 + 14, reengages: 1, firstTick: 2, endTick: 25, ticks: 24 });
+        expect(r.transcript.filter(l => !/page:/.test(l))).toEqual(['[10] re-engage 1: chat closed at 4 with until unmet (hit at 4)']);
+        expect(holdsOrders(sdk.state!)).toBe(true);
+    });
+
+    test('without reopen the same close idles to maxTicks, as before', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, player: you() }));
+        const p = talk(sdk, { reopen: undefined, maxTicks: 40 });
+        const srv = npcTalk(sdk, narnodeOrders(), { cuts: [2], done: () => ({ inventory: [ORDERS] }) });
+        await srv.run(45);
+        expect(await p).toMatchObject({ ok: false, reason: 'timeout', pages: 2 });
+        expect(srv.interacts).toEqual([]);
+    });
+
+    test('S15:C in burst mode: the cut burst leaves the shape, the hit marks the close, the replay goes a page a tick', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, player: you() }));
+        const p = talk(sdk, { shape: '10c, state, 3c', burst: true });
+        const srv = npcTalk(sdk, narnodeOrders(), { cuts: [2], done: () => ({ inventory: [ORDERS] }) });
+        await srv.run(40);
+        const r = await p;
+        expect(r).toMatchObject({ ok: true, reengages: 1 });
+        expect(r.shape!.stopped).toMatch(/burst of 10 did not land/);
+        expect(r.transcript.some(l => /re-engage 1: chat closed at \d+ with until unmet \(hit at \d+\)/.test(l))).toBe(true);
+        expect(holdsOrders(sdk.state!)).toBe(true);
+    });
+
+    test('S15:F, closed after the option: the choice queue starts over and the replayed menu is answered again', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, player: you() }));
+        let flown = false;
+        const p = talk(sdk, { idle: 4, until: () => flown }, [/^Yes$/]);
+        const srv = npcTalk(sdk, waydarFly(), { cuts: [4], done: () => { flown = true; return {}; } });
+        await srv.run(30);
+        const r = await p;
+        expect(r).toMatchObject({ ok: true, reengages: 1, options: 2, remaining: [] });
+        expect(dialogueRuns(r.transcript)).toBe('3c, opt, 3c, opt, 2c');
+    });
+
+    test('evidence: a followed shape left unfinished re-engages with no hit; no shape and no hit keeps waiting', async () => {
+        const shaped = new FakeSdk(baseState({ tick: 1, player: you() }));
+        const p = talk(shaped, { shape: '10c, state, 3c' });
+        await npcTalk(shaped, narnodeOrders(), { cuts: [2], hit: false, done: () => ({ inventory: [ORDERS] }) }).run(40);
+        const r = await p;
+        expect(r).toMatchObject({ ok: true, reengages: 1 });
+        expect(r.transcript).toContain('[10] re-engage 1: chat closed at 4 with until unmet (the shape was at part 1, 10c (2 done))');
+
+        const bare = new FakeSdk(baseState({ tick: 1, player: you() }));
+        const q = talk(bare, { maxTicks: 30 });
+        const srv = npcTalk(bare, narnodeOrders(), { cuts: [2], hit: false, done: () => ({ inventory: [ORDERS] }) });
+        await srv.run(35);
+        expect(await q).toMatchObject({ ok: false, reason: 'timeout' });
+        expect(srv.interacts).toEqual([]);
+    });
+
+    test(`a hit more than HIT_CLOSE_TICKS (${HIT_CLOSE_TICKS}) before the close, or none, is no evidence; a slow until is waited for`, async () => {
+        // The talk ends normally at 15; the effect lands at 25; a hit at 8 (in a p_delay, say) is too early to be the close's.
+        const sdk = new FakeSdk(baseState({ tick: 1, player: you(8) }));
+        let endedAt = -1;
+        const p = talk(sdk, { idle: 3, until: s => endedAt >= 0 && s.tick >= endedAt + 10 });
+        const srv = npcTalk(sdk, conts('k', 13), { done: tick => { endedAt = tick; return {}; } });
+        await srv.run(30);
+        expect(await p).toMatchObject({ ok: true, endTick: 25 });
+        expect(srv.interacts).toEqual([]);
+    });
+
+    test('bounded: a third cut after two re-engages fails with a named reason and the transcript, long before maxTicks', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, player: you() }));
+        const p = talk(sdk);
+        const srv = npcTalk(sdk, narnodeOrders(), { cuts: [2, 2, 2], done: () => ({ inventory: [ORDERS] }) });
+        await srv.run(60);
+        const r = await p;
+        expect(srv.interacts.length).toBe(2);
+        expect(r.ok).toBe(false);
+        expect(r.reason).toMatch(/^chat closed mid-talk at \d+ with until unmet \(hit at \d+\) after 2 re-engages$/);
+        expect(r.pages).toBe(6);
+        expect(r.endTick - r.startTick).toBeLessThan(40);
+    });
+
+    test('a re-engage whose chat never reopens is spent after openTicks; the last one fails with a named reason', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, player: you() }));
+        let clicks = 0;
+        const p = talk(sdk, { openTicks: 5, reopen: async () => void clicks++ });
+        await npcTalk(sdk, narnodeOrders(), { cuts: [2] }).run(40);
+        const r = await p;
+        expect(clicks).toBe(2);
+        expect(r).toMatchObject({ ok: false, reengages: 2, reason: 're-engage 2 opened no dialogue in 5 ticks (chat closed at 4, hit at 4)' });
+    });
+
+    test('no until, or until held: a closed chat is over as before and never re-engaged', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, player: you() }));
+        const p = talk(sdk, { until: undefined });
+        const srv = npcTalk(sdk, narnodeOrders(), { cuts: [2] });
+        await srv.run(20);
+        expect(await p).toMatchObject({ ok: true, pages: 2, endTick: 4 });
+        expect(srv.interacts).toEqual([]);
+    });
+});
+
+describe('converse re-engage leaves the happy path alone', () => {
+    // The same talk with and without `reopen`, no close: the result (its per-page ticks in the transcript) and every
+    // send must be identical. The effect lands 3 ticks after the chat closes (a flight), so `until` is false for a while.
+    async function run(o: ConverseOptions, pages: DialogState[], withReopen: boolean) {
+        const sdk = new FakeSdk(baseState({ tick: 1, player: you() }));
+        let endedAt = -1;
+        const p = converse(sdk as never, ['Yes'], {
+            idle: 3, maxTicks: 200, until: s => endedAt >= 0 && s.tick >= endedAt + 3, ...o,
+            ...(withReopen ? { reopen: () => Promise.reject(new Error('re-engaged on the happy path')) } : {}),
+        });
+        await npcTalk(sdk, pages, { done: tick => { endedAt = tick; return {}; } }).run(30);
+        return { r: await p, sent: sdk.sent };
+    }
+
+    test('the fixed chain: per-page ticks byte-identical', async () => {
+        const pages = narnodeOrders();
+        const plain = await run({}, pages, false);
+        const reopen = await run({}, pages, true);
+        expect(JSON.stringify(reopen)).toBe(JSON.stringify(plain));
+        // One page a tick from tick 2; the last at 15 ends the script at 16; the effect at 19.
+        expect(plain.r.transcript.map(l => Number(/^\[(\d+)\]/.exec(l)![1]))).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+        expect(plain.r).toMatchObject({ ok: true, pages: 14, endTick: 19 });
+        expect('reengages' in plain.r || 'reengages' in reopen.r).toBe(false);
+    });
+
+    test('burst mode (S15:C\'s shape) and a choice (S15:F\'s): byte-identical', async () => {
+        for (const [o, pages] of [[{ shape: '10c, state, 3c', burst: true }, narnodeOrders()], [{ shape: '3c, opt, 1c, state', burst: true }, waydarFly()], [{}, waydarFly()]] as const) {
+            const plain = await run(o, pages, false);
+            const reopen = await run(o, pages, true);
+            expect(plain.r.ok).toBe(true);
+            expect(JSON.stringify(reopen)).toBe(JSON.stringify(plain));
+        }
     });
 });
