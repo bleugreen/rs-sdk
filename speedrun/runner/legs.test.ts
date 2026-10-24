@@ -1215,7 +1215,8 @@ describe("the hostile legs' start floor (main 19:1xZ; rs/764's run 1: T14-15b fr
         };
         simulateWalking(sdk);
         const ctx = ctxFor(sdk);
-        await drive(sdk, b.run(ctx).catch(() => {}), 30);
+        // No ride is simulated: the leg ends failing at the young tree, its travel row written.
+        await drive(sdk, b.run(ctx).catch(() => {}), 400);
         // The upkeep eats 25 on the first frame as ever, beside the first hop's click: no wait between.
         expect(sends.filter(x => x.startsWith('100 '))).toContain('100 sendUseItem');
         expect(sends.some(x => x.startsWith('100 ') && !x.endsWith('sendUseItem'))).toBe(true);
