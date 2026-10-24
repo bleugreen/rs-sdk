@@ -155,6 +155,15 @@ outage):
   10 s until one is accepted (the demo refuses with code 8 for 1.5-2.5 min), so it
   is in at most one retry interval after logins open. `beforeLogin` is the
   login-order gate: tick-exact helpers in before SCORED (rs/117).
+- **Our own gateway down** (rs/659): verdict `gateway_down`, a wait and nothing
+  else. A tick that stopped because the SDK's socket to our gateway is down, or
+  its status does not answer, says nothing about the client (the page may be
+  playing on, unseen), and a logout through it cannot land. It is asked before
+  the server probe. For `GATEWAY_BACK_GRACE_TICKS` (25) after the gateway is
+  reachable again with no tick yet, a `stale` reading is still the gateway's: the
+  page's own gateway connection retries every 3 s, the SDK's within 2 s
+  (`GATEWAY_RECONNECT_MAX_MS`). Past that grace a stale tick is the client's
+  again, as before.
 
 ### A page that fell out of a live world (`runner/drop-relog.ts`, rs/511)
 
@@ -168,12 +177,25 @@ handles it itself:
   `tab.ts` `pageInGame`) once the tick has stood 3 ticks; an out page is lost at
   once. A page whose socket died says it is in game for about 17 more ticks (7 s)
   before it notices, so the drop is usually seen at the stale bound; the
-  watchdog acts 10 ticks after the link and stands down while the page is out.
+  watchdog acts 10 ticks after the link, and stands down for an out page only
+  while a recovery is running (`dropRecovery` `acting`): with none running,
+  nothing would relog it.
 - **Relogged in page.** `recoverDrop` gives a page still claiming in-game 40
   ticks to settle (it reconnects itself: adopted; it falls to the title screen:
   relogged), then logs it in with `session.ts` `login({ inPage: true })`, the
-  path planned relogs take, never a relaunch. A world that is down, or no page
-  to ask, goes to the watchdog's path unchanged.
+  path planned relogs take, never a relaunch. No page to ask goes to the
+  watchdog's path unchanged.
+- **Every wait keeps asking the page** (rs/659). The adopt's wait for an
+  advancing tick, the watchdog's path and a world or gateway outage all re-read
+  the page every 3 ticks; a page out of the world with the account meant to be
+  in (not during someone's logout), the world up and our gateway up is relogged
+  in page there and then. Attempt 3 ended on the gap this closes: an adopted page
+  was logged out a tick later, the adopt waited 120 s on ticks that could not
+  come, and the watchdog stood down for a recovery that could not act. An adopt
+  that fell out is relogged on the adopt's own budget entry (`RelogBudget`
+  `amend`), so one drop costs one entry; at most `MAX_FALLS` (2) such falls per
+  recovery. With the world or our gateway down the page is left out until both
+  answer: a login could not land, or could not be seen landing.
 - **Budgeted.** Every relog is a row in `<run dir>/relogs.json`
   (`runner/relog-budget.ts`) with its step and tick: the planned S21 relog plus 3
   unplanned, run.ts's and the operator's together. The start gate reads it; past
@@ -183,6 +205,13 @@ handles it itself:
 - **Measured** (bgsrv-mac, 400 ms, the 22:15 shape injected into a knife loop, a
   bank burst and a leg): drop to back in the world 24-26 ticks (9.5-10.3 s), the
   login itself 0.7-1.4 s; every step resumed and finished.
+- **Measured, our gateway killed** (bgsrv-mac, 400 ms, `lab/drop-accept.ts
+  --gateway-down`, rs/659): 60 s down mid-walk or mid-knife-loop, the page in
+  the world throughout: no logout, no budget entry, the step resumed about 1 s
+  after the gateway was back; the blind stretch is the cost (148 ticks on the leg,
+  172 on the knife band, against a 150-tick outage). The page out when the
+  gateway came back: one in-page relog, one entry. The page out in the adopt's
+  own tick: relogged on the adopt's entry, one entry.
 
 **The race rule: a manual relog is adopted, never fought.** The operator's
 `bun speedrun/tools/relog-now.ts <bot>` (from an ssh shell on the run host,
@@ -212,6 +241,15 @@ ticks. Each result carries `sends` and `confirmTicks` (click to out); S21's
 logout half goes through it. The watchdog's own logout is held while a bank or
 trade is open, for at most `INTERFACE_HOLD_TICKS` (100), then acts as before: a
 click would close the interface under the step.
+
+A logout belongs to the game session it was issued in (rs/659). Every click goes
+through `sendLogoutClick` with the `sessionId` it was issued under: once an
+adopt, a launch or an in-page login has begun a newer session it is dropped, and
+a `logoutClean` still waiting stops (`superseded`, which the watchdog takes as
+no failure). And a logout is never handed to an SDK that is not connected:
+BotSDK queues an action sent while it reconnects and dispatches it the moment the
+gateway is back, which is how attempt 3's watchdog logout reached the session
+run.ts had just adopted.
 
 ### The two clients
 
