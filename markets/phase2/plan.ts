@@ -160,12 +160,12 @@ export const DEFAULTS = {
     sell: { enabled: false, cap: 500, everyMinutes: 120, floors: {}, fillMinutes: 10 } satisfies SellPlan
 };
 
-/** Role options each method starts from (markets/methods/pickpocket.ts, mine.ts, speedrun/helpers/coins.ts). */
+/** Role options each method starts from (markets/methods/pickpocket.ts, mine.ts, coins-driver.ts over speedrun/helpers/coins.ts). */
 export const ROLE_DEFAULTS: Readonly<Record<MethodId, Record<string, unknown>>> = {
     knights: { target: 'knight', food: 'Shark', foodPerTrip: 0, bankAt: 50_000 },
     heroes: { target: 'hero', food: 'Shark', foodPerTrip: 0, bankAt: 50_000 },
-    // 'auto' climbs men, Al-Kharid warriors, then Varrock guards from guardLevel (coins.ts)
-    guards: { target: 'auto', guardLevel: 40 },
+    // 'auto' climbs men, Al-Kharid warriors, then Varrock guards from the driver's guardLevel (coins-driver.ts GUARD_LEVEL)
+    guards: { target: 'auto' },
     iron: { site: 'iron' },
     shilo: { site: 'shilo' }
 };

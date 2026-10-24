@@ -337,9 +337,9 @@ in the market respawns in Lumbridge without the ship's coins, so the account ear
 
 | Method | Sequence (`sequenceFor`) |
 |---|---|
-| knights | tutorial, HP 40 (`hp-train.ts`), Thieving 55 (`coins.ts` auto: men, warriors, guards), admission (the ramp; Varrock guards meanwhile), [buy sharks], 100 coins, ship to Ardougne (`thieving.ts`'s leg), `pickpocket.ts` on the knights |
+| knights | tutorial, HP 40 (`hp-train.ts`), Thieving 55 (`coins-driver.ts` over `coins.ts`: men, warriors, guards), admission (the ramp; Varrock guards meanwhile), [buy sharks], 100 coins, ship to Ardougne (`thieving.ts`'s leg), `pickpocket.ts` on the knights |
 | heroes | as knights to Thieving 80, no ramp |
-| guards | tutorial, HP 40, `coins.ts` auto from Thieving 1 |
+| guards | tutorial, HP 40, `coins-driver.ts` from Thieving 1: the men to 25, the Al-Kharid warriors to 55, the Varrock guards |
 | iron | tutorial, a pickaxe (`pickaxe.ts`), 100 coins (Lumbridge men; 220 when the plan sells), Mining 15 (`mining.ts`'s copper steps, after sailing back to the mainland if the account starts on the Ardougne side), wield the pickaxe, ship to Ardougne, `mine.ts` at the zoo cluster |
 | shilo | staged by hand (no quest bot exists): the method only |
 
@@ -350,10 +350,11 @@ the account up; the rest carry on.
 one: from the bank when the runner last saw one there, else a bronze pickaxe (1 coin) from Bob in Lumbridge or Aemad
 in East Ardougne, whichever side of the sea the account is on. On the mainland an empty pack earns the coin on the
 Lumbridge men beside Bob; on the Ardougne side it comes from the bank. A bank not seen this run counts as holding no
-pickaxe, since a fresh account's holds only the tutorial's 25 coins. The stage runs before the coins and, in practice,
-again after them: `coins.ts` lets an HP-10 account die to the men (cheaper than banking, with the respawn two tiles
-away), and a death drops the pickaxe. Three of the four lab accounts in each run lost one there; the same death
-cost rs/632 its given-up account.
+pickaxe, since a fresh account's holds only the tutorial's 25 coins. The stage runs before the coins and, when the
+account dies in the coins stage, again after them, since a death drops the pickaxe. In rs/732's runs, three of the
+four lab accounts died to the men in `coins.ts` (HP 10, no food) and lost one; the same death cost rs/632 its
+given-up account. The coins stage now runs through `coins-driver.ts`, which rests on the men at 3 Hitpoints
+('Deaths' below).
 
 **Stalls** (`stall.ts`). An account in its method stage whose coins (carried plus banked, from its ledger lines) have
 not moved for `--stall-minutes` (default 10; 0 turns it off) gets a `stalled` event and its method is aborted, so its
@@ -361,6 +362,91 @@ stages run again from where it stands. An abort is not a stage failure. While th
 `--stall-retries` (default 3) times, one threshold apart; then a loud `stalled: retries used up` event, and it is left
 running for a person to look at. The method itself ends with an error after 10 errands fail in a row
 (`pickpocket.ts` `maxErrandFailures`), which is a stage failure: three of those give the account up.
+
+### Deaths
+
+**What happened.** In the first live hour (2026-10-24 04:2x-04:5xZ), 16 fresh guards accounts at HP 40 had 8 deaths:
+7 on the Lumbridge men, one per account, 6-9 minutes into `coins.ts` at Thieving 46-51, and one on the Varrock
+guards at Thieving 62.
+
+**Why the men kill.** `speedrun/helpers/coins.ts` with `target: auto` chooses its target only between sessions
+(`cycle()`), and a session on the men has no exit but death: the men have no bank, the out-of-food return excludes
+them, and nothing re-checks the auto level. So a fresh account never leaves the men at Thieving 25; it pickpockets
+them until about 40 one-damage failures, less natural regeneration (1 Hitpoint every 100 ticks), kill it. The
+men's damage is fixed (pickpocket.dbrow `stun_damage` 1), so this is a schedule, not bad luck. It is the scored
+run's code and main is frozen, so the fix for `coins.ts` itself is rs/746; markets routes around it.
+
+**Why the guards are risky low down.** `coins.ts` eats only on a success at least 4 ticks after a stun ends, which
+in practice is the third success in a row after a failure, and then on every other success while under the maximum
+less 4. Its forced eat waits for 3 Hitpoints. Near that floor, a failure (2 damage) after a kebab that heals nothing
+(3 rolls in 32 at 4 Hitpoints or less, kebab.rs2) kills. Whether hp drifts there depends on the level. By
+`coins-driver.ts` `riskTable`, a model (i), at 9,000 ticks an hour, ignoring bank and food trips, and counting every
+eat as landing (so the healing is an upper bound):
+
+| Thieving | warriors: fail | net HP/h (healing capacity − damage) | coins/h | guards: fail | net HP/h | coins/h |
+|---|---|---|---|---|---|---|
+| 30 | 45% | −197 | 15.0k | 58% | −1,005 | 15.6k |
+| 40 | 39% | +306 | 17.9k | 51% | −633 | 20.2k |
+| 50 | 33% | +1,007 | 21.7k | 43% | −66 | 26.2k |
+| 55 | 31% | +1,345 | 23.4k | 39% | +265 | 29.5k |
+| 60 | 28% | +1,791 | 25.7k | 36% | +656 | 33.0k |
+| 70 | 23% | +2,883 | 31.0k | 29% | +1,724 | 42.3k |
+| 99 | 6% | +9,264 | 60.3k | 6% | +9,264 | 100.6k |
+
+The warriors break even at ~35, the guards at ~51, and the guards earn more at every level from 30. So the old
+`guardLevel: 40` put accounts on the guards exactly where they lose Hitpoints fastest. 55 costs nothing: Thieving
+climbs from 40 to 55 in about 9 minutes at 25x. The model's coin rates are above the measured ones (no trips); only
+the crossovers are used.
+
+**The fix: `markets/methods/coins-driver.ts`.** Every phase-2 use of the coin earner runs through it: the thieving,
+coins and admission stages, the Hitpoints queue and the guards method. It runs `coins.ts` on one explicit target at a
+time and leaves `coins.ts` unchanged:
+
+- It picks the target itself: the men below Thieving 25, the warriors below `guardLevel` (55), the guards from it. It
+  stops `coins.ts` when the choice changes. A broke account west of the toll with no food earns its 34 coins (toll and
+  kebabs) on the men beside the respawn, where `coins.ts` would walk to the Varrock bank.
+- At `floor` Hitpoints (10, or a third of the maximum if lower) on a food target, it stops `coins.ts` and eats up to
+  the maximum less 5 itself, one kebab every 3 ticks. On the men it rests at 3 Hitpoints until 10.
+- `coins.ts` walks to the kebabs (Varrock to Al-Kharid, past the aggressive level-20 dark wizards, `huntrange` 5)
+  with whatever hp the food left. The driver eats the last kebab first, rests if hp is under 60% of the maximum, and
+  tops up before the walk north to the guards.
+
+Options (`floor`, `walkHpPct`, `guardLevel`) go in the plan's `options.guards`; anything else passes to `coins.ts`.
+
+**The recorder (`deaths.ts`).** The runner reads every account's published state through a `DeathWatch`. A hit is a
+fall in current Hitpoints at the same maximum. Its source is a pickpocket failure, a dodgy kebab, a named npc or
+another player, read from the same tick's messages and combat events. Each death writes a ledger `death` line: its
+cause (the source of the most damage over the last 100 ticks), the hits, a Hitpoints trace, position, Thieving,
+carried coins and food, and the npcs and players within 5 tiles. Account and totals lines carry a `deaths` count, the
+`died` event is loud, and `report.ts` prints deaths by account, cause and stage/target with a line for each.
+
+**Measured** (fedora, block M18, 400 ms, `emulate-players.sh 1400`, every account fresh through tutorial and
+`hp-train.ts` to 40):
+
+| Run | Accounts | On the method | Deaths | Notes |
+|---|---|---|---|---|
+| Control: `coins.ts` auto, `guardLevel` 40 (rs/706 run 1) | 8, beside the 8 below | 53-90 min | **8, all on the men**, Thieving 41-53 | every hit in the last 100 ticks a pickpocket failure; hp held at 1-2 for ~20 ticks before the last; no death on warriors or guards |
+| Driver (run 1) | 8 | 32-50 min | **0** | floor eats twice (warriors, at 9 and 10 HP), 19 last-food eats |
+| Driver (run 2) | 16 at once | **72-126 min** | **0** | 65 driver eats, lowest at 9 HP; one rest; every account out at the stop; guards **53.3k coins an hour** median (47.8-59.9k), 1.35M across the 16 |
+
+The live guard death (a06 at Thieving 62, 24 kebabs) did not reproduce: no control account died on warriors or
+guards in their 60-90 minutes there. The model above puts 62 on the safe side, so either the live account's eats
+were dropped more often than the lab's, or it was unlucky near the forced-eat floor. The driver's floor covers both,
+and the recorder will name the cause if it happens again. Hand-off from `hp-train.ts` was at 24-40 of 40 Hitpoints
+(the cows chip; it eats at 4), which the men's floor makes safe. Run 2's 53.3k matches rs/544's 53.6k for the guards
+from Thieving 1, so the driver costs no income.
+
+```sh
+# run 2: 16 fresh guards on the driver, block M18, inside the build slot
+bash markets/methods/lab/emulate-players.sh 1400   # a worktree edit: never commit it
+. markets/methods/lab/block.sh M18 && LAB_RUNNERS=0 LAB_TIMEOUT=10200 speedrun/lab/lab.sh p7lab00 \
+  'markets/phase2/lab.ts:--prefix=p7g:--knights=0:--guards=16:--iron=0:--hungry=0:--exchange=0:--sigint=150:--out=runs/rs706b/fixed16'
+bun markets/phase2/report.ts runs/rs706b/fixed16/ledger.jsonl
+```
+
+The control ran the same `lab.ts` from a `git archive` of the tree without the driver (`f725e94`) beside run 1, on
+one engine. Copy `server/content/pack` into such an archive: without `obj.pack` the runner's valuation throws on
+every ledger line and its stop never finishes.
 
 ### Stuck behind a door
 

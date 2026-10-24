@@ -47,13 +47,14 @@ import { tickMs } from '../../speedrun/lib/wait';
 import { writerExclusion } from '../lib/accounts.ts';
 import { Gentle } from '../lib/demo.ts';
 import { DemoMarket, median, type MarketQuote } from '../lib/market.ts';
-import { role as coinsRole } from '../../speedrun/helpers/coins';
+import { role as coinsRole } from '../methods/coins-driver.ts';
 import { chooseSite } from '../methods/hp-model.ts';
 import { TargetClaims, type SiteId } from '../methods/hp-train.ts';
 import { ERRAND_LOG, role as pickpocketRole, TARGET_LOG } from '../methods/pickpocket.ts';
 import { numberFlag, parseArgs } from '../methods/probe-sampler.ts';
 import { debugNameOf } from '../methods/trips.ts';
 import { costOf } from '../methods/value.ts';
+import { DeathWatch, type DeathRecord } from './deaths.ts';
 import { buySharks, sellAtExchange, sellByShip, type BookReader } from './errands.ts';
 import { DEFAULT_POLICY, LoginGate } from './gate.ts';
 import { HpSites } from './hp-sites.ts';
@@ -140,6 +141,10 @@ class Worker {
     shortSessions = 0;
     thieving = 1;
     logout: Record<string, unknown> | null = null;
+    deaths = 0;
+    watch = new DeathWatch();
+    /** The pickpocket target the account's role last switched to (its 'phase' log line), for the death lines. */
+    coinsTarget: string | null = null;
     /** The first login of this run and the first tick seen after it: the Hitpoints line counts from here. */
     firstLoginAt: number | null = null;
     firstTick: number | null = null;
@@ -174,6 +179,7 @@ class Worker {
         this.sessionNo++;
         this.nextLedgerTick = -1;
         this.tick0 = null;
+        this.watch = new DeathWatch();
         this.stall.pause();
         this.workTicks = 0;
         this.workTick = null;
@@ -519,6 +525,7 @@ export class Runner {
                 roleState: w.roleState,
                 options: roleOptions({ ...w.plan, method: w.method }, this.plan),
                 event: (m, d) => {
+                    if (m.endsWith(': phase') && typeof d?.to === 'string') w.coinsTarget = d.to;
                     if (m === TARGET_EVENT && typeof d?.index === 'number') w.targetIndex = d.index;
                     if (m === ERRAND_EVENT && typeof d?.errand === 'string') w.errand = d.errand;
                     this.event(w, m, d);
@@ -531,7 +538,8 @@ export class Runner {
                 hooks: this.hooks(w, () => x)
             };
             const st = sequenceFor({ method: w.method, hp: w.plan.hp }, this.plan).find(s => !stageDone(s, sdk.getState()!, x.hooks, w.roleState))!;
-            if (st.do !== w.stage) this.event(w, 'stage', { to: st.do, ...('to' in st ? { level: st.to } : {}) }, true);
+            const p = sdk.getState()?.player;
+            if (st.do !== w.stage) this.event(w, 'stage', { to: st.do, ...('to' in st ? { level: st.to } : {}), hp: p?.hp, maxHp: p?.maxHp }, true);
             if (st.do !== 'method') {
                 w.methodAt = null;
                 w.targetIndex = null;
@@ -592,7 +600,8 @@ export class Runner {
             this.ledger({ kind: 'hp-queue', account: w.alias, occupancy: this.hpSites.occupancy(), capacity: this.hpSites.capacity() });
             this.event(w, 'every Hitpoints site is full: earning until one has room', {}, true);
         }
-        await runRoleUntil(x, coinsRole, { target: 'auto', guardLevel: 40 }, () => (this.hpSites.hasRoom() ? 'a Hitpoints site has room' : null));
+        // the driver, not coins.ts directly: a queued account still has its fresh 10 Hitpoints, and coins.ts on the men has no exit but death
+        await runRoleUntil(x, coinsRole, { target: 'auto' }, () => (this.hpSites.hasRoom() ? 'a Hitpoints site has room' : null));
     }
 
     // ------------------------------------------------------------ redirects
@@ -729,8 +738,17 @@ export class Runner {
 
     // ------------------------------------------------------------ the ledger
 
+    /** A death: the ledger's `death` line (its cause, hits and Hitpoints trace, deaths.ts) and a loud event. */
+    private died(w: Worker, d: DeathRecord): void {
+        w.deaths++;
+        this.ledger({ kind: 'death', account: w.alias, method: w.method, stage: w.stage, target: w.coinsTarget, session: w.sessionNo, deaths: w.deaths, ...d });
+        this.event(w, 'died', { cause: d.cause, damage: d.damage, target: w.coinsTarget, thieving: d.thieving, maxHp: d.maxHp, at: d.at, carriedCoins: d.carriedCoins, food: d.food, deaths: w.deaths }, true);
+    }
+
     private observe(w: Worker, s: BotWorldState): void {
         if (!s.inGame || !s.player) return;
+        const death = w.watch.observe(s);
+        if (death) this.died(w, death);
         // the bank's first published state can be empty while it loads; only a fresh account's really is
         if (s.bank?.isOpen && (s.bank.items.length > 0 || w.bank === null)) {
             w.bank = stacks(s.bank.items);
@@ -772,6 +790,7 @@ export class Runner {
             bank: w.bank,
             bankTick: w.bankTick,
             msPerTick,
+            deaths: w.deaths,
             pos: [s.player.worldX, s.player.worldZ],
             workTicks: w.workTicks,
             target: npc ? { index: npc.index, x: npc.tileX ?? npc.x, z: npc.tileZ ?? npc.z } : null
