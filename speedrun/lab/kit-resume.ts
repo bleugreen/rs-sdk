@@ -62,7 +62,7 @@ const manifest = readFileSync(MANIFEST, 'utf8');
 const concrete = (id: number, count: number, reason: string) => ({ items: [{ id, count }], reason });
 const plan = planMuleDeliveryFixtures({
     manifest, rows: ['H12'], onRequest: [], pack: objPack(),
-    overrides: { H12: { takeBacks: { 'coins @995': concrete(995, 1000, 'the ledger walk'), 'death rune': concrete(560, 49, 'the ledger walk'), 'chaos rune': concrete(562, 16, 'the ledger walk') } } },
+    overrides: { H12: { takeBacks: { 'antipoison(*)': concrete(175, 1, "H7's Antipoison(3)"), 'coins @995': concrete(995, 1000, 'the ledger walk'), 'death rune': concrete(560, 49, 'the ledger walk'), 'chaos rune': concrete(562, 16, 'the ledger walk') } } },
 });
 if (!plan.ok) {
     result('kit-resume-unresolved', plan.unresolved);
