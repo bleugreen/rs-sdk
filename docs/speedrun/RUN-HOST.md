@@ -56,19 +56,24 @@ wall clock at the 300 ms tick the demo ran until 19:56Z on 2026-10-22, and about
 about 5.9 h. Steps 3 to 7 take under an hour, so 9 h leaves about four hours of margin at 400 ms
 and about two at 600 ms (i). The same 9 h bounds the run's claim
 (below). Each hand-run launch below begins `T=9h;`, the only place the figure appears in a
-command, and a rehearsal replaces it with `T=30m`; `speedrun/tools/run-gate.ts` (steps 3-7) carries
-the same 9 h for the run and 30 min with `--rehearsal`. The gate account's tab and the measurements
+command, and a rehearsal replaces it with `T=30m`. `speedrun/tools/run-gate.ts` (steps 3-7) takes
+`--bound=DURATION` (a `timeout` duration such as `14h` or `90m`) for every piece it raises for the
+run (the gateway, page server, recording, live view and SCORED's tab), **default 14 h**, and 30 min
+with `--rehearsal` unless `--bound` is given. It refuses an empty, zero, negative or malformed bound
+before raising anything, and `up` and `handoff` print the bound in effect. 14 h because a stack raised
+about 45 min before the start must outlive a run of about 6.5 h with its allowances, plus margin;
+attempt 3's live rehearsal died when its stack expired mid-run (rs/659). The gate account's tab and the measurements
 carry their own short bounds, in the table. A bound counts from its own launch. If
 SCORED's login (step 7) slips more than two hours past step 3, tear the stack down and bring it up
 again before step 7.
 
 | Launch | Run | Rehearsal or measurement |
 |---|---|---|
-| Page server, gateway (`up`, step 3) | `T=9h` | `T=30m` (`--rehearsal`) |
-| Recording (`up`, step 5), SIGINT at the bound | `T=9h` | `T=30m` |
-| Live view (`up`, step 5) | `T=9h` | `T=30m` |
+| Page server, gateway (`up`, step 3) | `--bound`, default `14h` | `30m` (`--rehearsal`, unless `--bound`) |
+| Recording (`up`, step 5), SIGINT at the bound | `--bound`, default `14h` | `30m` |
+| Live view (`up`, step 5) | `--bound`, default `14h` | `30m` |
 | Chrome, the gate account's tab (`gate`, step 6) | - | `15m` |
-| Chrome, SCORED's tab (`handoff`, step 7) | `T=9h` | `T=30m` |
+| Chrome, SCORED's tab (`handoff`, step 7) | `--bound`, default `14h` | `30m` |
 | `tab-login.ts`, a tab's login (`gate`, `handoff`) | `3m` | `3m` (it gives up by itself after 120 s) |
 | A tab's logout, `logoutClean` attached to the tab (`gate`; step 8 for SCORED) | `3m` | `3m` (30 s to attach, `logoutClean`'s waits, 15 s to confirm) |
 | Gate (a)-(c), rs/96's CLI (`gate`) | - | `15m` (its probe gives up after 10 min) |
@@ -903,7 +908,8 @@ bypass it (`speedrun/helpers/standalone.ts`; HELPERS.md, "Credentials"), so the 
 cannot reach the relay either.
 
 **`up`**, on both machines, once the operator has disconnected (step 2). Bounds: the stack, the
-recording and the live view `T=9h`, or `T=30m` with `--rehearsal`:
+recording and the live view `--bound`, default `14h`, or `30m` with `--rehearsal` unless `--bound`
+is given; `up` prints the bound in effect:
 
 ```sh
 bun speedrun/tools/run-gate.ts up --claim=run
@@ -949,7 +955,7 @@ process argument (speedrun/README.md, "Logging the browser tab in"; cairn://p/rs
 **require rs/138 on RUN_COMMIT**. **Running tab-login is the account's login; opening the tab is
 not.**
 
-`gate` (the gate account's tab, bound `15m`) and `handoff` (SCORED's, `T=9h`) both open the tab with
+`gate` (the gate account's tab, bound `15m`) and `handoff` (SCORED's, `--bound`, default `14h`) both open the tab with
 this line, in session `chrome` of `tmux -L run`, and log it in with tab-login (bound 3 min; it gives
 up by itself after 120 s). For reference, not to paste:
 
@@ -1220,7 +1226,7 @@ The recording is captured on the VM itself, not over RDP: ffmpeg grabs the sessi
 gate and before SCORED's first login**, so the gate is measured with the capture running, as in the
 run, and `handoff` refuses unless it is running and advancing (step 5a, hand-over line 3). `up` runs
 it in session `rec` of `tmux -L run`, writing `~/recordings/run-<UTC>.mkv` (`rehearsal-<UTC>.mkv`
-with `--rehearsal`). At the bound (`T=9h`, or `T=30m`) `timeout` sends SIGINT, which ffmpeg treats
+with `--rehearsal`). At the bound (`--bound`, default `14h`, or `30m` with `--rehearsal`) `timeout` sends SIGINT, which ffmpeg treats
 like `q`: it finishes the file. Its line, for reference, not to paste:
 
 ```
@@ -1818,7 +1824,7 @@ round. Then on the machine, in order, each a hard check:
 3. display `:10` is at 1920x1080 and 24 planes, and **RDP is at 0 connections**;
 4. **the recording is running and advancing**;
 5. **the login count**: ours online plus SCORED's 1 is at most 80;
-6. it opens SCORED's bare page in Chrome (step 3's line, `T=9h`) and requires the six flags and
+6. it opens SCORED's bare page in Chrome (step 3's line, `--bound`, default `14h`) and requires the six flags and
    **exactly one Bot Client window, 1920 wide**;
 7. **the live-frame pass line** (step 5): the window in front is the run tab, and an x11grab frame
    of the display matches the page's own screenshot, at most 12/255;
