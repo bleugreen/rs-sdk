@@ -177,6 +177,9 @@ export class FailureRun {
     }
 }
 
+/** The role's log line on every change of target: the npc's index and tile, and the bot's own tile. */
+export const TARGET_LOG = 'target';
+
 export type Errand = 'bank' | 'go' | 'thieve';
 
 /** The next errand from a snapshot: bank when out of food or carrying `bankAt` coins, else thieve at the station. */
@@ -222,6 +225,7 @@ export class Pickpocketer {
     roams = 0;
     private startTick = 0;
     private lastReport = 0;
+    private loggedTarget = -1;
 
     constructor(private readonly ctx: RoleContext) {
         this.o = readOptions(ctx.options);
@@ -364,6 +368,10 @@ export class Pickpocketer {
             if (target) {
                 unseenSince = t;
                 tried.clear();
+                if (target.index !== this.loggedTarget) {
+                    this.loggedTarget = target.index;
+                    this.ctx.log(TARGET_LOG, { index: target.index, npc: [target.tileX ?? target.x, target.tileZ ?? target.z], me: [p.worldX, p.worldZ] });
+                }
             } else if (t - unseenSince >= 8) {
                 const i = roamTo(this.spot.spawns, { x: p.worldX, z: p.worldZ }, tried);
                 tried.add(i);
