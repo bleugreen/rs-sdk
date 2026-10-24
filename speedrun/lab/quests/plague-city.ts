@@ -1,38 +1,47 @@
 // Lab acceptance for the Plague City module (speedrun/quests/plague-city.ts, S08):
 //
 //   LAB_RUNNERS=0 speedrun/lab/lab.sh <bot> 'speedrun/lab/quests/plague-city.ts:--from=A:--until=Z:--runs=3:--dialogue=both:--launch'
+//   LAB_RUNNERS=0 LAB_HELPERS=<carrier> speedrun/lab/lab.sh <bot> 'speedrun/lab/quests/plague-city.ts:--from=A:--until=Z:--launch:--carrier=<carrier>'
 //
 // SCORED's levels on arrival at S08 (RUN-ORDER.md rows S02-S07): Magic 59 (S04), Mining 49 (S05,
 // which this quest takes to 64), Firemaking 99, Runecraft 44, Woodcutting 99, Prayer 95 (S07's
 // bury, S25b). Its pack (the slot ledger's walk after T07-08): a knife and one log, the staff of
-// water worn; then H6 (the quest's items and one Ardougne cast, 2 law and 2 water) staged as the
-// trade leaves it. Each fixture stages that pack less what the quest has used by then, plus what
-// it has handed over, and %elenaquest. Ticks are from Edmond's arrival tile (2568,3334): T07-08's
-// Camelot teleport and run are not in them, nor is H6's trade (9 m, primitives.md section 6),
-// which segment A only checks here.
+// water worn; then H6 (the quest's items and T08-09's 2 law runes; no water runes, the cast takes
+// its water from the staff) staged as the trade leaves it. Each fixture stages that pack less what
+// the quest has used by then, plus what it has handed over, and %elenaquest. Ticks are from
+// Edmond's arrival tile (2568,3334): T07-08's Camelot teleport and run are not in them, nor is H6's
+// trade (9 m, primitives.md section 6), which segment A only checks here.
+//
+// --carrier=<bot> (from A only): SCORED arrives without H6, and the carrier, staged beside Edmond
+// with H6, trades it over in segment A (`kitFrom`), as the run's H6 hand-off does.
 //
 // After a run that reached Z, `check` confirms the quest complete, the magic scroll read (Z's note:
 // the memorise and can-now-cast pages, the scroll gone), the 2,425 base Mining, and then casts the
-// Ardougne teleport from Edmond's house as T08-09 will: it must land.
+// Ardougne teleport from Edmond's house as T08-09 will, with no water runes held and the staff of
+// water worn: it must land and spend the 2 law.
 
 import type { TickRow } from '../../lib/ticks';
 import { questStatus } from '../../lib/quests';
 import { teleport, type TravelSdk } from '../../lib/travel';
-import { skillXp } from '../../lib/world';
-import type { Session } from '../../lib/session';
+import { give as tradeGive, sameName, type GiveResult } from '../../lib/trade';
+import { configId, invCount, skillXp, worn } from '../../lib/world';
+import { closeSession, openSession, type Session } from '../../lib/session';
 import { quest, stepId, steps, type Options, type ScrollRead } from '../../quests/plague-city';
-import { labMain, type LabQuest, type QuestFixture } from './run';
-import { result } from '../common';
+import { labMain, STAGING, type LabQuest, type QuestFixture } from './run';
+import { arg, result } from '../common';
+import { clearInventory, give, leaveTutorial, mustTele, tele } from '../setup';
 
 export const LEVELS = { magic: 59, mining: 49, firemaking: 99, runecraft: 44, woodcutting: 99, prayer: 95 } as const;
 
-/** SCORED's own pack at S08 (the knife, S07's kept log, the staff of water) and H6's runes. */
-const BASE = { knife: 1, logs: 1, staff_of_water: 1, lawrune: 2, waterrune: 2 } as const;
+/** SCORED's own pack at S08: the knife, S07's kept log and the staff of water (worn). */
+const BASE = { knife: 1, logs: 1, staff_of_water: 1 } as const;
+/** H6's runes (the ledger's row H6): T08-09's 2 law. No water: the cast takes it from the staff. */
+const H6_RUNES = { lawrune: 2 } as const;
 const H6 = { dwellberries: 1, bucket_water: 4, spade: 1, rope: 1, chocolate_dust: 1, bucket_milk: 1, snape_grass: 1 } as const;
 
 type Items = Record<string, number>;
 /** Quest items first: a full pack drops a ::give silently. */
-const pack = (quest: Items, kit: Items): Items => ({ ...quest, ...kit, ...BASE });
+const pack = (quest: Items, kit: Items): Items => ({ ...quest, ...kit, ...BASE, ...H6_RUNES });
 
 /** The kit as it stands after each phase: the berries go at D, the cure is mixed at F, the water poured at G, the rope tied at I. */
 const KIT = {
@@ -53,11 +62,17 @@ const fx = (letter: string, stage: number, quest: Items, kit: Items, tile: Quest
 });
 
 const EDMOND = { x: 2568, z: 3334 };
+/** Where the carrier waits for SCORED, beside Edmond's arrival tile. */
+const CARRIER_AT = { x: 2570, z: 3334 };
 const PIC = { elena_picture: 1 };
 const MASK = { gasmask: 1 };
 
+const CARRIER = arg('carrier', '');
+
 export const FIXTURES: readonly QuestFixture[] = [
-    fx('A', 0, {}, KIT.full, EDMOND, WORN, "Edmond's arrival tile (T07-08: 2568,3334 tol 1), H6 staged"),
+    CARRIER
+        ? { letter: 'A', levels: LEVELS, vars: vars(0), items: { ...BASE }, worn: WORN, tile: EDMOND, note: `Edmond's arrival tile, H6 with the carrier ${CARRIER}` }
+        : fx('A', 0, {}, KIT.full, EDMOND, WORN, "Edmond's arrival tile (T07-08: 2568,3334 tol 1), H6 staged"),
     fx('B', 0, {}, KIT.full, EDMOND),
     fx('C', 1, {}, KIT.full, EDMOND),
     fx('D', 1, PIC, KIT.full, { x: 2576, z: 3334 }),
@@ -105,19 +120,50 @@ export const REFERENCE: Readonly<Record<string, number>> = {
 const REWARD_XP = 24250 * 2.5;
 let xp0 = 0;
 
+const carrier = CARRIER ? await openSession(CARRIER, { pathfinding: false }) : null;
+let carrierGive: Promise<GiveResult> | null = null;
+
+/** The carrier holding H6 as the ledger's row has it, beside Edmond, its trade offer standing for SCORED. */
+async function stageCarrier(c: Session, scored: string): Promise<void> {
+    const sdk = c.sdk;
+    await sdk.sendCloseModal();
+    await tele(sdk, STAGING.x, STAGING.z);
+    await clearInventory(sdk);
+    const items = Object.entries({ ...H6, ...H6_RUNES });
+    for (const [k, n] of items) await give(sdk, k, n);
+    const held = sdk.getState()?.inventory ?? [];
+    for (const [k, n] of items) {
+        const have = held.filter(i => i.id === configId('obj', k)).reduce((a, i) => a + i.count, 0);
+        if (have < n) throw new Error(`carrier: gave ${n} ${k}, holding ${have}`);
+    }
+    await mustTele(sdk, CARRIER_AT.x, CARRIER_AT.z);
+    carrierGive = tradeGive(sdk, scored, items.map(([k, n]) => ({ item: configId('obj', k), n })), { openMaxTicks: 150 });
+}
+
 const lab: LabQuest<Options> = {
     title: `Plague City (S08, SCORED's levels: Magic 59, Mining 49; from Edmond's arrival tile 2568,3334)`,
     stepId,
     steps,
     fixtures: FIXTURES,
     reference: REFERENCE,
-    async prepare(session: Session) {
+    async prepare(session: Session, f: QuestFixture) {
         xp0 = skillXp(session.sdk, 'mining');
+        carrierGive = null;
+        if (carrier && f.letter === 'A') await stageCarrier(carrier, session.sdk.getState()!.player!.name);
     },
     async check(session: Session, _f: QuestFixture, rows: readonly TickRow[]) {
+        if (carrierGive) {
+            const g = await carrierGive;
+            result(`${stepId}_h6_carrier`, { ok: g.ok, ticks: g.ticks, gave: g.gave.map(i => `${i.name} x${i.count}`), reason: g.reason ?? null });
+            if (!g.ok) return `the carrier's H6 trade: ${g.reason}`;
+        }
         if (!rows.some(r => r.step === `${stepId}:Z-scroll` && !r.kind)) return undefined;
         const sdk = session.sdk;
         const s = sdk.getState()!;
+        // T08-09 as the ledger has it: H6's 2 law only, the water from the worn staff.
+        if (invCount(s, /^water rune$/i) > 0) return `${invCount(s, /^water rune$/i)} water runes held before the cast: the staff's water is not what is tested`;
+        if (!worn(s, /^staff of water$/i)) return 'the staff of water is not worn at the cast';
+        const law0 = invCount(s, /^law rune$/i);
         if (questStatus(s, quest) !== 'complete') return 'the quest is not complete after Z';
         const read = rows.filter(r => r.kind === 'note' && r.step === `${stepId}:Z`).map(r => (r.meta as { scrollRead?: ScrollRead }).scrollRead).find(Boolean);
         if (!read?.read) return `the scroll read was not observed (${JSON.stringify(read ?? null)})`;
@@ -127,13 +173,24 @@ const lab: LabQuest<Options> = {
         }
         // T08-09's cast: at %elenaquest 29 it is refused ('You haven't learnt how to cast this spell yet.').
         const cast = await teleport(sdk as unknown as TravelSdk, 'ardougne', { walkOnRefusal: false });
-        result(`${stepId}_ardougne_cast`, { ok: cast.ok, ticks: cast.ticks, reason: cast.reason ?? null, at: cast.at, scrollPages: read.pages });
+        const after = sdk.getState()!;
+        const runes = { lawBefore: law0, lawAfter: invCount(after, /^law rune$/i), waterHeld: invCount(after, /^water rune$/i), staff: worn(after, /^staff of water$/i)?.name ?? null };
+        result(`${stepId}_ardougne_cast`, { ok: cast.ok, ticks: cast.ticks, reason: cast.reason ?? null, at: cast.at, scrollPages: read.pages, ...runes });
         if (!cast.ok) return `the Ardougne teleport after the scroll: ${cast.reason}`;
+        if (runes.lawAfter !== law0 - 2) return `the cast spent ${law0 - runes.lawAfter} law, not 2`;
         return undefined;
     },
 };
 
 if (import.meta.main) {
-    await labMain(lab);
+    if (carrier) {
+        await leaveTutorial(carrier);
+        lab.options = { kitFrom: carrier.sdk.getState()!.player!.name };
+    }
+    try {
+        await labMain(lab);
+    } finally {
+        if (carrier) await closeSession(carrier);
+    }
     process.exit(0);
 }
