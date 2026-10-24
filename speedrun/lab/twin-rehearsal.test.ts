@@ -128,6 +128,29 @@ describe('substitutedChain', () => {
     });
 });
 
+describe('S14 Attack floor substitution', () => {
+    const plain = buildChain(cfg, { cues, manifest });
+    const sub = substitutedChain(cfg, cues, { S14: { minAttack: 94 } }, manifest);
+    const s14 = (c: ChainStep[]) => c.filter(s => s.id === 'S14');
+    test('only S14 changes: same steps and order, every S14 step marked substituted', () => {
+        expect(sub.map(s => `${s.id} ${s.name.replace(/^SUBSTITUTE /, '')}`)).toEqual(plain.map(s => `${s.id} ${s.name}`));
+        expect(s14(sub).length).toBeGreaterThan(0);
+        expect(s14(sub).every(s => s.name.startsWith(SUBSTITUTE))).toBe(true);
+        expect(sub.filter(s => s.id !== 'S14' && s.name.startsWith(SUBSTITUTE))).toEqual([]);
+    });
+    test('the cannon session accepts Attack 94 and still refuses 93; the plain chain still refuses 94', () => {
+        const session = (c: ChainStep[]) => c.find(s => s.id === 'S14' && s.name.endsWith('S14 cannon session'))!;
+        const attack = (n: number) => ({ ...baseState(), skills: baseState().skills.map(k => (k.name === 'Attack' ? { ...k, baseLevel: n, level: n } : k)) }) as BotWorldState;
+        const reason = (c: ChainStep[], n: number) => session(c).preconditions(attack(n), {} as never);
+        expect(String(reason(plain, 94))).toMatch(/Attack 94: the cannon's accuracy is the scimitar's at Attack 99/);
+        expect(String(reason(sub, 94))).not.toMatch(/Attack/);
+        expect(String(reason(sub, 93))).toMatch(/Attack 93: .* at Attack 94/);
+    });
+    test('a minAttack that is not a level is refused', () => {
+        expect(() => substitutedChain(cfg, cues, { S14: { minAttack: 0 } }, manifest)).toThrow(/not a level/);
+    });
+});
+
 describe('kitCheckWithout', () => {
     const item = (name: string, count = 1) => ({ name, count, id: 0, slot: 0 });
     const state = (inv: ReturnType<typeof item>[], worn: ReturnType<typeof item>[]) => ({ inventory: inv, equipment: worn }) as unknown as BotWorldState;
