@@ -20,14 +20,24 @@
 // One RESULT line: the step's ticks (in-world, every attempt), the drop and the recovery (wall ms and
 // those ms in ticks: the old player stays in the world until the new login takes it over, so they are
 // on the clock), the relog entries, and the host (`uname -n`): tick figures count only from bgsrv-mac.
+//
+// Our own run stack going away instead of the page's socket (rs/659, the twin's 01:33-01:38Z outage):
+// --gateway-down=N SIGKILLs the lab gateway (lab.sh's, by $LAB_LOG/gateway.pid) N ticks into the step
+// for --down-s seconds (default 60), the page's proxy with it when --proxy-down=1, then starts both
+// again. --logout-after-adopt=1 sends a raw logout click, past session.ts's guard as the SDK's reconnect
+// queue delivered one, on the first tick after run.ts adopts a session. The RESULT adds the outage
+// (the page's own tick and in-game flag at the kill and before the restart, read over DevTools while
+// the gateway is blind), every logout click the run sent, the injected one, and the step's in-world
+// ticks from start to end on the page's counter.
 
-import { mkdtempSync } from 'fs';
+import { mkdtempSync, readFileSync } from 'fs';
 import { hostname, tmpdir } from 'os';
 import { join } from 'path';
+import type { Subprocess } from 'bun';
 import type { BotWorldState } from '../../sdk/types';
 import { ReservationWatch, reservationPath } from '../lib/host-reservation';
-import { closeSession, cdpUrl, openSession, ROOT, type Session } from '../lib/session';
-import { evaluateInTab } from '../lib/tab';
+import { closeSession, cdpUrl, LOGOUT_BUTTON, openSession, ROOT, type Session } from '../lib/session';
+import { evaluateInTab, pageInGame } from '../lib/tab';
 import { newRunId, TickLog } from '../lib/ticks';
 import { tickMs, waitTicks, waitUntil } from '../lib/wait';
 import { runChainOnSession } from '../run';
@@ -49,6 +59,10 @@ if (!bot || !SCENARIOS.includes(scenario as never)) {
     process.exit(2);
 }
 const dropAfter = Number(flag('drop', '0'));
+const gatewayDownAfter = Number(flag('gateway-down', '0'));
+const downS = Number(flag('down-s', '60'));
+const proxyDown = flag('proxy-down', '0') === '1';
+const logoutAfterAdopt = flag('logout-after-adopt', '0') === '1';
 
 /**
  * The page drop, `--shape=title` (default): the game socket closed with the page's one reconnect
@@ -122,15 +136,24 @@ const agentPort = process.env.AGENT_PORT ?? '8300';
 const cdpPort = Number(webPort) + 5;
 const pagePort = Number(webPort) + 6;
 const base = mkdtempSync(join(tmpdir(), `drop-accept-${scenario}-`));
-const proxy = Bun.spawn(['bun', 'proxy.ts', `--world=http://localhost:${webPort}`, `--port=${pagePort}`, `--gateway=ws://localhost:${agentPort}`, `--bots-dir=${join(ROOT, 'bots')}`], {
-    cwd: join(ROOT, 'server', 'webclient'),
-    stdout: Bun.file(join(base, 'proxy.log')),
-    stderr: Bun.file(join(base, 'proxy.err')),
-});
-for (let k = 0; k < 50; k++) {
-    if (await fetch(`http://127.0.0.1:${pagePort}/bot?bot=x`, { redirect: 'manual' }).then(() => true, () => false)) break;
-    await Bun.sleep(200);
+let starts = 0;
+const spawnProxy = () =>
+    Bun.spawn(['bun', 'proxy.ts', `--world=http://localhost:${webPort}`, `--port=${pagePort}`, `--gateway=ws://localhost:${agentPort}`, `--bots-dir=${join(ROOT, 'bots')}`], {
+        cwd: join(ROOT, 'server', 'webclient'),
+        stdout: Bun.file(join(base, `proxy-${++starts}.log`)),
+        stderr: Bun.file(join(base, `proxy-${starts}.err`)),
+    });
+/** Until `url` answers anything over HTTP (bounded). */
+async function answers(url: string, tries = 100): Promise<boolean> {
+    for (let k = 0; k < tries; k++) {
+        if (await fetch(url, { redirect: 'manual' }).then(() => true, () => false)) return true;
+        await Bun.sleep(100);
+    }
+    return false;
 }
+let proxy = spawnProxy();
+await answers(`http://127.0.0.1:${pagePort}/bot?bot=x`);
+let gatewayChild: Subprocess | null = null;
 const browser = await launchLabBrowser(bot, { cdpPort, clientUrl: `http://127.0.0.1:${pagePort}/bot?server=localhost:${webPort}&gateway=ws://localhost:${agentPort}` });
 let session: Session | null = null;
 let code = 1;
@@ -148,6 +171,51 @@ try {
     let startTick: number | null = null;
     let drop: { tick: number; at: number; answer: string } | null = null;
     const cdp = cdpUrl(s.env)!;
+
+    // Every logout click the run sends, and the one injected past the guard.
+    const rawClick = s.sdk.sendClickComponent.bind(s.sdk);
+    const logoutClicks: Array<{ at: string; tick: number | null; sessionId: number }> = [];
+    s.sdk.sendClickComponent = (id: number) => {
+        if (id === LOGOUT_BUTTON) logoutClicks.push({ at: new Date().toISOString(), tick: s.sdk.getState()?.tick ?? null, sessionId: s.sessionId });
+        return rawClick(id);
+    };
+    let injected: { at: string; tick: number | null; adoptTick: number | null; sessionId: number } | null = null;
+    let finished = false;
+    const injectAfterAdopt = async (sid0: number) => {
+        for (;;) {
+            if (finished) return;
+            if (s.sessionId > sid0 && relogs.entries().some(e => e.via === 'adopted')) break;
+            await Bun.sleep(20);
+        }
+        const adoptTick = s.sdk.getState()?.tick ?? null;
+        for (let k = 0; k < 250 && (s.sdk.getState()?.tick ?? null) === adoptTick; k++) await Bun.sleep(20);
+        injected = { at: new Date().toISOString(), tick: s.sdk.getState()?.tick ?? null, adoptTick, sessionId: s.sessionId };
+        console.log(`[inject] raw logout click on tick ${injected.tick}, the first after the adopt (tick ${adoptTick}, session ${s.sessionId})`);
+        void rawClick(LOGOUT_BUTTON).catch(() => {});
+    };
+
+    const pageTick = async () => (await evaluateInTab<number | null>(cdp, s.name, '(() => { const o = window.gameClient && window.gameClient.botOverlay; return o && typeof o.serverTick === "number" ? o.serverTick : null; })()').catch(() => null))?.value ?? null;
+    const outage: { downAt?: string; upAt?: string; tickAtKill?: number | null; inGameAtKill?: boolean | null; tickBeforeUp?: number | null; inGameBeforeUp?: boolean | null; gatewayBackMs?: number } = {};
+    const takeDown = async () => {
+        const pid = Number(readFileSync(join(process.env.LAB_LOG ?? join(tmpdir(), 'speedrun-lab'), 'gateway.pid'), 'utf8').trim());
+        outage.tickAtKill = await pageTick();
+        outage.inGameAtKill = await pageInGame(cdp, s.name).catch(() => null);
+        outage.downAt = new Date().toISOString();
+        process.kill(pid, 'SIGKILL');
+        if (proxyDown) proxy.kill('SIGKILL');
+        console.log(`[outage] gateway${proxyDown ? ' and proxy' : ''} killed at page tick ${outage.tickAtKill} (${gatewayDownAfter} ticks into ${step.name}); back in ${downS} s`);
+        await Bun.sleep(downS * 1000);
+        outage.tickBeforeUp = await pageTick();
+        outage.inGameBeforeUp = await pageInGame(cdp, s.name).catch(() => null);
+        const t0 = Date.now();
+        gatewayChild = Bun.spawn(['bun', 'run', 'gateway.ts'], { cwd: join(ROOT, 'server', 'gateway'), stdout: Bun.file(join(base, 'gateway-2.log')), stderr: Bun.file(join(base, 'gateway-2.err')) });
+        if (proxyDown) proxy = spawnProxy();
+        await answers(`http://127.0.0.1:${agentPort}/`);
+        outage.upAt = new Date().toISOString();
+        outage.gatewayBackMs = Date.now() - t0;
+        console.log(`[outage] gateway back at ${outage.upAt}; the page read tick ${outage.tickBeforeUp}, in game ${outage.inGameBeforeUp} before the restart`);
+    };
+
     const arm = () => {
         if (startTick !== null) {
             if (drop && xp.resumed === null) xp.resumed = xpNow();
@@ -155,6 +223,15 @@ try {
         }
         startTick = s.sdk.getState()?.tick ?? -1;
         xp.start = xpNow();
+        if (logoutAfterAdopt) void injectAfterAdopt(s.sessionId);
+        if (gatewayDownAfter > 0) {
+            const off = s.sdk.onStateUpdate(st => {
+                if (outage.downAt || st.tick < startTick! + gatewayDownAfter) return;
+                outage.downAt = 'pending';
+                off();
+                void takeDown().catch(e => console.error(`[outage] ${e}`));
+            });
+        }
         if (dropAfter <= 0) return;
         const off = s.sdk.onStateUpdate(st => {
             if (drop || st.tick < startTick! + dropAfter) return;
@@ -183,8 +260,11 @@ try {
     const pre = step.preconditions(s.sdk.getState()!, {});
     console.log(`[drop] ${scenario}: ${step.name}, preconditions ${pre === true ? 'pass' : pre}; drop ${dropAfter > 0 ? `${dropAfter} ticks in` : 'none (baseline)'}; host ${hostname()}; tick ${tickMs()} ms`);
     const { result } = await runChainOnSession(s, { log, chain, reservation: new ReservationWatch(reservationPath(join(base, 'no-reservation.json')), { label: 'drop' }), relogs, label: 'drop' });
+    finished = true;
     code = result.code;
     xp.end = xpNow();
+    // The run's own clean logout at the end is the last click; any before it was a logout of the stand-in mid-run.
+    const endTick = logoutClicks.at(-1)?.tick ?? s.sdk.getState()?.tick ?? null;
     const rows = log.rows.filter(r => !r.kind && r.step === step.name);
     const drops = log.rows.filter(r => r.step === DROP_STEP);
     const resumes = log.rows.filter(r => r.step === RESUME_STEP);
@@ -194,6 +274,8 @@ try {
     const stepTicks = rows.reduce((n, r) => n + r.ticks, 0) + cut;
     console.log(`RESULT drop-accept ${JSON.stringify({
         scenario, shape, step: step.name, dropAfter, host: hostname(), tickMs: tickMs(), code, outcome: result.outcome,
+        gatewayDownAfter, downS, proxyDown, outage, injected, logoutClicks, midRunLogouts: logoutClicks.length - 1,
+        startTick, endTick, inWorldTicks: startTick !== null && endTick !== null ? endTick - startTick : null,
         stepTicks, rows: rows.map(r => ({ ticks: r.ticks, ok: r.ok, sessionId: r.sessionId })), cutTicks: cut,
         drop, drops: drops.map(r => ({ reason: (r.meta as { reason?: string }).reason, recoverMs: (r.meta as { recoverMs?: number }).recoverMs })),
         recoverMs, recoverTicks: Math.round(recoverMs / tickMs()), resumes: resumes.map(r => ({ ticks: r.ticks, point: (r.meta as { step?: string; mode?: string }).step, mode: (r.meta as { mode?: string }).mode })),
@@ -207,5 +289,6 @@ try {
     if (session) await closeSession(session).catch(() => {});
     await browser.kill().catch(() => {});
     proxy.kill('SIGTERM');
+    (gatewayChild as Subprocess | null)?.kill('SIGTERM');
 }
 process.exit(code);
