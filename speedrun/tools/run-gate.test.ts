@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test';
+import { existsSync, mkdtempSync, readFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import {
-    botClientWindows, checkAccount, choiceLine, choose, DEFAULT_PREFER, forwarded, gateLabel, type HandoffStep, handoffSteps, gateRow, gateScrub, locsLine, loopsSummary, type Machine, type MachineGate,
+    botClientWindows, boundLine, checkAccount, chromeLine, choiceLine, choose, DEFAULT_PREFER, DEFAULT_RUN_BOUND, forwarded, REHEARSAL_BOUND, runBound, stackLines, gateLabel, type HandoffStep, handoffSteps, gateRow, gateScrub, locsLine, loopsSummary, type Machine, type MachineGate,
     machineVerdict, oneWindowProblem, parseClaimStatus, parseDirectJson, parsePrefer, readLocs, relabel, remoteLine, type ScenePoll, sceneLine, shq, sshArgv,
     type StateLook, Stop, tileLine, tileRead, watchScene,
 } from './run-gate';
@@ -247,6 +250,72 @@ describe('handoff --no-login (SCORED is logged in once, by run.ts)', () => {
         const before: HandoffStep[] = ['claim', 'preconditions', 'display', 'recording', 'login count', 'tab', 'chrome flags', 'one window', 'title frame'];
         expect(handoffSteps({ noLogin: true })).toEqual([...before, 'served bundle']);
         expect(handoffSteps({ noLogin: false })).toEqual([...before, 'login', 'secrets', 'one window after login', 'in-game frame']);
+    });
+});
+
+describe('--bound: the bound of every piece raised for the run', () => {
+    test('14h for the run and 30m for a rehearsal by default; --bound overrides either', () => {
+        expect(DEFAULT_RUN_BOUND).toBe('14h');
+        expect(REHEARSAL_BOUND).toBe('30m');
+        expect(runBound([], false)).toBe('14h');
+        expect(runBound(['--claim=run'], false)).toBe('14h');
+        expect(runBound(['--rehearsal'], true)).toBe('30m');
+        expect(runBound(['--bound=90m'], false)).toBe('90m');
+        expect(runBound(['--rehearsal', '--bound=2h'], true)).toBe('2h');
+        for (const v of ['14h', '90m', '3600', '45s', '1d', '1.5h']) expect(runBound([`--bound=${v}`], false)).toBe(v);
+    });
+    test('empty, zero, negative and anything timeout would not take are refused', () => {
+        for (const v of ['', '0', '0h', '0.0m', '-1h', '-5', '14x', 'h', '14 h', '14hh', '1h30m', '.5h', '14h;rm -rf ~', 'inf']) {
+            expect(() => runBound([`--bound=${v}`], false)).toThrow(Stop);
+        }
+        expect(() => runBound(['--bound', '14h'], false)).toThrow('--bound=14h');
+        expect(() => runBound(['--bound=14h', '--bound=9h'], false)).toThrow('given 2 times');
+    });
+    test('every launch command carries the effective bound, and none carries 9h', () => {
+        const o = { display: ':10', liveBind: '127.0.0.1', recording: '/h/recordings/run-x.mkv', progress: '/h/recordings/ffmpeg-progress.log', bun: '/h/.bun/bin/bun', home: '/h' };
+        for (const bound of [runBound([], false), runBound(['--rehearsal'], true), runBound(['--bound=90m'], false)]) {
+            const lines = stackLines({ ...o, bound });
+            expect(Object.keys(lines).sort()).toEqual(['gateway', 'live', 'page', 'rec']);
+            const all = [...Object.values(lines), chromeLine(bound, ':10', 'cairn_s247')];
+            for (const l of all) {
+                expect(l).toStartWith('exec timeout ');
+                expect(l).toContain(`--kill-after=30s ${bound} `);
+                expect(l).not.toMatch(/\b9h\b/);
+            }
+        }
+        expect(stackLines({ ...o, bound: '14h' }).rec).toStartWith('exec timeout -s INT --kill-after=30s 14h ffmpeg ');
+        expect(chromeLine('14h', ':10', 'cairn_s247')).toContain('--app="http://127.0.0.1:8899/bot?bot=cairn_s247"');
+        expect(() => chromeLine('14h', ':10', 'a;b')).toThrow(Stop);
+    });
+    test('no 9h bound is left in run-gate.ts', () => {
+        expect(readFileSync(join(import.meta.dir, 'run-gate.ts'), 'utf8')).not.toMatch(/\b9 ?h\b/);
+    });
+    test('the Mac forwards --bound to the on-machine run', () => {
+        expect(forwarded('up', ['--bound=90m', '--claim=run'])).toEqual(['--claim=run', '--bound=90m']);
+        expect(forwarded('handoff', ['--machine=twin', '--bound=12h', '--no-login'])).toEqual(['--bound=12h', '--no-login']);
+        expect(forwarded('up', ['--claim=run'])).toEqual(['--claim=run']);
+    });
+    test('up and handoff print the bound in effect and where it came from', () => {
+        expect(boundLine('up', '14h', [], false)).toBe('bound 14h (the run default) for the gateway, page server, recording and live view');
+        expect(boundLine('up', '30m', ['--rehearsal'], true)).toBe('bound 30m (the rehearsal default) for the gateway, page server, recording and live view');
+        expect(boundLine('handoff', '12h', ['--bound=12h'], false)).toBe("bound 12h (--bound) for SCORED's tab");
+        expect(boundLine('gate', '14h', [], false)).toBeNull();
+    });
+    test('a bad bound is refused before anything starts, on the Mac and on the machine', async () => {
+        const tmp = mkdtempSync(join(tmpdir(), 'run-gate-bound-'));
+        const script = join(import.meta.dir, 'run-gate.ts');
+        const env = { ...process.env, RS_RUN_HOST: '', RS_TWIN_HOST: '', RS_RUN_TAILNET: '' };
+        for (const [argv, made] of [
+            [['up', '--bound=0', `--log-dir=${join(tmp, 'mac')}`], join(tmp, 'mac')],
+            [['handoff', '--machine=twin', '--scored-env=x', '--bound=', `--log-dir=${join(tmp, 'mac2')}`], join(tmp, 'mac2')],
+            [['on-machine', 'up', '--live-bind=127.0.0.1', '--bound=-1h', `--out=${join(tmp, 'on')}`], join(tmp, 'on')],
+        ] as const) {
+            const p = Bun.spawn([process.execPath, script, ...argv], { env, stdout: 'pipe', stderr: 'pipe' });
+            const [out, code] = await Promise.all([new Response(p.stdout).text(), p.exited]);
+            expect(code).toBe(2);
+            expect(out).toContain('STOP: --bound must be a positive timeout duration');
+            expect(existsSync(made)).toBe(false);
+        }
     });
 });
 
