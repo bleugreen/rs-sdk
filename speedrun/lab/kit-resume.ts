@@ -45,7 +45,7 @@ import { MANIFEST } from '../tools/slot-ledger';
 import { arg, botArg, result } from './common';
 import { planMuleDeliveryFixtures, type FixtureItem } from './mule-delivery-fixtures';
 import { MM_VARS, PREREQ_VARS, ROUTE_LEVELS } from './quests/monkey-madness';
-import { cheat, clearInventory, leaveTutorial, mustTele, setStats, setVars } from './setup';
+import { cheat, clearInventory, dropMatching, leaveTutorial, mustTele, setStats, setVars } from './setup';
 
 const scoredName = botArg();
 const muleName = arg('mule', '');
@@ -252,6 +252,8 @@ try {
         await stopCarrier();
         const cueAfterServe = readCue(options.cueDir);
         // Attempt 4's resume: A to run again, SCORED relogged (the tab reset) low and freshly poisoned.
+        // Attempt 4's A never reached Narnode: no seal held, the quest unstarted.
+        await dropMatching(scored.sdk, [/^Gnome royal seal$/i]);
         await setVars(scored.sdk, Object.fromEntries(MM_VARS.map(v => [v, 0])));
         await waitTicks(scored.sdk, 2);
         const kitBefore = monkeyMadness.kitMissing(scored.sdk.getState()!, monkeyMadness.DEFAULT_OPTIONS.bow).map(([n, k]) => `${k} ${n.source}`);
