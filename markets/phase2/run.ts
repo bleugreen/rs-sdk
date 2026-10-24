@@ -43,7 +43,7 @@ import { loadBotEnv, type BotEnv } from '../../speedrun/lib/session';
 import { tickMs } from '../../speedrun/lib/wait';
 import { writerExclusion } from '../lib/accounts.ts';
 import { Gentle } from '../lib/demo.ts';
-import { DemoMarket, type MarketQuote } from '../lib/market.ts';
+import { DemoMarket, median, type MarketQuote } from '../lib/market.ts';
 import { role as coinsRole } from '../../speedrun/helpers/coins';
 import { chooseSite } from '../methods/hp-model.ts';
 import { TargetClaims, type SiteId } from '../methods/hp-train.ts';
@@ -559,9 +559,19 @@ export class Runner {
             warmupMs,
             (this.plan.ramp!.holdMinutes * 60_000) / 2
         );
+        // the income figure beside the step rule's: over wall time, the bank trips in
+        const grossPerLogin = holdRates(
+            measured.map(w => ({ alias: w.alias, methodAt: w.methodAt, readings: w.readings })),
+            start,
+            warmupMs,
+            (this.plan.ramp!.holdMinutes * 60_000) / 2,
+            'gross'
+        );
+        const grossMedian = median(Object.values(grossPerLogin));
+        const gross = { perLogin: grossPerLogin, median: grossMedian, perHour: Math.round(grossMedian * (3_600_000 / this.tickMs)) };
         const d = r.evaluate(perLogin, now);
-        this.ledger({ ...d, holdStart: new Date(d.holdStart).toISOString(), holdEnd: new Date(d.holdEnd).toISOString(), perHour: Math.round(d.median * (3_600_000 / this.tickMs)), loginsMeasured: d.rates.length });
-        this.event(null, `ramp step ${d.step}: ${d.action}`, { reason: d.reason, median: d.median, incumbents: d.incumbents, logins: d.logins, measured: d.rates.length }, true);
+        this.ledger({ ...d, holdStart: new Date(d.holdStart).toISOString(), holdEnd: new Date(d.holdEnd).toISOString(), perHour: Math.round(d.median * (3_600_000 / this.tickMs)), loginsMeasured: d.rates.length, gross });
+        this.event(null, `ramp step ${d.step}: ${d.action}`, { reason: d.reason, median: d.median, incumbents: d.incumbents, grossMedian, logins: d.logins, measured: d.rates.length }, true);
         if (d.action !== 'stop') return;
         for (const w of knights.filter(k => k.admittedAt === null)) {
             const m = nextFallback(this.rampFallback, this.plan.ramp!.fallbackMix);

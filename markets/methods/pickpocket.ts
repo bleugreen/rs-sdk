@@ -179,7 +179,10 @@ export class FailureRun {
 
 /** The role's log line on every change of target: the npc's index and tile, and the bot's own tile. */
 export const TARGET_LOG = 'target';
-/** The role's log line on every change of errand (`{ errand }`): the phase-2 runner counts the ticks spent thieving. */
+/**
+ * The role's log line on every change of errand (`{ errand }`: an Errand, or 'roam' for a walk to a spawn when no
+ * target is in view, door recoveries included): the phase-2 runner counts the ticks spent in 'thieve'.
+ */
 export const ERRAND_LOG = 'errand';
 
 export type Errand = 'bank' | 'go' | 'thieve';
@@ -228,6 +231,7 @@ export class Pickpocketer {
     private startTick = 0;
     private lastReport = 0;
     private loggedTarget = -1;
+    private errand: Errand | 'roam' | null = null;
 
     constructor(private readonly ctx: RoleContext) {
         this.o = readOptions(ctx.options);
@@ -248,12 +252,11 @@ export class Pickpocketer {
         this.startTick = this.lastReport = this.s.tick;
         this.ctx.log('start', { options: this.o, thieving: this.s.skills.find(k => k.name === 'Thieving')?.baseLevel, hp: this.s.player!.maxHp });
         const failures = new FailureRun(this.o.maxErrandFailures);
-        let last: Errand | null = null;
         while (!this.ctx.signal.aborted) {
             const s = this.s;
             if (s.dialog.isOpen) await this.ctx.sdk.sendClickDialog(0);
             const e = nextErrand({ food: this.food(s).length, coins: coinsIn(s), bankAt: this.o.bankAt, atStation: dist(s, this.spot.anchor) <= this.spot.radius });
-            if (e !== last) this.ctx.log(ERRAND_LOG, { errand: (last = e) });
+            this.setErrand(e);
             try {
                 if (e === 'bank') await this.bank();
                 else if (e === 'go') await this.walk(this.spot.anchor);
@@ -272,6 +275,12 @@ export class Pickpocketer {
             }
         }
         this.report('stop');
+    }
+
+    private setErrand(e: Errand | 'roam'): void {
+        if (e === this.errand) return;
+        this.errand = e;
+        this.ctx.log(ERRAND_LOG, { errand: e });
     }
 
     /** Throws WalkFailed when the walk fails, after a door retry if it was unroutable. */
@@ -380,7 +389,12 @@ export class Pickpocketer {
                 const i = roamTo(this.spot.spawns, { x: p.worldX, z: p.worldZ }, tried);
                 tried.add(i);
                 this.roams++;
-                await this.walk(this.spot.spawns[i]!);
+                this.setErrand('roam');
+                try {
+                    await this.walk(this.spot.spawns[i]!);
+                } finally {
+                    this.setErrand('thieve');
+                }
                 s = this.s;
                 unseenSince = lastProgress = s.tick;
                 continue;

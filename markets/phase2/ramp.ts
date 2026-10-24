@@ -163,8 +163,9 @@ export interface HoldLogin {
 /**
  * Each login's gp a tick over a hold that began at `start`: from its first reading at or after the later of `start`
  * and the end of its warm-up (`warmupMs` after it reached the method) to its last reading. A login measured over
- * less than `minSpanMs` is left out, as is one with no two readings in one session. Readings with work counts give
- * the rate at the knights (`workRate`); without them, the rate over the whole window (`rateBetween`).
+ * less than `minSpanMs` is left out, as is one with no two readings in one session. `measure` 'knights' (the step
+ * rule's) gives the rate at the knights from readings with work counts (`workRate`); 'gross', or readings without
+ * them, the rate over the whole window (`rateBetween`), bank trips included: the income figure.
  *
  * Both guard the comparison against what is not crowding (docs/markets/phase2.md 'Knights crowding'). The warm-up
  * keeps a login's arrival out: it reaches the method at the Ardougne docks with no food, so its first minutes are
@@ -173,14 +174,14 @@ export interface HoldLogin {
  * every ~21 minutes (50,000 coins carried), longer than a hold, so a wall-clock hold catches some logins' deposit
  * trip and not others'; in the lab the step-1 knights read 11% lower in step 2 for that alone.
  */
-export function holdRates(logins: readonly HoldLogin[], start: number, warmupMs: number, minSpanMs: number): Record<string, number> {
+export function holdRates(logins: readonly HoldLogin[], start: number, warmupMs: number, minSpanMs: number, measure: 'knights' | 'gross' = 'knights'): Record<string, number> {
     const out: Record<string, number> = {};
     for (const l of logins) {
         const from = l.methodAt === null ? start : Math.max(start, l.methodAt + warmupMs);
         const a = l.readings.find(x => x.at >= from);
         const b = l.readings.at(-1);
         if (!a || !b || b.at - a.at < minSpanMs) continue;
-        const v = a.work !== undefined && b.work !== undefined ? workRate(a, b) : rateBetween(a, b);
+        const v = measure === 'knights' && a.work !== undefined && b.work !== undefined ? workRate(a, b) : rateBetween(a, b);
         if (v !== null) out[l.alias] = v;
     }
     return out;
