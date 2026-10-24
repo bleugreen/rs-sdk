@@ -429,9 +429,9 @@ function serveCannon(sdk: FakeSdk, o: { falseDecay?: boolean } = {}) {
         const fx = pending;
         pending = [];
         return tick(cur => {
-            let next = { ...cur, ...(typeof patch === 'function' ? patch(cur) : patch) } as BotWorldState;
-            for (const f of fx) next = { ...next, ...f(next) };
-            return next;
+            let delta: Partial<BotWorldState> = typeof patch === 'function' ? patch(cur) : patch;
+            for (const f of fx) delta = { ...delta, ...f({ ...cur, ...delta } as BotWorldState) };
+            return delta;
         });
     };
     return srv;
