@@ -10,11 +10,9 @@
 // --carrier-rows (default every bound row) selects the carriers file's rows, as a slice would.
 // Exit: 0 every named family ready, 1 one was not, 3 refused (not a lab).
 
-import { join } from 'node:path';
 import type { Subprocess } from 'bun';
 import { loadBotEnv, ROOT } from '../lib/session';
 import { prepareCueDir } from '../runner/cue-keeper';
-import { loadRunConfig } from '../run';
 import { muleCueDir, type RunConfig } from '../runner/chain';
 import { readFileSync } from 'node:fs';
 import { MANIFEST } from '../tools/slot-ledger';
@@ -25,7 +23,7 @@ import { stopLauncher } from './helper-launch';
 import { launchS21Givers } from './s21-launch';
 import { args } from './dress-rehearsal';
 import { labRefusal } from './stand-ins';
-import { canonName } from '../helpers/altar-cue';
+import { canonName, cueDir } from '../helpers/altar-cue';
 
 const list = (v: string | undefined) => (v ?? '').split(/[,\s]+/).filter(Boolean);
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -44,9 +42,8 @@ async function main(argv: string[]): Promise<number> {
         return 3;
     }
     const agentPort = Number(process.env.AGENT_PORT ?? 8300);
-    const runDir = join(ROOT, 'run-machine');
-    // The cue dir as a run config resolves it (RC_CUE_DIR, else run-machine/rc-cue).
-    const cfg = { cueDir: loadRunConfigCueDir(runDir) } as Pick<RunConfig, 'cueDir' | 'h12o' | 'muleCueDir'>;
+    // The cue dir a run config resolves to (RC_CUE_DIR, else run-machine/rc-cue).
+    const cfg = { cueDir: cueDir() } as Pick<RunConfig, 'cueDir' | 'h12o' | 'muleCueDir'>;
     prepareCueDir(cfg.cueDir, { fresh: true });
     prepareCueDir(muleCueDir(cfg), { fresh: true });
     const launchers: Subprocess[] = [];
@@ -89,10 +86,5 @@ async function main(argv: string[]): Promise<number> {
     return results.every(r => r.ok) ? 0 : 1;
 }
 
-/** The cue dir loadRunConfig would give (RC_CUE_DIR, else <runDir>/rc-cue), without a config file. */
-function loadRunConfigCueDir(runDir: string): string {
-    void loadRunConfig;
-    return process.env.RC_CUE_DIR ? join(process.env.RC_CUE_DIR) : join(runDir, 'rc-cue');
-}
 
 if (import.meta.main) process.exit(await main(process.argv.slice(2)));
