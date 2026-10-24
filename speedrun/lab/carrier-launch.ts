@@ -16,7 +16,7 @@
 //   muleCanReady: staged exactly, not travelling, healthy, on the tile), before SCORED logs in.
 // The chain's own DeliveryOwner then prepares each row, waits for that readiness and opens the cue.
 
-import { mkdtempSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import type { Subprocess } from 'bun';
@@ -162,10 +162,26 @@ export function seedGives(stock: ReadonlyMap<number, number>, pack: ObjPack = ob
 
 const carried = (s: Session) => s.sdk.getInventory().reduce((n, i) => n + i.count, 0);
 
+/**
+ * The checkout's bots/<account>/bot.env (gitignored), which the lite runner a launched session starts
+ * reads, pointed at lab.sh's gateway; an existing one keeps its password (the lab account already has
+ * it), and the launcher's own bot.env in `botsDir` takes the same password, so both logins are one account.
+ */
+export function stagingBotEnv(o: { account: string; botsDir: string; agentPort: number; root?: string }): void {
+    const launcher = loadBotEnv(o.account, o.botsDir);
+    const dir = join(o.root ?? ROOT, 'bots', o.account);
+    const password = existsSync(join(dir, 'bot.env')) ? loadBotEnv(o.account, join(o.root ?? ROOT, 'bots')).PASSWORD ?? launcher.PASSWORD : launcher.PASSWORD;
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const body = (gateway: boolean) => `BOT_USERNAME=${o.account}\nPASSWORD=${password}\nSERVER=${launcher.SERVER}\n${gateway ? `GATEWAY_URL=ws://localhost:${o.agentPort}\n` : ''}SHOW_CHAT=false\nTELEMETRY=false\nPROFANITY_FILTER=false\n`;
+    writeFileSync(join(dir, 'bot.env'), body(true), { mode: 0o600 });
+    // The launcher refuses a bot.env naming another gateway: its copy names none.
+    writeFileSync(join(o.botsDir, o.account, 'bot.env'), body(false), { mode: 0o600 });
+}
+
 /** A lab account's own client, logged in for staging and out again where it was left (a launcher logs it in after). */
 export async function stageLabAccount(o: { account: string; botsDir: string; agentPort: number }, stage: (s: Session) => Promise<void>): Promise<void> {
-    const env = { ...loadBotEnv(o.account, o.botsDir), GATEWAY_URL: `ws://localhost:${o.agentPort}` };
-    const s = await openSession(o.account, { env, launch: true });
+    stagingBotEnv(o);
+    const s = await openSession(o.account, { launch: true });
     try {
         await leaveTutorial(s);
         await stage(s);

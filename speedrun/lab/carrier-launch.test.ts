@@ -140,6 +140,25 @@ describe('the carriers launcher and their bank seed', () => {
     });
 });
 
+describe('stagingBotEnv', () => {
+    test("the checkout's bot.env names the lab gateway, the launcher's none, both one password; an existing password is kept", async () => {
+        const { writeLabBotEnvs } = await import('./altar-launch');
+        const { stagingBotEnv } = await import('./carrier-launch');
+        const { loadBotEnv } = await import('../lib/session');
+        const root = mkdtempSync(join(tmpdir(), 'stage-root-'));
+        const botsDir = join(root, 'launch-bots');
+        writeLabBotEnvs(botsDir, ['cairn_dx01'], 'localhost:9640');
+        stagingBotEnv({ account: 'cairn_dx01', botsDir, agentPort: 8340, root });
+        const own = loadBotEnv('cairn_dx01', join(root, 'bots'));
+        const launcher = loadBotEnv('cairn_dx01', botsDir);
+        expect([own.GATEWAY_URL, launcher.GATEWAY_URL, own.SERVER, own.PASSWORD]).toEqual(['ws://localhost:8340', undefined, 'localhost:9640', launcher.PASSWORD]);
+        const first = own.PASSWORD;
+        writeLabBotEnvs(botsDir, ['cairn_dx01'], 'localhost:9640');
+        stagingBotEnv({ account: 'cairn_dx01', botsDir, agentPort: 8340, root });
+        expect([loadBotEnv('cairn_dx01', join(root, 'bots')).PASSWORD, loadBotEnv('cairn_dx01', botsDir).PASSWORD]).toEqual([first, first]);
+    });
+});
+
 describe('carrierGaps', () => {
     test('none named is no gap (the stub or staff supply serves the rows, as before); named, they are three distinct lab cairn_ names', () => {
         expect(carrierGaps({})).toEqual([]);
