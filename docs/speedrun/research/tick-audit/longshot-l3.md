@@ -4,9 +4,10 @@ Read-only investigation (rs/657, under rs/158) answering the operator's 'throw i
 shots'. It covers four things. First, death as a teleport (D1). Second, xp that replaces a band
 (D2). Third, random events (D3). Fourth, transport not yet on the route (D4). Last comes anything
 else that is ugly but legal under tenet 6 (E). It changes no code, no test and no canonical
-document. No demo login was made, and no lab engine was started. Every figure below comes from
-source reads, the repository's measured rows, and the SDK's own offline pathfinder
-(`sdk/pathfinding.ts` `findLongPath`, over the collision snapshot the walker uses).
+document. No demo login was made. Figures come from four places: source reads, the repository's
+measured rows, the SDK's own offline pathfinder (`sdk/pathfinding.ts` `findLongPath`, over the
+collision snapshot the walker uses), and one short lab probe of the top three candidates' new legs
+(section 2a; local engine on bgsrv-mac, 400 ms, lite client, a scratch script not committed).
 
 Labels: **m** measured (the run is cited), **r** read from source (file:line; content paths are under
 `server/content/scripts/` unless shown), **i** inferred (arithmetic shown), **e** estimate. Row
