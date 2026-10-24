@@ -13,11 +13,7 @@ import { compactJournal } from '../lib/quests';
 import { Observation, resolveResume } from '../runner/resume';
 import type { Observed, RunnerSession } from '../runner/step';
 import {
-<<<<<<< ours
-    BANANA_TREE_IDS, bananaRoomDrops, h12Plan, DEFAULT_OPTIONS, roomFor, doneAt, EXIT_DROPS, exitState, h12Kit, H12_POTIONS, H12_SHARKS, isWaydarIntroEnd, itemMilestone, setStepNote, talkableNpc, JOURNAL_MARKS, JOURNAL_PROBE, journalMilestone, MM_OBJ, mmMilestone, PUZZLE_TILE_IDS,
-=======
-    BANANA_TREE_IDS, bananaRoomDrops, DEFAULT_OPTIONS, roomFor, doneAt, EXIT_DROPS, exitState, h12Kit, H12_POTIONS, H12_SHARKS, waydarIntroWatch, itemMilestone, setStepNote, talkableNpc, JOURNAL_MARKS, JOURNAL_PROBE, journalMilestone, MM_OBJ, mmMilestone, PUZZLE_TILE_IDS,
->>>>>>> theirs
+    BANANA_TREE_IDS, bananaRoomDrops, h12Plan, DEFAULT_OPTIONS, roomFor, doneAt, EXIT_DROPS, exitState, h12Kit, H12_POTIONS, H12_SHARKS, waydarIntroWatch, itemMilestone, setStepNote, talkableNpc, JOURNAL_MARKS, JOURNAL_PROBE, journalMilestone, MM_OBJ, mmMilestone, PUZZLE_TILE_IDS,
     BELOW_30_EATING, cureWanted, eatBelowFor, sharksToDrop, GARKOR_WEST, isMonkeyChatter, CAGE, CAGE_NORTH_STRIP, CAGE_TILES, inCage, letOut, letOutPick, LET_OUT_ATTEMPTS, MINDER_REACH, nearestFire, sceneBuilt, tileIn, underTemple, scorpionsNear, SCORPION_CLOSE, SCORPION_REACH, sigilRoom, h12oLeg, legCue, pFinalStop, closeLeftTrade, DECLINE_TICKS, H12O_M_ROW, mTopUpCap, ASK_SHARK, ASK_SUPER_ANTIPOISON, H12O_SCOPE, onTradeOpen, P_TOPUP_MAX_SHARKS, pTopUpAsk, immunityWanted,
     AREAS, inArea, inCell, zooknockWay, type ZooknockLegs,
     ARCHER_REACH, AUNT_BOX, crateRoute, crateSteps, entersSleepingZone, SLEEPING_DETOURS, sleepingDetour, GUARD_REACH, legPrayerFor, M_TOPUP_TILE, mLegSize, mTopUpSharks, NO_DWELL, pathTiles, pLegSize, POSTED_ARCHERS, prayerRuns, receiveLeg, RELIGIOUS_GUARDS, SLEEPING_ZONE, tilePrayer, TOPUP_TRIES, TOPUP_WAIT, tradeIdle, type Receive, nextBananaTree, SUPER_IMMUNE_TICKS, offAtoll, patrolLeavesLane, SEGMENT_EATING, topUpWanted, resolveOptions, REWARD_ITEMS, seg, segmentName, SEGMENTS, stepId, steps, templeLeft, treeRouteRefusal, yRoom, type MmContext,
