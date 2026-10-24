@@ -278,6 +278,24 @@ describe('H and I: a target still in its cage (rs/693)', () => {
         expect(sdk.sent).toEqual([]);
     });
 
+    test('released: a page up (Bouncer caged before the scorpion\'s death hook) is answered, the content releases him, no door', async () => {
+        const page = { isOpen: true, isWaiting: false, pageId: 'g1', options: [{ index: 1, text: 'Click here to continue', buttonType: 6, componentId: 10 }] } as BotWorldState['dialog'];
+        const bouncer = (x: number) => ({ ...scorpion(x, 3162), name: 'Bouncer', index: 10 }) as NearbyNpc;
+        const sdk = new FakeSdk({ ...world({ at: { x: 2603, z: 3155 } }), dialog: page, nearbyNpcs: [bouncer(2607)], nearbyLocs: [arenaDoor()] });
+        let releaseAt = -1;
+        sdk.onSend = (a, f) => {
+            if (f.state!.dialog.isOpen && a.method !== 'sendInteractLoc' && releaseAt < 0) releaseAt = f.state!.tick + 3;
+        };
+        // Waits longer than the 12-tick wait before the content lets him out: the pages must be answered, not waited on.
+        const ran = await drive(sdk, released(ctxFor(sdk), /^Bouncer$/i, 'Bouncer'), 60, s => {
+            if (releaseAt < 0) return {};
+            if (s.tick + 1 >= releaseAt) return { dialog: { isOpen: false, options: [], isWaiting: false }, nearbyNpcs: [bouncer(2606)] };
+            return { dialog: { isOpen: false, options: [], isWaiting: false } };
+        });
+        expect(ran).toBe(false);
+        expect(sdk.sent.some(a => a.method === 'sendInteractLoc')).toBe(false);
+    });
+
     test('released: still caged after the wait, the arena door from inside runs the release again', async () => {
         const sdk = new FakeSdk({ ...world({ at: TILES.arenaDoorInside }), nearbyNpcs: [scorpion(2608, 3160)], nearbyLocs: [arenaDoor()] });
         let releaseAt = -1;

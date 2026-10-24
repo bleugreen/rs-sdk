@@ -416,7 +416,25 @@ export async function released(ctx: Ctx, target: RegExp, what: string, waitTicks
         const n = findNpc(s, target);
         return !!n && !caged(n);
     };
-    if ((await waitUntil(sdk, out, { maxTicks: waitTicks })).ok) return false;
+    // The pages still open are the release's own way in (the round's mesbox, the scorpion's death
+    // hook before Bouncer's): answered, and the wait counts from the last one closing. Bouncer is
+    // spawned caged before his hook's pages, so I can arrive here with the General's first page up.
+    let quietFrom = currentTick(sdk);
+    for (let rounds = 0; rounds < 6; rounds++) {
+        const s = sdk.getState()!;
+        if (out(s)) return false;
+        if (s.dialog.isOpen) {
+            await converse(sdk, [], { openTicks: 1, idle: 1, maxTicks: 40, interrupts: interrupts() });
+            quietFrom = currentTick(sdk);
+            continue;
+        }
+        const left = waitTicks - (currentTick(sdk) - quietFrom);
+        if (left <= 0) break;
+        const w = await waitUntil(sdk, st => out(st) || st.dialog.isOpen, { maxTicks: left });
+        if (w.ok && out(w.state)) return false;
+        if (!w.ok) break;
+    }
+    if (out(sdk.getState()!)) return false;
     const n = findNpc(sdk, target);
     const t0 = currentTick(sdk);
     await go(ctx, TILES.arenaDoorInside, 'to the arena door (the release again)');
