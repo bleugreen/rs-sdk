@@ -14,7 +14,7 @@ import { decideReceiver, newReceiverCtx, type GiveSpec, type ReceiveResult, type
 import { Observation, resolveResume } from '../runner/resume';
 import type { StepContext } from '../runner/step';
 import {
-    BandLedger, bandFor, bandParams, bandTechnique, BANDS, BoneCue, CAMELOT_RUNES, erlangB, expectedRolls, FOOTPRINT, freeDirs, handBackSpecs, hitBetween, MEASURE_DROPS, modelTicksPerLog, NORMAL_KEEP, PRAYER_RUN_TICKS, PROBE_DIRS, respawnTicks, routeFrom, ROUTES,
+    BandLedger, bandFor, bandParams, bandTechnique, BANDS, BoneCue, CAMELOT_RUNES, carriedLogs, erlangB, expectedRolls, FOOTPRINT, freeDirs, handBackSpecs, hitBetween, MEASURE_DROPS, modelTicksPerLog, NORMAL_KEEP, PRAYER_RUN_TICKS, PROBE_DIRS, respawnTicks, routeFrom, ROUTES,
     S07_BONE_CUE, SITES, skill, steps, successChance, summarizeBand, type WoodcuttingOptions
 } from './woodcutting';
 import { createKnifeCycle, CYCLE_METHODS } from '../../server/webclient/src/bot/programs/knife-cycle';
@@ -1804,7 +1804,7 @@ describe("woodcutting: S07's giver group takes turns (rs/383's b01-b04, bones.gr
         const band = h.byName(WILLOWS);
         // the willow log counts as room: the band drops it
         expect(band.preconditions(full, {})).toBe(true);
-        const noLog = inSight(state({ level: 99, prayer: 99, items: [...KIT, 'Oak logs', 'Pot'], bones: 23 }));
+        const noLog = inSight(state({ level: 99, prayer: 99, items: [...KIT, 'Pot', 'Pot'], bones: 23 }));
         expect(band.preconditions(noLog, {})).toBe('0 free inventory slots and 23 bones to bury, 2 needed, 1 of them free for the first log');
         const willowSlot = full.inventory.find(i => i.name === 'Willow logs')!.slot;
         h.sdk.onStateUpdate(() => {});
@@ -1822,6 +1822,68 @@ describe("woodcutting: S07's giver group takes turns (rs/383's b01-b04, bones.gr
             stop();
         }
         expect(await firstRun).toContain(willowSlot);
+    });
+
+    describe("oak logs carried into the willow band count as room, and the band drops them first (rs/635's lab)", () => {
+        /** The willow band's start: the drops it sent before its first run (the script stops there). */
+        const firstDrops = async (start: BotWorldState) => {
+            const g = session({ loads: 19, trades: { cairn_b01: 1 }, final: true });
+            let drops: number[] | null = null;
+            const h = harness(start, s07(g.dir, g.receive, { lastLoad: 21 }), async sdk => {
+                drops = drops_(sdk);
+                throw new Error('stop at the first run');
+            });
+            const band = h.byName(WILLOWS);
+            const pre = band.preconditions(start, {});
+            const stop = ticking(h.sdk);
+            try {
+                await band.run(h.ctx).catch(() => {});
+            } finally {
+                stop();
+            }
+            return { h, pre, drops: drops as number[] | null };
+        };
+        const oakSlots = (s: BotWorldState) => s.inventory.filter(i => i.name === 'Oak logs').map(i => i.slot);
+
+        test('(a) 2 oak logs and 13 bones carried in from the oak band (the lab\'s pack, 10 free): it passes and drops both oak logs before its first run', async () => {
+            const start = inSight(state({ level: 73, items: [...KIT, 'Oak logs', 'Oak logs'], bones: 13, prayer: 41 }));
+            expect(28 - start.inventory.length).toBe(10);
+            const r = await firstDrops(start);
+            expect(r.pre).toBe(true);
+            expect(r.drops).toEqual(oakSlots(start));
+            expect(r.h.lines.join('\n')).toMatch(/dropped 2 oak log\(s\) carried in from the oak band/);
+        });
+
+        test("(b) attempt 3's live willow census (axe, knife, a log, an oak log, 23 bones) still passes, and its oak log is dropped", async () => {
+            const start = inSight(state({ level: 73, items: [...KIT, 'Oak logs'], bones: 23, prayer: 53 }));
+            expect(28 - start.inventory.length).toBe(1);
+            const r = await firstDrops(start);
+            expect(r.pre).toBe(true);
+            expect(r.drops).toEqual(oakSlots(start));
+        });
+
+        test('(c) a resume into the willow band holding 2 oak logs and 23 bones (a full pack): it resumes there, passes, and drops the oak logs', async () => {
+            const start = inSight(state({ level: 73, items: [...KIT, 'Oak logs', 'Oak logs'], bones: 23, prayer: 53, tick: 2000 }));
+            expect(start.inventory).toHaveLength(28);
+            const g = session({ loads: 19, trades: { cairn_b04: 1 } });
+            const h = harness(start, s07(g.dir, g.receive), prayerRuns(0, []));
+            const p = await resolveResume(h.all, new Observation(start), {} as never);
+            expect(`${p.mode} ${p.step}`).toBe('resume woodcutting:willow-73-99');
+            const r = await firstDrops(start);
+            expect(r.pre).toBe(true);
+            expect(r.drops).toEqual(oakSlots(start));
+        });
+
+        test('the oak band counts and drops no oak logs of its own at its start (unchanged), and the normal band none', () => {
+            const s = inSight(state({ level: 15, items: [...KIT, 'Oak logs'], fill: 23 }));
+            expect(28 - s.inventory.length).toBe(0);
+            const h = harness(s, {});
+            // the oak band's own product counts as before (productLogs), so this pack passes on its oak log alone
+            expect(h.byName('woodcutting:oak-15-73').preconditions(s, {})).toBe(true);
+            expect(carriedLogs(s, 'oak')).toEqual([]);
+            expect(carriedLogs(s, 'normal')).toEqual([]);
+            expect(carriedLogs(s, 'willow').map(i => i.name)).toEqual(['Oak logs']);
+        });
     });
 
     test('a trade mixing babydragon and big bones fills the bones want, and the knife cycle buries both', () => {

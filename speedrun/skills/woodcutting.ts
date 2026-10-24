@@ -345,6 +345,15 @@ export function productLogs(s: BotWorldState, tree: Tree): InventoryItem[] {
     return tree === 'normal' ? [] : s.inventory.filter(i => PRODUCT[tree].test(i.name));
 }
 
+/**
+ * The oak band's product logs carried into the willow band (its last runs' logs): the willow band drops
+ * them at its start and counts them as room. Without it, two oak logs carried in with a part load left
+ * the willow precondition one slot short of a load (rs/635's lab). None for another band.
+ */
+export function carriedLogs(s: BotWorldState, tree: Tree): InventoryItem[] {
+    return tree === 'willow' ? productLogs(s, 'oak') : [];
+}
+
 function near(s: BotWorldState, t: Tile, r: number): boolean {
     const p = s.player;
     return !!p && Math.max(Math.abs(p.worldX - t[0]), Math.abs(p.worldZ - t[1])) <= r;
@@ -1065,7 +1074,7 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null, next
         if (knifeCapable && (!count(s.inventory, KNIFE) || !count(s.inventory, LOGS))) return `technique ${technique} needs a knife and a normal log`;
         if (knifeCapable && !s.skills.some(k => k.name.toLowerCase() === 'fletching' && k.baseLevel >= 1)) return 'technique needs Fletching 1';
         // the logs this band drops at its start count as free
-        const free = 28 - s.inventory.length + (b.tree === 'normal' ? 0 : extraLogs(s, o.keepProducts).length + productLogs(s, b.tree).length);
+        const free = 28 - s.inventory.length + (b.tree === 'normal' ? 0 : extraLogs(s, o.keepProducts).length + productLogs(s, b.tree).length + carriedLogs(s, b.tree).length);
         // a burying band's first cycles bury the bones it holds, each a slot freed for the log; the
         // first log needs a free slot all the same, as a run buries only once it has anchored on one
         const held = burying ? bonesHeld(s) : 0;
@@ -1089,8 +1098,10 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null, next
         if (b.tree !== 'normal') {
             // a drop keeps the walk queue, and it lands before the first load's trade completes
             const extra = extraLogs(s0, o.keepProducts);
-            for (const i of extra.slice(0, 5)) void sdk.sendDropItem(i.slot);
+            const carried = carriedLogs(s0, b.tree);
+            for (const i of [...extra, ...carried].slice(0, 5)) void sdk.sendDropItem(i.slot);
             if (extra.length) o.log(`${b.name}: dropped ${Math.min(5, extra.length)} normal log(s) past ${o.keepProducts} at the band's start`);
+            if (carried.length) o.log(`${b.name}: dropped ${Math.min(5 - Math.min(5, extra.length), carried.length)} oak log(s) carried in from the oak band at the band's start`);
         }
         if (site.trees && !(s0.player?.worldX === site.stand[0] && s0.player?.worldZ === site.stand[1])) {
             // `trees` are the tiles reachable from the stand itself (knife-cycle header)
