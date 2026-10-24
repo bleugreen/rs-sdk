@@ -56,6 +56,7 @@ for (const n of [carrier, scoredName]) if (!isLoopbackHost(loadBotEnv(n).SERVER 
 const manifest = readFileSync(manifestFile, 'utf8');
 mkdirSync(cueRoot, { recursive: true, mode: 0o700 });
 const root = join(cueRoot, '..');
+mkdirSync(join(root, 'cue'), { recursive: true, mode: 0o700 });
 const where = () => ({ host: hostname(), load: loadavg().map(l => +l.toFixed(2)), at: new Date().toISOString() });
 const log = TickLog.open(runId, join(root, 'ticks.jsonl'));
 const say = (event: string, fields: Record<string, unknown> = {}) => console.log(JSON.stringify({ event, tick: scored?.sdk.getState()?.tick ?? null, ...where(), ...fields }));
@@ -107,7 +108,7 @@ function measure(): Record<string, unknown> {
     const buries = rowsOf('(bury) mining.bury: load ').map(r => ({ step: r.step.replace('(bury) ', ''), startTick: r.startTick, endTick: r.endTick, ...metaOf(r) }));
     const segs = rowsOf('(band) mining.bury: load ').flatMap(r => (metaOf(r).segments as Array<{ ticks: number; ores: number; buried?: number; technique: string }>) ?? []);
     const lap = segs.reduce((a, s) => ({ ticks: a.ticks + s.ticks, ores: a.ores + s.ores, buried: a.buried + (s.buried ?? 0) }), { ticks: 0, ores: 0, buried: 0 });
-    const steps = log.rows.filter(r => slice.some(s => s.name === r.step) && r.kind === undefined).map(r => ({ step: r.step, startTick: r.startTick, endTick: r.endTick, ticks: r.ticks, ok: r.ok }));
+    const steps = log.rows.filter(r => slice.some(s => s.name === r.step) && r.kind !== 'program' && r.kind !== 'note').map(r => ({ step: r.step, startTick: r.startTick, endTick: r.endTick, ticks: r.ticks, ok: r.ok }));
     const hands = steps.filter(s => /^H4m\.\d+ hand-off$/.test(s.step));
     // A load's cost on the band: from its bury step's lap end (the last bone, or Mining 99) to the next lap's first ore.
     const firstSeg = (k: number) => rowsOf(`(segment) mining.bury: load ${k}`)[0]?.startTick;
