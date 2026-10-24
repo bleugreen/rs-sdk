@@ -44,10 +44,10 @@ describe('stageStart', () => {
     });
     test('the thieving and admission stages at the target the coins driver would pick', () => {
         expect(stageStart({ do: 'thieving', to: 55 }, 'knights', state({ thieving: 10 }), opts)).toEqual(STANDS.man);
-        expect(stageStart({ do: 'admission' }, 'knights', state({ thieving: 99, inventory: Array(30).fill('Coins') }), opts)).toEqual(STANDS.guard);
+        expect(stageStart({ do: 'admission' }, 'knights', state({ thieving: 99, inventory: Array(40).fill('Coins') }), opts)).toEqual(STANDS.guard);
     });
     test("the guards method at the driver's target; a12 redirected to guards on Karamja is sent to the Varrock guards", () => {
-        expect(stageStart({ do: 'method', method: 'guards' }, 'guards', state({ at: KARAMJA, thieving: 99, inventory: Array(30).fill('Coins') }), opts)).toEqual(STANDS.guard);
+        expect(stageStart({ do: 'method', method: 'guards' }, 'guards', state({ at: KARAMJA, thieving: 99, inventory: Array(40).fill('Coins') }), opts)).toEqual(STANDS.guard);
     });
     test('the Ardougne methods on the Ardougne side; a staged Shilo account where it stands', () => {
         expect(stageStart({ do: 'method', method: 'knights' }, 'knights', state({}), opts)).toEqual(ARDOUGNE_LANDING);
