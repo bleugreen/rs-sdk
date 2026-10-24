@@ -93,6 +93,42 @@ export const unroutable = (message: string): boolean => UNROUTABLE.test(message)
 
 export class WalkFailed extends Error {}
 
+export interface FoodWithdraw {
+    /** speedrun/lib/bank.ts `withdrawMany` of the food. */
+    withdraw(): Promise<{ ok: boolean; reason?: 'bank_not_open' | 'missing' | 'timeout' }>;
+    /** Food carried now. */
+    carried(): number;
+    /** Food in the bank as published now; null when the bank is closed or its items have not loaded. */
+    inBank(): number | null;
+    wait(ticks: number): Promise<void>;
+    log(message: string, data?: Record<string, unknown>): void;
+}
+
+export type FoodOutcome = { ok: true } | { ok: false; absent: boolean; reason: string };
+
+/**
+ * Withdraw the trip's food, telling a bank with no food from a withdraw that failed. Only 'missing' with the loaded
+ * bank showing none, twice two ticks apart, is an absence (`absent`: the runner's food fallback acts on it). A
+ * timeout, a closed bank or a bank list not yet loaded is retried, `tries` attempts in all; the demo's knights had a
+ * withdraw time out with 125 sharks banked and were sent to the fallback for it. Food that arrives late counts.
+ */
+export async function withdrawFood(d: FoodWithdraw, tries = 3): Promise<FoodOutcome> {
+    let reason = 'not tried';
+    for (let attempt = 1; attempt <= tries; attempt++) {
+        const r = await d.withdraw();
+        if (r.ok || d.carried() > 0) return { ok: true };
+        reason = r.reason ?? 'failed';
+        if (r.reason === 'missing' && d.inBank() === 0) {
+            await d.wait(2);
+            if (d.carried() > 0) return { ok: true };
+            if (d.inBank() === 0) return { ok: false, absent: true, reason: 'none in the bank' };
+        }
+        d.log('food withdraw failed', { attempt, tries, reason, inBank: d.inBank() });
+        if (attempt < tries) await d.wait(3);
+    }
+    return { ok: false, absent: false, reason };
+}
+
 export interface DoorWalk {
     /** speedrun/lib/act.ts `walkTo`: bot.walkTo, planned on the SDK's precomputed long-path map. */
     walk(t: Tile): Promise<{ ok: boolean; message: string }>;
@@ -287,13 +323,28 @@ export class Pickpocketer {
         const d = await depositAll(this.ctx.sdk);
         if (!d.ok) this.ctx.log('deposit incomplete', { reason: d.reason, remaining: d.remaining.map(i => i.name) });
         const food = new RegExp(`^${this.o.food.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
-        const w = await withdrawMany(this.ctx.sdk, [{ item: food, n: this.o.foodPerTrip > 0 ? this.o.foodPerTrip : 'fill' }]);
+        const sdk = this.ctx.sdk;
+        const count = (items: readonly { name: string; count: number }[]) => items.filter(i => food.test(i.name)).reduce((n, i) => n + i.count, 0);
+        const w = await withdrawFood({
+            withdraw: () => withdrawMany(sdk, [{ item: food, n: this.o.foodPerTrip > 0 ? this.o.foodPerTrip : 'fill' }]),
+            carried: () => count(sdk.getState()?.inventory ?? []),
+            inBank: () => {
+                const b = sdk.getState()?.bank;
+                return b?.isOpen && b.items.length > 0 ? count(b.items) : null;
+            },
+            wait: async n => void (await waitTicks(sdk, n)),
+            log: (m, d) => this.ctx.log(m, d)
+        });
         this.banks++;
-        this.ctx.reportBank({ items: this.ctx.sdk.getBankItems().map(i => ({ id: i.id, name: i.name, count: i.count })) });
+        this.ctx.reportBank({ items: sdk.getBankItems().map(i => ({ id: i.id, name: i.name, count: i.count })) });
         await this.ctx.bot.closeBank();
         if (!w.ok) {
-            this.ctx.log('out of food in the bank', { food: this.o.food, reason: w.reason });
-            throw new Error('no food');
+            // only a confirmed absence is 'out of food': the runner sends the account to its food fallback on it
+            if (w.absent) {
+                this.ctx.log('out of food in the bank', { food: this.o.food, reason: w.reason });
+                throw new Error('no food');
+            }
+            throw new Error(`food withdraw failed: ${w.reason}`);
         }
         this.report('banked');
     }

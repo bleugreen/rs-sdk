@@ -1,5 +1,55 @@
 import { describe, expect, test } from 'bun:test';
-import { FailureRun, nextErrand, roamTo, routable, shouldEat, toward, unroutable, walkThroughDoors, WalkFailed, type DoorWalk } from './pickpocket';
+import { FailureRun, nextErrand, roamTo, routable, shouldEat, toward, unroutable, walkThroughDoors, WalkFailed, withdrawFood, type DoorWalk, type FoodWithdraw } from './pickpocket';
+
+/** A FoodWithdraw whose withdraws answer `results` in turn; `bank` and `carried` are what the state shows. */
+function fakeFood(results: Array<{ ok: boolean; reason?: 'bank_not_open' | 'missing' | 'timeout' }>, o: { bank: number | null; carried?: number; arriveAfter?: number }) {
+    let calls = 0;
+    const logs: string[] = [];
+    const d: FoodWithdraw = {
+        withdraw: async () => {
+            calls++;
+            return results.shift() ?? { ok: true };
+        },
+        carried: () => (o.arriveAfter !== undefined && calls >= o.arriveAfter ? 28 : (o.carried ?? 0)),
+        inBank: () => o.bank,
+        wait: async () => undefined,
+        log: m => void logs.push(m)
+    };
+    return { d, logs, calls: () => calls };
+}
+
+describe('withdrawFood', () => {
+    test('a timeout with sharks in the bank is retried, never an absence', async () => {
+        const f = fakeFood([{ ok: false, reason: 'timeout' }, { ok: true }], { bank: 125 });
+        expect(await withdrawFood(f.d)).toEqual({ ok: true });
+        expect(f.calls()).toBe(2);
+        expect(f.logs).toEqual(['food withdraw failed']);
+    });
+    test('timeouts that persist fail without claiming the bank is empty', async () => {
+        const f = fakeFood([{ ok: false, reason: 'timeout' }, { ok: false, reason: 'timeout' }, { ok: false, reason: 'timeout' }], { bank: 125 });
+        expect(await withdrawFood(f.d)).toEqual({ ok: false, absent: false, reason: 'timeout' });
+        expect(f.calls()).toBe(3);
+    });
+    test('food that arrives after the wait timed out counts', async () => {
+        const f = fakeFood([{ ok: false, reason: 'timeout' }], { bank: 97, arriveAfter: 1 });
+        expect(await withdrawFood(f.d)).toEqual({ ok: true });
+        expect(f.calls()).toBe(1);
+    });
+    test('only missing with the loaded bank showing none is an absence', async () => {
+        const f = fakeFood([{ ok: false, reason: 'missing' }], { bank: 0 });
+        expect(await withdrawFood(f.d)).toEqual({ ok: false, absent: true, reason: 'none in the bank' });
+        expect(f.calls()).toBe(1);
+    });
+    test('missing while the bank list has not loaded is retried', async () => {
+        const f = fakeFood([{ ok: false, reason: 'missing' }, { ok: false, reason: 'missing' }, { ok: false, reason: 'missing' }], { bank: null });
+        expect(await withdrawFood(f.d)).toEqual({ ok: false, absent: false, reason: 'missing' });
+        expect(f.calls()).toBe(3);
+    });
+    test('a closed bank is retried', async () => {
+        const f = fakeFood([{ ok: false, reason: 'bank_not_open' }, { ok: true }], { bank: null });
+        expect(await withdrawFood(f.d)).toEqual({ ok: true });
+    });
+});
 
 // the messages sdk/actions.ts walkTo returns; the first two are the demo's trapped knights' (2026-10-24)
 const SHORT = 'Path to (2653, 3300) stops 17 tiles short at (2669, 3317) - the rest is unroutable from here (locked door or separate room?)';
