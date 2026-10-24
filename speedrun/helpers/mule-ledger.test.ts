@@ -251,11 +251,14 @@ describe('the manifest', () => {
     });
 
     test('every mule1 row builds in both forms, fits 28 slots, and shows no drift against itself', () => {
-        const manifest = readFileSync(MANIFEST, 'utf8').replace(/^\| H4m\.1-H4m\.\d+ \|.*\n/m, '');
+        const manifest = readFileSync(MANIFEST, 'utf8');
+        // H4m's loads follow H4p when the ledger carries the row (rs/41)
+        const order: string[] = [...MULE1_ORDER];
+        order.splice(order.indexOf('H4p') + 1, 0, ...h4mLoadRows(manifest));
         for (const form of ['ask', 'fixed'] as const) {
             const lp = muleFromLedger(manifest, { form });
             const onRequest = MULE1_ON_REQUEST.filter(id => !onRequestGaps(manifest).includes(id));
-            expect(lp.map(p => p.row)).toEqual([...MULE1_ORDER, ...onRequest]);
+            expect(lp.map(p => p.row)).toEqual([...order, ...onRequest]);
             for (const p of lp) expect(p.slots).toBeLessThanOrEqual(28);
             expect(muleDrift(packagesOf(lp), lp)).toEqual([]);
         }
@@ -772,8 +775,18 @@ describe("H4m's loads: one fallback row, N ordered packages after H4p on its car
         const today = run(root);
         const absent = run(checkout(live));
         const present = run(checkout(withRow()));
-        expect(absent).toBe(today);
-        expect(today).not.toContain('h4m');
+        expect(absent).not.toContain('h4m');
+        // The checkout's own ledger carries the row in force (attempt 4): its output is the row-less one plus exactly the loads and the H4p carry.
+        {
+            type Pkgs = { accounts: { account: string; options: { packages: { name: string; carryNext?: true; takeBackSlots?: number }[] } }[] };
+            const inForce = JSON.parse(today) as Pkgs;
+            const o = inForce.accounts.find(a => a.account === 'cairn_h55')!.options;
+            expect(o.packages.filter(p => p.name.startsWith('h4m.')).map(p => p.name)).toEqual(h4mLoadRows(readFileSync(MANIFEST, 'utf8')).map(r => r.toLowerCase()));
+            o.packages = o.packages.filter(p => !p.name.startsWith('h4m.'));
+            delete o.packages.find(p => p.name === 'h4p')!.carryNext;
+            delete o.packages.find(p => p.name === 'h4p')!.takeBackSlots;
+            expect(JSON.stringify(inForce, null, 2) + '\n').toBe(absent);
+        }
         type Out = { accounts: { account: string; options: { packages: { name: string; carryNext?: true; takeBackSlots?: number }[] } }[] };
         const without = JSON.parse(absent) as Out;
         const withLoads = JSON.parse(present) as Out;

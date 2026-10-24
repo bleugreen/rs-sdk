@@ -28,6 +28,7 @@ import {
     ALTERNATIVES, anvilAnnounce, CANNON_ROWS, cueAround, cueMuleRows, FAMILY_CUES, KIT_PARTNER_ROWS, KIT_SEGMENTS, buildChain, CENSUS_STEP, chainIds, chainProbes, chainSeams, ledgerCoverage, ledgerRows, missingOnPath, missingStep, MULE_ROWS, muleCued, muleCueDir, muleMeeting, muleScope, s07PrayerTo, S07_PRAYER_TO, s07Woodcutting, S09_MINING, parseStepTable, PLACEMENT, resolveFrom, sliceUntil, tag,
     whenNeeded, withCue, askedOnTrade, h12oLogin, h12oLoginRefusal, h12oTopUp, H12O_LOGIN, type ChainStep, type CueSink, type RunConfig,
 } from './chain';
+import { DeliveryOwner, deliveryRows } from './delivery-owner';
 import { chainPartners, H4M_BONES, H4M_MIN_PRAYER, H4M_ROW, H4M_TRADE_TILE, S09_PRAYER_TO, type ChainOptions } from './chain';
 import { CUE_BEACONS, CueKeeper, exitStopIsFinal, prepareCueDir, RunCues } from './cue-keeper';
 import { ScopeSessions } from '../helpers/standalone';
@@ -1550,6 +1551,18 @@ describe('H4m: S07 closes below 99 and S09 buries the rest', () => {
         // the bury steps' lap and drop level
         const all = mining.steps({ ...S09_MINING, bury: '^babydragon bones$', buryLoads: 5, buryPrayerTo: 99 });
         expect(all.filter(s => s.name.startsWith('mining.bury')).length).toBe(5);
+    });
+
+    test("SCORED's gate for a load is keyed by the load's own row and session: the cue {H4m.k, mule}, the delivery row H4m.k at its stand, deliverySession(run, 'H4m.k')", () => {
+        const c = build();
+        const rows = deliveryRows(c, chainPartners(H4M, c));
+        const loads = rows.filter(r => r.row.startsWith('H4m.'));
+        expect(loads.map(r => [r.row, r.account, r.at])).toEqual(LOADS.map(row => [row, 'p_h4m', { x: 2606, z: 3234, level: 0 }]));
+        expect(rows.map(r => r.row).slice(rows.findIndex(r => r.row === 'H4p'), rows.findIndex(r => r.row === 'H4p') + 1 + LOADS.length)).toEqual(['H4p', ...LOADS]);
+        const owner = new DeliveryOwner(mkdtempSync(join(tmpdir(), 'chain-h4m-owner-')), 'a4-test', 'Scored', rows);
+        expect(LOADS.map(r => owner.session(r))).toEqual(LOADS.map(r => `a4-test:${r}`));
+        expect(owner.prepare('H4m.3')).toMatchObject({ row: 'H4m.3', account: 'p_h4m', at: { x: 2606, z: 3234, level: 0 } });
+        for (const row of LOADS) expect(c.find(s => s.id === row)!.cue).toEqual({ step: row, family: 'mule' });
     });
 
     test('the chain refuses: s07PrayerTo below 94, loads that cannot reach 99 from its floor, no H4m row, no carrier', () => {
