@@ -337,14 +337,15 @@ describe("an `any` count gives or drops whatever is held, and none held is nothi
 
     describe("the manifest's exhaustible gives (rs/158's classification): none held passes, held is given", () => {
         const ANY_GIVES: Record<string, string[]> = {
-            H12: ['antipoison(*)', 'coins', 'death rune', 'chaos rune'],
-            H13: ['coins', 'superantipoison(*)', 'fire rune'],
+            // a dose family (`antipoison(*)`) plans under its bare name
+            H12: ['antipoison', 'coins', 'death rune', 'chaos rune'],
+            H13: ['coins', 'superantipoison', 'fire rune'],
             H15: ['bronze arrow', 'iron arrow', 'steel arrow', 'mithril arrow', 'adamant arrow', 'coins', 'shark', 'blood rune', 'nature rune'],
         };
         const cap = (n: string) => n.charAt(0).toUpperCase() + n.slice(1);
         /** One held item `g` matches: a family by one dose, an @id by its obj. */
         const heldOf = (g: Given, slot: number, count: number): InventoryItem => {
-            const name = cap(g.name.replace('(*)', '(2)'));
+            const name = g.pattern.test(cap(g.name)) ? cap(g.name) : `${cap(g.name)}(2)`;
             return { slot, id: g.ids?.[0] ?? IDS[name] ?? 9999, name, count, optionsWithIndex: [] };
         };
         /** The row's other gives at their counts (`all` as one), slot by slot. */
