@@ -41,7 +41,7 @@ import { solveOnPanel } from '../lib/puzzle';
 import { currentTick, waitTicks, waitUntil, type Pred } from '../lib/wait';
 import { chebyshev, findLoc, invCount, messagesSince, pos, waitForNpc, type StateLike } from '../lib/world';
 import type { Check, Observed, Step, StepContext } from '../runner/step';
-import { drinkPrayerTo, prayerCovers, slotNeed, slotsCover, talkShape, type DialogueMode, type QuestItem } from './segments';
+import { ANTIPOISON, antipoisonDrunkAt, cureDose, curePoison, DRINK_RESEND_TICKS, drinkDelayOver, drinkPrayerTo, noteAntipoison, poisoned, poisonSeenAt, prayerCovers, slotNeed, slotsCover, talkShape, type DialogueMode, type QuestItem } from './segments';
 import { CHILD_TALISMAN, CHILD_TALKS, childTalkNeed, lumdoRefuses, MM_SHAPES, narnodeComplete } from './monkey-madness-shapes';
 import { cueDir, CueWriter, writeTopUpAsk, type AskItem, type CueScope } from '../helpers/altar-cue';
 import { itemLabel, MANIFEST, parseLedger } from '../tools/slot-ledger';
@@ -928,24 +928,20 @@ export async function upkeep<T>(sdk: Sdk, fn: () => Promise<T>): Promise<T> {
     const u = new Upkeep(sdk, { eatBelow: eating.below, food: MM_OBJ.shark });
     let lastDrink = -Infinity;
     let lastVialDrop = -Infinity;
-    // The wildlife's poison (aa_wildlife.rs2) keeps ticking into the next stretch; the antipoison ends it and grants immunity.
-    const obs = (m: { observationId?: number; tick: number }) => m.observationId ?? m.tick;
-    let seen = Math.max(-1, ...(sdk.getState()?.gameMessages ?? []).map(obs));
+    // The wildlife's poison (aa_wildlife.rs2) keeps ticking into the next stretch, and S14's spiders' into A: the antipoison
+    // ends it and grants immunity. A poison already on when upkeep starts is cured on its first state.
 
     const stop = sdk.onStateUpdate(s => {
         // An H12o receive leg owns the pack while it trades: an eat, a drink or a drop would delay SCORED past its trade
         // click (a delayed player's click is dropped) or close the open trade.
         if (trading || tradeOf(s).isOpen) return;
         void u.step(s);
-        const fresh = s.gameMessages.filter(m => obs(m) > seen);
-        if (fresh.length) seen = Math.max(seen, ...fresh.map(obs));
-        if (fresh.some(m => /you have been poisoned/i.test(m.text))) lastPoisoned = s.tick;
         const clickable = packClickAllowed(s);
-        if (clickable && cureWanted({ tick: s.tick, lastPoisoned, lastDose: lastAntipoison })) {
-            const cure = s.inventory.find(i => ANTIPOISON.test(i.name));
+        if (clickable && cureWanted(s, antipoisonDrunkAt(s.tick))) {
+            const cure = cureDose(s);
             if (cure) {
-                lastAntipoison = s.tick;
-                stepNote(`S15 antipoison: a dose to cure a poisoning at t=${s.tick} (poisoned at t=${lastPoisoned})`);
+                noteAntipoison(s.tick);
+                stepNote(`S15 antipoison: ${cure.name} to cure a poisoning at t=${s.tick} (poison seen at t=${poisonSeenAt(s)})`);
                 void sdk.sendUseItem(cure.slot, cure.optionsWithIndex.find(o => /^drink$/i.test(o.text))?.opIndex ?? 1);
             }
         }
@@ -971,9 +967,6 @@ export async function upkeep<T>(sdk: Sdk, fn: () => Promise<T>): Promise<T> {
     }
 }
 
-/** Any antipoison's doses by name: H12 carries "Superantipoison(4)" (no space), which `^Antipoison` would never match. */
-const ANTIPOISON = /antipoison\(\d\)$/i;
-
 /**
  * Ticks of poison immunity a super antipoison dose gives: %poison to -20 (anti_poison.rs2), stepped by 1 every 30 ticks
  * (poison.rs2 set_poison_timer). The dungeon's spikes and spear traps skip their poison while %poison is negative
@@ -981,53 +974,62 @@ const ANTIPOISON = /antipoison\(\d\)$/i;
  */
 export const SUPER_IMMUNE_TICKS = 600;
 
-/** The tick of the last antipoison dose this run drank (a cure or a pre-dungeon dose); -Infinity after a restart. */
-let lastAntipoison = -Infinity;
-
-/** The tick of the last "You have been poisoned!" this run saw. */
-let lastPoisoned = -Infinity;
-
 /**
- * Whether to drink an antipoison now: once per fresh poisoning (within 30 ticks of its message), never within 3 ticks of a
- * dose, in every segment. Deferring C's cure (the Karamja jungle) to save the dose for H-R was measured to fail the HP
+ * Whether to drink an antipoison now: whenever the poison is on (segments.ts `poisoned`: a poison hit or the poisoned
+ * message newer than the last dose), a poison carried into the segment included, never within 3 ticks of a dose, in every
+ * segment. Deferring C's cure (the Karamja jungle) to save the dose for H-R was measured to fail the HP
  * floor: in 2 of 3 chains the poison held HP to 20 through Daero's blindfold pages, where no eat can land, and an
  * 11 then took it to 9 in E.
  */
-export function cureWanted(o: { tick: number; lastPoisoned: number; lastDose: number }): boolean {
-    return o.lastPoisoned > o.lastDose && o.tick - o.lastDose >= 3 && o.tick - o.lastPoisoned <= 30;
+export function cureWanted(s: Pick<BotWorldState, 'tick' | 'combatEvents' | 'gameMessages'>, lastDose: number): boolean {
+    // A dose ahead of the clock is from before a client reload (the tick restarts): none, as `poisoned` reads it.
+    const dose = lastDose > s.tick ? -Infinity : lastDose;
+    return poisoned(s, dose) && s.tick - dose >= 3;
 }
 
-/** A dose is wanted on entering a dungeon pass: one is held, and the last dose's immunity has under 60 ticks left. */
+/**
+ * A dose is wanted on entering a dungeon pass: one is held, and the last dose's immunity has under 60 ticks left. A dose
+ * ahead of `now` is from before a client reload (the tick restarts) and is not trusted to cover the pass.
+ */
 export function immunityWanted(now: number, lastDose: number, held: boolean): boolean {
-    return held && now - lastDose > SUPER_IMMUNE_TICKS - 60;
+    return held && (lastDose > now || now - lastDose > SUPER_IMMUNE_TICKS - 60);
 }
 
 /**
  * H12's optional pre-dose (rs/158's zero-slot option): a one-dose super antipoison in the 28th slot, drunk at A's start
  * (the vial dropped by upkeep) before Narnode's seal needs the slot. Its ~600 ticks of immunity cover the gnome half's
- * Karamja jungle (B, C), so the 4-dose potion's doses all reach H-R. A no-op when H12 brought none.
+ * Karamja jungle (B, C), so the 4-dose potion's doses all reach H-R. With none brought, a poison still on after the swap
+ * (no antipoison(*) was held before it, cureBeforeSwap) takes one dose of H12's Superantipoison(4) here, after the swap has
+ * sized the kit and before Narnode's talk opens; clean, nothing is drunk.
  */
-async function preDose(sdk: Sdk): Promise<void> {
+export async function preDose(sdk: Sdk): Promise<void> {
     const s = sdk.getState()!;
     const dose = s.inventory.find(i => i.id === MM_OBJ.superAntipoison1);
-    if (!dose) return;
-    // The kit's super line takes any dose (h12Kit), so a lone one-dose super may be all the kit has: never drink that.
-    if (!s.inventory.some(i => i.slot !== dose.slot && KIT_SUPER.test(i.name))) return stepNote('S15 antipoison: no pre-dose, the one-dose super is the kit\'s only super');
-    lastAntipoison = currentTick(sdk);
+    // The kit's super line takes any dose (h12Kit), so a lone one-dose super may be all the kit has: never pre-dose that.
+    // A poison that is on is still cured, from it if it is the only dose held (upkeep would drink it on its next state).
+    const lone = !!dose && !s.inventory.some(i => i.slot !== dose.slot && KIT_SUPER.test(i.name));
+    if (!dose || lone) {
+        if (lone) stepNote('S15 antipoison: no pre-dose, the one-dose super is the kit\'s only super');
+        if ((await curePoison(sdk, 'S15:A after the swap')) === 'cured') stepNote(`S15 antipoison: a Superantipoison dose at A after the swap, t=${antipoisonDrunkAt()}`);
+        return;
+    }
+    const at = currentTick(sdk);
+    noteAntipoison(at);
     void sdk.sendUseItem(dose.slot, dose.optionsWithIndex.find(o => /^drink$/i.test(o.text))?.opIndex ?? 1);
     const r = await waitUntil(sdk, s => !s.inventory.some(i => i.id === MM_OBJ.superAntipoison1), { maxTicks: 4 });
     if (!r.ok) throw new Error(`the pre-dose super antipoison was not drunk (at ${where(sdk)})`);
-    stepNote(`S15 antipoison: the pre-dose at A, t=${lastAntipoison} (immune to about t=${lastAntipoison + SUPER_IMMUNE_TICKS})`);
+    await drinkDelayOver(sdk, at);
+    stepNote(`S15 antipoison: the pre-dose at A, t=${at} (immune to about t=${at + SUPER_IMMUNE_TICKS})`);
 }
 
 /** Drink an antipoison dose before a dungeon pass when immunityWanted, so the pass's spikes and spears never poison. */
 async function immune(sdk: Sdk, pass: string): Promise<void> {
     const s = sdk.getState()!;
     const dose = s.inventory.find(i => ANTIPOISON.test(i.name));
-    if (!immunityWanted(s.tick, lastAntipoison, !!dose)) return;
+    if (!immunityWanted(s.tick, antipoisonDrunkAt(s.tick), !!dose)) return;
     const names = () => sdk.getState()!.inventory.filter(i => ANTIPOISON.test(i.name)).map(i => i.name).join(',');
     const before = names();
-    lastAntipoison = s.tick;
+    noteAntipoison(s.tick);
     void sdk.sendUseItem(dose!.slot, dose!.optionsWithIndex.find(o => /^drink$/i.test(o.text))?.opIndex ?? 1);
     await waitUntil(sdk, () => names() !== before, { maxTicks: 3 });
     stepNote(`S15 antipoison: a dose before ${pass} at t=${s.tick} (immune to about t=${s.tick + SUPER_IMMUNE_TICKS})`);
@@ -1734,6 +1736,31 @@ export function h12Plan(s: BotWorldState, o: { bow: number; served?: boolean }):
 }
 
 /**
+ * A's cure before the Grand Tree swap sizes the kit (rs/185's order: the eat, this cure, then the sizing and the trading
+ * hold). A poison carried in from S14 is cured from the antipoison held, H7's (it leaves in the swap anyway, GT_HANDBACK),
+ * before the trade opens: a poison tick runs if_close (poison.rs2:36), which would close it. An emptied dose's Vial is
+ * dropped before returning: GT_HANDBACK takes none and A's pack is the kit's 27, read by the sizing next. Waits on the
+ * inventory for both. A runs under upkeep, which cures on its own state too and can win the race while A's eat lands: a
+ * dose noted in the last DRINK_RESEND_TICKS is waited out before the vial check, so its vial is not left for the sizing.
+ * With nothing held it drinks nothing; preDose cures after the swap.
+ */
+export async function cureBeforeSwap(sdk: Sdk): Promise<void> {
+    const cure = await curePoison(sdk, 'S15:A before the swap');
+    if (cure === 'cured') stepNote(`S15 antipoison: cured before the Grand Tree swap, t=${antipoisonDrunkAt()}`);
+    const sent = antipoisonDrunkAt();
+    const since = currentTick(sdk) - sent;
+    if (cure !== 'cured' && since >= 0 && since < DRINK_RESEND_TICKS) await waitUntil(sdk, s => s.tick - sent >= DRINK_RESEND_TICKS, { maxTicks: DRINK_RESEND_TICKS });
+    const vial = () => sdk.getState()!.inventory.find(i => /^Vial$/i.test(i.name));
+    for (let i = 0; i < 4 && vial(); i++) {
+        if (!packClickAllowed(sdk.getState()!)) await waitUntil(sdk, packClickAllowed, { maxTicks: 10 });
+        const v = vial()!;
+        void sdk.sendDropItem(v.slot);
+        await waitUntil(sdk, s => !s.inventory.some(x => x.slot === v.slot && /^Vial$/i.test(x.name)), { maxTicks: 3 });
+    }
+    if (vial()) throw new Error(`an empty vial was not dropped before the Grand Tree swap (at ${where(sdk)})`);
+}
+
+/**
  * The Grand Tree hand-off before A: one swap() with the giver (lib/trade.ts) by h12Plan, only when H12 is short; then
  * the bow is wielded and the arrows quivered, which they stay until the gree-gree at R. Once H12 is served this attempt
  * (`kitServed`) it trades nothing: the lines the route keeps are checked, and the wield follows.
@@ -1742,6 +1769,7 @@ export function h12Plan(s: BotWorldState, o: { bow: number; served?: boolean }):
  * sized leaves the kit short of 15 with the swap reported done: attempt 4 held 3, asked and was served 12, and one was
  * eaten inside A before the check (arrival at ~1 HP, poisoned). So upkeep's eat lands first, and upkeep is held from the
  * want's read to the kit's check. The ask must be sized after that eat too: chain.ts askedOnTrade, on the open frame.
+ * A poison is cured first (cureBeforeSwap), after upkeep's eat and before the want's read.
  */
 export async function gtSwap(ctx: Pick<Ctx, 'sdk'>, o: Pick<Resolved, 'bow' | 'kitFrom' | 'kitServed'>): Promise<void> {
     const { sdk } = ctx;
@@ -1750,6 +1778,7 @@ export async function gtSwap(ctx: Pick<Ctx, 'sdk'>, o: Pick<Resolved, 'bow' | 'k
         if (short.length) throw new Error(`H12 was served this attempt and the kit lacks ${kitText(short)}`);
     } else {
         await eatenUpTo(sdk, eating.below);
+        await cureBeforeSwap(sdk);
         trading = true;
         try {
             const plan = h12Plan(sdk.getState()!, o);

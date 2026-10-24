@@ -1,8 +1,14 @@
-import { describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, test } from 'bun:test';
 import type { BotWorldState, InventoryItem, PlayerState } from '../../sdk/types';
-import { baseState, FakeSdk } from '../lib/fake-sdk';
+import { baseState, drive, FakeSdk } from '../lib/fake-sdk';
 import { resolveStart, type StepContext } from '../runner/step';
+import * as dragonSlayer from './dragon-slayer';
+import * as fightArena from './fight-arena';
+import * as mageArena from './mage-arena';
+import * as treeGnomeVillage from './tree-gnome-village';
+import type { Step } from '../runner/step';
 import {
+    antipoisonDrunkAt, cureDose, curePoison, entryCured, HITMARK_POISON, noteAntipoison, poisoned, poisonSeenAt, POISON_PERIOD, POISON_WINDOW,
     allOf, baseLevels, DEFAULT_DIALOGUE, doseRestore, drinkPrayerTo, freeSlots, kitSegment, kitWant, prayerCovers, prayerReserve, questSteps, segmentName, slotNeed, slotsCover, stageAtLeast, stageDone,
     talkShape, within, type QuestItem, type Segment,
 } from './segments';
@@ -270,5 +276,92 @@ describe('prayer points (rs/687)', () => {
         const run = drinkPrayerTo(sdk, 8, 3);
         for (let i = 0; i < 5; i++) setTimeout(() => sdk.tick(), 2 + i);
         await expect(run).rejects.toThrow(/drink did not land in 3 ticks \(0 points, 4 doses\)/);
+    });
+});
+
+describe('poison: the published evidence, the shared dose record and the entry cure (rs/755)', () => {
+    beforeEach(() => noteAntipoison(-Infinity));
+    const hit = (tick: number, hitmark = HITMARK_POISON) =>
+        ({ tick, type: 'damage_taken', damage: 2, hitmark, sourceType: 'npc', sourceIndex: -1, targetType: 'player', targetIndex: -1 }) as BotWorldState['combatEvents'][number];
+    const msg = (tick: number) => ({ type: 0, text: 'You have been poisoned!', tick, sender: '', fromSelf: false }) as unknown as BotWorldState['gameMessages'][number];
+    const potion = (slot: number, name: string) => ({ slot, id: slot, name, count: 1, optionsWithIndex: [{ text: 'Drink', opIndex: 1 }] }) as unknown as InventoryItem;
+    const poisonedBare = () => baseState({ tick: 300, combatEvents: [hit(295)] });
+
+    test('a poison hitsplat on the player or the poisoned message is evidence; a hit, an npc splat or no type is not', () => {
+        expect(poisonSeenAt(baseState({ combatEvents: [hit(90), hit(95, 1)] }))).toBe(90);
+        expect(poisonSeenAt(baseState({ gameMessages: [msg(97)], combatEvents: [hit(90)] }))).toBe(97);
+        expect(poisonSeenAt(baseState({ combatEvents: [{ ...hit(90), targetType: 'npc' }, { ...hit(91), hitmark: undefined }] }))).toBe(-Infinity);
+    });
+
+    test('poisoned: evidence newer than the last dose and within a poison period (+2) of now', () => {
+        const s = (tick: number, at: number) => baseState({ tick, combatEvents: [hit(at)] });
+        expect(POISON_WINDOW).toBe(POISON_PERIOD + 2);
+        expect(poisoned(s(100, 100))).toBe(true);
+        expect(poisoned(s(100 + POISON_WINDOW, 100))).toBe(true);
+        expect(poisoned(s(101 + POISON_WINDOW, 100))).toBe(false); // the hit due by now never came: worn off
+        noteAntipoison(100);
+        expect(antipoisonDrunkAt()).toBe(100);
+        expect(poisoned(s(110, 100))).toBe(false); // that dose cured it, whoever drank it
+        expect(poisoned(s(130, 129))).toBe(true); // a hit after the dose: it did not land, or a new poisoning
+        expect(poisoned(s(110, 100), -Infinity)).toBe(true);
+    });
+
+    test("cureDose: a plain Antipoison before any Superantipoison (rs/186), the fewest doses first within a kind; none held, null", () => {
+        expect(cureDose(baseState({ inventory: [potion(0, 'Superantipoison(4)'), potion(1, 'Antipoison(3)')] }))?.name).toBe('Antipoison(3)');
+        expect(cureDose(baseState({ inventory: [potion(0, 'Superantipoison(1)'), potion(1, 'Antipoison(3)'), potion(2, 'Antipoison(1)')] }))?.name).toBe('Antipoison(1)');
+        expect(cureDose(baseState({ inventory: [potion(0, 'Superantipoison(4)'), potion(1, 'Superantipoison(1)')] }))?.name).toBe('Superantipoison(1)');
+        expect(cureDose(baseState({ inventory: [potion(0, 'Prayer potion(1)'), potion(1, 'Vial')] }))).toBeNull();
+    });
+
+    test('curePoison: clean drinks nothing; poisoned drinks one dose, re-sent once when the first is dropped, and notes it; none held says so', async () => {
+        const clean = new FakeSdk(baseState({ inventory: [potion(4, 'Antipoison(2)')] }));
+        expect(await curePoison(clean as never, 'T')).toBe('clean');
+        expect(clean.sent).toEqual([]);
+
+        const sdk = new FakeSdk(baseState({ tick: 200, inventory: [potion(4, 'Antipoison(2)')], combatEvents: [hit(195)] }));
+        let dropped = 1; // the first drink is lost to a scene's delay
+        sdk.onSend = (a, f) => {
+            if (a.method === 'sendUseItem' && dropped-- <= 0) f.state = { ...f.state!, inventory: [potion(4, 'Antipoison(1)')] };
+        };
+        expect(await drive(sdk, curePoison(sdk as never, 'T'), 10)).toBe('cured');
+        expect(sdk.sent.map(a => a.args)).toEqual([[4, 1], [4, 1]]);
+        expect(antipoisonDrunkAt()).toBeGreaterThanOrEqual(200);
+        expect(poisoned(sdk.state!)).toBe(false);
+
+        noteAntipoison(-Infinity);
+        expect(await curePoison(new FakeSdk(poisonedBare()) as never, 'T')).toBe('none-held');
+    });
+
+    test('entryCured: the poison check first, naming the shortfall; a held dose passes it, and the run drinks before the body', async () => {
+        const order: string[] = [];
+        const [k] = questSteps('S10b', entryCured('S10b', ['K'], [seg('K', 'warlord', { preconditions: () => 'other', run: async () => { order.push('body'); } })]));
+        expect(k!.preconditions(poisonedBare(), {})).toBe('S10b:K entered poisoned with no antipoison held');
+        expect(k!.preconditions({ ...poisonedBare(), inventory: [potion(2, 'Antipoison(3)')] }, {})).toBe('other');
+        expect(k!.preconditions(baseState(), {})).toBe('other');
+        const sdk = new FakeSdk({ ...poisonedBare(), inventory: [potion(2, 'Antipoison(3)')] });
+        sdk.onSend = (a, f) => {
+            if (a.method !== 'sendUseItem') return;
+            order.push('drink');
+            f.state = { ...f.state!, inventory: [potion(2, 'Antipoison(2)')] };
+        };
+        await drive(sdk, k!.run(ctxOf(sdk)), 10);
+        expect(order).toEqual(['drink', 'body']);
+        expect(entryCured('S10b', ['K'], [seg('A', 'kit'), seg('K', 'warlord')])[0]!.preconditions).toBeUndefined();
+        expect(() => entryCured('S10b', ['Q'], [seg('K', 'warlord')])).toThrow(/no segment Q/);
+    });
+
+    test('each quest step that can be entered poisoned cures first or names it: S10b K, S12 G-J, S16 B-C, S26 L', () => {
+        const cases: Array<[string, Step<any>[], string[]]> = [
+            ['S10b', treeGnomeVillage.steps(), ['K']],
+            ['S12', fightArena.steps(), ['G', 'H', 'I', 'J']],
+            ['S16', mageArena.steps(), ['B', 'C']],
+            ['S26', dragonSlayer.steps(), ['L']],
+        ];
+        for (const [id, steps, letters] of cases) {
+            for (const l of letters) {
+                const st = steps.find(s => s.name.startsWith(`${id}:${l}-`))!;
+                expect(st.preconditions(poisonedBare(), {} as never)).toBe(`${id}:${l} entered poisoned with no antipoison held`);
+            }
+        }
     });
 });
