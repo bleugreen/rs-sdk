@@ -152,11 +152,15 @@ These are exact readiness locations, not proof that every tile is reachable by
 the assigned account or that adjacent trades succeed on the current engine.
 
 H13 also has an independent tradeability gate: the Khazard helmet and platemail
-cannot be traded. The shared handoff/parser owner is introducing explicit ledger
-`drop` outputs for those items. Drops must not become helper take-backs, stock
-credits or trade offers. Until that shared correction and its actual recipient
-fixture are integrated, H13 is not accepted at either the current landing or the
-proposed cellar. This does not authorize moving its rendezvous.
+cannot be traded. The ledger's H13 row drops them on the tile (`drop` outputs,
+#470), and drops never become helper take-backs, stock credits or trade offers.
+With that grammar and its recipient fixture in place, H13 readiness and its
+exact trade pass mechanically at the current landing (route table below). The
+monkey greegree is held, not worn, at H13: the engine wrenches it into the pack
+when its wearer leaves the greegree zone (`quest_mm/scripts/mm_greegree.rs2`),
+so the lab fixture stages it in SCORED's before-inventory
+(`speedrun/lab/mule-delivery-fixtures.ts`). This does not authorize moving its
+rendezvous.
 
 ## Full row audit and feasibility gate
 
@@ -183,7 +187,7 @@ with bank, trade and travel inactive. Green generator tests are not that proof.
 | Row | Account / mode | Helper tile | Staging bank | Departure trigger and available scored window | Full route duration | Readiness evidence |
 |---|---|---|---|---|---|---|
 | H1 | E ordered | 3222,3222 | Draynor 3092,3245 | Prepare before scored login; login gated on readiness | 97 ticks from bank start to ready in lab | Mechanical pass, exact ready + trade; minimum HP 7, not a survival guarantee |
-| H4 | E ordered | 2951,3451 | Falador west 2946,3369 | After H1; S02–S04, intended staging during S03–S04 | U | Pending |
+| H4 | E ordered | 2951,3451 | Falador west 2946,3369 | After H1; S02–S04, intended staging during S03–S04 | H1 success to exact ready: 264 / 308 ticks (a third run, 331, during a host load spike); the spread is mule1's Lumbridge→Falador route, 378–477 tiles (rs/658, 2026-10-24, bgsrv-ub 400 ms, 21144552, 2 clean runs) | Exact ready and the 20-ring trade passed mechanically; Draynor jail guards hit mule1 on the H1 approach (HP 8–9), back to 10 by H4; scored deadline pending |
 | H4k | E ordered | 2911,3494 | Falador west 2946,3369 | After H4; readiness gate BEFORE T06-07, conservative 132 ticks; 206 is later arrival, not the gate | Carry-ahead 44 ticks; bank-return baseline 132 ticks | Exact ready + canonical-area receiver trade passed mechanically; paired scored gate still unmeasured |
 | H6 | W ordered | 2568,3334 | Ardougne north 2615,3333 | Preposition west before run; prepare during S07, gate before T07-08 | Initial bank-to-ready 77 ticks; default mountain crossing rejected | Canonical trade passed in uninterrupted western prefix; actual h55 profile |
 | H4p | W ordered | 2604,3235 | Ardougne south 2654,3283 | After H6; during S08, gate before T08-09 (the leg's 50 ticks are not preparation allowance) | 100 ticks to ready | Canonical trade passed mechanically; paired scored gate pending |
@@ -192,15 +196,15 @@ with bank, trade and travel inactive. Green generator tests are not that proof.
 | H9 | W ordered | 2658,3301 | Ardougne south 2654,3283 | After H8; during S11b, gate before T11-12a | 235 ticks via return gate and bank | Exact readiness and real trade passed mechanically |
 | H10 | W ordered | 2658,3301 | Ardougne south 2654,3283 | After H9; during S12, gate before T12-13a | 61 ticks | Exact readiness and three-shark top-up passed mechanically |
 | H12 | W ordered | 2465,3489 | Ardougne north 2615,3333 | After H10; S13/S14, gate before receiving leg T14-15 | 208 ticks with canonical gate traversal | Exact readiness, seven-shark top-up and returns passed; helper and recipient peak 28 slots |
-| H13 | W ordered | 2658,3301 | Ardougne south 2654,3283 | After H12; during S15, gate before T15-16a | U | Blocked: Khazard armor is untradeable; shared explicit drop grammar and corrected receiver fixture pending |
-| H14 | W ordered | 2670,3305 | Ardougne south 2654,3283 | After H13; during S16, gate before T16-18 | U | Pending |
-| H15 | W ordered | 2716,3302 | Ardougne south 2654,3283 | After H14; during S18, gate before T18-19 | U | Pending |
-| H16 | W ordered | 2820,3486 | Seers 2725,3491 | After H15; during S19, gate before T19-20; continuous window unmeasured | H15 success to exact ready: 172 ticks via Seers, observed h55 profile | Overlapping-request baseline preserved; guarded repeat passed without helper displacement; scored deadline acceptance pending |
-| H18 | E ordered | 3241,3248 | Draynor 3092,3245 | East carrier prepares after H4k/selected H4e, during S20/S21 at latest; gate before T21-22 | U; no western return assigned | Pending |
+| H13 | W ordered | 2658,3301 | Ardougne south 2654,3283 | After H12; during S15, gate before T15-16a | H12 success to exact ready: 245 / 245 ticks via the Stronghold-gate road and bank (rs/658, 2026-10-24, bgsrv-ub 400 ms, 96a3d599, 2 runs) | Exact ready and #470 drop-mode trade passed (Khazard pieces dropped, not returned; greegree held; `shark to 2` top-up served); HP 90; scored deadline pending |
+| H14 | W ordered | 2670,3305 | Ardougne south 2654,3283 | After H13; during S16, gate before T16-18 | H13 success to exact ready: 81 / 81 ticks (rs/658, 2026-10-24, bgsrv-ub 400 ms, 96a3d599, 2 runs) | Exact ready and trade passed (knife returned); HP 90; scored deadline pending |
+| H15 | W ordered | 2716,3302 | Ardougne south 2654,3283 | After H14; during S18, gate before T18-19 | H14 success to exact ready: 82 / 82 ticks (rs/658, 2026-10-24, bgsrv-ub 400 ms, 38db295e, 2 runs) | Exact ready and trade passed with the walked returns; HP 90; scored deadline pending |
+| H16 | W ordered | 2820,3486 | Seers 2725,3491 | After H15; during S19, gate before T19-20; continuous window unmeasured | H15 success to exact ready: 172 ticks via Seers, observed h55 profile, in all five runs (rs/551 ×2 bgsrv-mac; rs/658 ×3 bgsrv-ub 400 ms, 38db295e, 2026-10-24) | Overlapping-request baseline preserved; guarded repeat and three further trades passed without helper displacement; scored deadline acceptance pending |
+| H18 | E ordered | 3241,3248 | Draynor 3092,3245 | East carrier prepares after H4k/selected H4e, during S20/S21 at latest; gate before T21-22 | H4k success to exact ready: 318 / 318 ticks via Draynor (rs/658, 2026-10-24, bgsrv-ub 400 ms, 96a3d599, 2 clean runs; agrees with a spike-time 318); no western return assigned | Exact ready and trade passed; **Draynor jail guards (NPC 917, aggressive, huntrange 5) hit mule1 at (3120–3129,3250–3254)**: ready at HP 7 in one run, HP 5 on the walk back in both; scored deadline pending |
 | H19 | E ordered | 3209,3215 | Draynor 3092,3245 | After H18; during S22, gate before T22-23 | Initial Draynor-to-ready 110 ticks; H18 transition still U | Initial bank preparation and trade passed; minimum HP 8, no paired scored gate |
 | H20 | E20 h03, single ordered row; config/lab only | 3045,3257 | Draynor 3092,3245 | Log in before SCORED; prepare during S22, gate before T23-24 | Profiled h03 route unmeasured; old H19 predecessor took 147 ticks versus 12 allowed | Independent preparation, over-ten-minute idle health/readiness and row-stop logout pending |
 | H21d | E ordered | 3185,3436 | Varrock west 3185,3436 | After this carrier's H19; S24 plus S25a window before S25d | Planned H19 predecessor U; old H20 predecessor measured 174 ticks | Real 17-stack delivery and hammer-only return passed; no platebody seed; planned carrier transition still pending |
-| H22 | E ordered | 3191,3363 | Varrock west 3185,3436 | After H21d; remaining S25, gate before T25-26 | U | Pending |
+| H22 | E ordered | 3191,3363 | Varrock west 3185,3436 | After H21d; remaining S25, gate before T25-26 | H21d success to exact ready: 88 / 88 ticks (rs/658, 2026-10-24, bgsrv-ub 400 ms, 38db295e, 2 runs) | **Trade refused at this stand in both runs:** (3191,3363) is the Champions' Guild door tile and SCORED's T25-26 target (3191,3364) is beside it, so the delivery door guard (`findDoorsAlongPath`, endpoint plus cardinal neighbours) refuses; ruled fix pending: SCORED (3191,3365) tol 0, carrier (3191,3366) |
 | H4e | E conditional | 2920,3406 | Falador west 2946,3369 | Explicit fallback preparation before S07 ends; east carrier only, with a separately prepared western H6 | U; fallback trade 4 scored ticks measured, not a delivery-route duration | Pending |
 | H4m | W conditional audit only; excluded from attempt 1 | 2605,3234 | Ardougne south 2654,3283 | No implemented receiving window; attempt 1 uses the approved stock-only overflow fix instead | U; no same-arrival trip assumed | Retained for audit; no invented attempt-1 trigger |
 | H3 | R rehearsal only | supplied canonical firemaking end | Draynor 3092,3245 | Explicit rehearsal selection; prepare during S03, ready before substitute S04 | U; geometry-dependent | Pending |
