@@ -27,8 +27,8 @@ export interface Cure {
     poisoned(s: BotWorldState): boolean;
     cureDose(s: BotWorldState): InventoryItem | null;
     noteAntipoison(tick: number): void;
-    /** Until a drink sent at `sent` has finished its p_delay, inside which any click is dropped (segments.ts drinkDelayOver). */
-    drinkDelayOver(sdk: StateSource, sent: number): Promise<void>;
+    /** Until a drink sent at `sent` has finished its p_delay, inside which any click is dropped (default: segments.ts drinkDelayOver). */
+    drinkDelayOver?(sdk: StateSource, sent: number): Promise<void>;
     /**
      * Main's poison-unknown (segments.ts `poisonUnknown`, rs/786): a fresh session since the last dose, no poison seen in
      * it, an antipoison held. A carried poison shows only at its first hit, up to 30 ticks after login. Read only with
@@ -165,7 +165,7 @@ export class WaitUpkeep {
         if (!d || d.landed || s.inventory.some(i => i.slot === d.slot && i.id === d.id && i.name === d.name)) return;
         d.landed = true;
         this.delaying = true;
-        void this.cure.drinkDelayOver(this.sdk, d.tick).finally(() => {
+        void (this.cure.drinkDelayOver ?? drinkDelayOver)(this.sdk, d.tick).finally(() => {
             if (this.drink === d) this.delaying = false;
         });
     }

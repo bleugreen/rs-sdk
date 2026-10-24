@@ -36,9 +36,9 @@ function ctxFor(sdk: FakeSdk): StepContext<unknown> & { session: RunnerSession &
 }
 
 /** A cure that reads a test flag: poisoned until a drink lands, which turns the potion's dose down a step. */
-function flagCure(sdk: FakeSdk): Cure & { poison: boolean; noted: number[] } {
+function flagCure(sdk: FakeSdk, poison = true): Cure & { poison: boolean; noted: number[] } {
     const c = {
-        poison: true,
+        poison,
         noted: [] as number[],
         poisoned: () => c.poison,
         cureDose: (s: BotWorldState) => s.inventory.find(i => /antipoison\(\d\)$/i.test(i.name)) ?? null,
@@ -157,7 +157,7 @@ describe("the wait upkeep: the legs' eat rule and the shared antipoison, held wh
 
     test("a client reload (the published tick restarts lower) drops the old session's eat record: the next eat is not held", async () => {
         const sdk = new FakeSdk(state({ inventory: [shark(0), shark(1)] }, { hp: 11 }));
-        const cure = { ...flagCure(sdk), poison: false };
+        const cure = flagCure(sdk, false);
         const served = serve(sdk);
         const p = guardWait(ctxFor(sdk), 'waiting', never(sdk, 30), { cure });
         for (let i = 0; i < 4; i++) {
@@ -173,7 +173,7 @@ describe("the wait upkeep: the legs' eat rule and the shared antipoison, held wh
 
     test("hitpoints under the legs' threshold eat (travel's eatDue), once per landing", async () => {
         const sdk = new FakeSdk(state({ inventory: [shark(3), shark(4)] }, { hp: 11 }));
-        const cure = { ...flagCure(sdk), poison: false };
+        const cure = flagCure(sdk, false);
         const served = serve(sdk);
         await drive(sdk, guardWait(ctxFor(sdk), 'waiting', never(sdk, 30), { cure }));
         expect(served.uses.map(u => u.slot)).toEqual([3]);
@@ -208,7 +208,7 @@ describe("the wait upkeep: the legs' eat rule and the shared antipoison, held wh
 
     test('a guard inside a guard adds nothing: one upkeep, one eat', async () => {
         const sdk = new FakeSdk(state({ inventory: [shark(0), shark(1)] }, { hp: 11 }));
-        const cure = { ...flagCure(sdk), poison: false };
+        const cure = flagCure(sdk, false);
         const served = serve(sdk);
         const ctx = ctxFor(sdk);
         await drive(sdk, guardWait(ctx, 'outer', () => guardWait(ctx, 'inner', never(sdk, 20), { cure }), { cure }));
@@ -282,8 +282,8 @@ describe('run.ts: the upkeep from login to the first step', () => {
     describe('the poison-unknown dose (main\'s ruling): entering at S15:A or S16:B, one dose from login for a poison not yet seen', () => {
         /** A cure whose poisonUnknown reads as rs/786's: no dose since the session began, no poison seen, a dose held. */
         const unknownCure = (sdk: FakeSdk) => {
-            const c = { ...flagCure(sdk), poison: false };
-            return { ...c, poisonUnknown: (s: BotWorldState) => c.noted.length === 0 && c.cureDose(s) !== null };
+            const c = flagCure(sdk, false);
+            return Object.assign(c, { poisonUnknown: (s: BotWorldState) => c.noted.length === 0 && c.cureDose(s) !== null });
         };
         const login = async (entry: string, inventory: InventoryItem[]) => {
             const sdk = new FakeSdk(state({ tick: 90_000, inventory }, { hp: 38 }));
