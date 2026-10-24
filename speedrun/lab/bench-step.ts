@@ -407,7 +407,7 @@ async function rehearse(args: readonly string[], o: { out: string; label: string
             for (const l of lines) {
                 appendFileSync(o.out, l + '\n');
                 console.log(`${o.label} ${l}`);
-                if (/REFUSED|^\[dress\] (?!stage|ring|altar|S0|S2|H2|--)/.test(l)) said.push(l);
+                if (/REFUSED|StepError|Terminated|failed:|error:/i.test(l)) said.push(l.trim());
             }
         }
         if (carry) appendFileSync(o.out, carry + '\n');
@@ -523,7 +523,7 @@ async function main(argv: string[]): Promise<number> {
             rmSync(botDir, { recursive: true, force: true });
         }
         const chain = existsSync(planFile) ? (JSON.parse(readFileSync(planFile, 'utf8')) as RehearsalPlan).chain : slice.chain;
-        const m = runMetrics(readJsonl<TickRow>(log).length ? parseLog(readFileSync(log, 'utf8')) : [], readJsonl<VitalsLine>(vitals), resolveTarget(chain, a.target), child.code);
+        const m = runMetrics(existsSync(log) ? parseLog(readFileSync(log, 'utf8')) : [], readJsonl<VitalsLine>(vitals), resolveTarget(chain, a.target), child.code);
         const refused = m.rows === 0;
         const refusal = child.timedOut ? `budget: ${budgetMin} min passed${m.refusal ? `; ${m.refusal}` : ''}` : m.refusal ?? (m.pass ? null : child.said.at(-1) ?? `exit ${child.code}`);
         const notes = [
