@@ -127,9 +127,9 @@ sharks. **The ~85 is the railings only.** The shed's roll (segment I) is also ch
   skill passing succeeds.
 - It succeeds 1 - (175/256)(109/256) = 71% at Smithing 1 and Crafting 25. That is against 53% at
   1/1 and 74% at Crafting 30 (i, on `stat_random`'s linear rule).
-- rs/185 prices Crafting 30 at ~23 on the shed. Expected tries fall 0.47 of the way 1/1-to-30 fall
-  takes at Crafting 30 (1.88 to 1.41, against 1.88 to 1.35), so Crafting 25 is worth **~20 i** on
-  the shed.
+- rs/185 prices Crafting 30 at ~23 on the shed. Expected tries per success fall from 1.88 to 1.41
+  at Crafting 25, against 1.88 to 1.35 at 30. That is 0.47 of the 0.53 drop, so Crafting 25 is
+  worth 23 x 0.47 / 0.53 = **~20 i** on the shed.
 
 That makes S13 ~105 i cheaper, and the split's net **~144 i** (158 + 105 - 113 - 6). The ranked
 table keeps the railings-only ~124 as its headline. #2 and #4 buy the same S13 rolls, so they are
