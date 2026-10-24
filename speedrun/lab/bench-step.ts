@@ -77,7 +77,12 @@ const positiveNumber = (flag: string, v: string): number => {
     return n;
 };
 
-/** `[<lab.sh bot>] <step> [--flag=value | --flag value ...]`: lab.sh puts its bot first, which the bench ignores. */
+/**
+ * `[<lab.sh bot>] <step> [--flag=value | --flag value ...]`. Under lab.sh the bot comes first (ignored)
+ * and a step name's colons arrive split, since lab.sh separates a script's arguments on `:`: with two
+ * or more words, the first is the bot and the rest rejoin with `:` (bot woodcutting oak-15-73 ->
+ * woodcutting:oak-15-73).
+ */
 export function benchArgs(argv: readonly string[]): BenchArgs {
     const positional: string[] = [];
     const flags: Record<string, string> = {};
@@ -92,7 +97,7 @@ export function benchArgs(argv: readonly string[]): BenchArgs {
         if (value === undefined) throw new Error(`--${m[1]} needs a value`);
         flags[m[1]!] = value;
     }
-    if (positional.length < 1 || positional.length > 2) throw new Error(`expected [<lab.sh bot>] <step>, got ${positional.length ? positional.join(' ') : 'nothing'}`);
+    if (!positional.length) throw new Error('expected [<lab.sh bot>] <step>, got nothing');
     const known = new Set(['k', 'tick-ms', 'budget-min', 'out', 'client', 'expected', ...PASS_THROUGH]);
     const unknown = Object.keys(flags).filter(f => !known.has(f));
     if (unknown.length) throw new Error(`unknown flag(s): ${unknown.map(f => `--${f}`).join(', ')}`);
@@ -102,7 +107,7 @@ export function benchArgs(argv: readonly string[]): BenchArgs {
     const client = flags.client ?? 'browser';
     if (client !== 'browser' && client !== 'lite') throw new Error(`--client=${client}: browser or lite`);
     return {
-        target: positional.at(-1)!,
+        target: positional.length === 1 ? positional[0]! : positional.slice(1).join(':'),
         k,
         tickMs: flags['tick-ms'] === undefined ? null : positiveNumber('tick-ms', flags['tick-ms']),
         budgetMin: flags['budget-min'] === undefined ? null : positiveNumber('budget-min', flags['budget-min']),
@@ -355,7 +360,8 @@ function writeBotEnv(name: string): string {
 
 // ------------------------------------------------------------------ results.tsv
 
-export const TSV_COLUMNS = ['commit', 'target', 'tick_ms', 'run', 'account', 'status', 'ticks', 'score', 'late', 'glued', 'gaps', 'hp_min', 'food', 'cheats', 'notes', 'log', 'at'] as const;
+/** `secs`: the run's wall time, staging and helpers included, for sizing K against a loop's budget. */
+export const TSV_COLUMNS = ['commit', 'target', 'tick_ms', 'run', 'account', 'status', 'ticks', 'score', 'secs', 'late', 'glued', 'gaps', 'hp_min', 'food', 'cheats', 'notes', 'log', 'at'] as const;
 
 export function tsvRow(row: Readonly<Record<(typeof TSV_COLUMNS)[number], string | number | null>>): string {
     return TSV_COLUMNS.map(c => String(row[c] ?? '').replace(/[\t\r\n]+/g, ' ')).join('\t') + '\n';
@@ -435,6 +441,7 @@ export interface RunResult extends RunMetrics, Scored {
     run: number;
     account: string;
     score: number | null;
+    secs: number;
     notes: string;
     log: string;
 }
@@ -514,6 +521,7 @@ async function main(argv: string[]): Promise<number> {
         const planFile = join(runDir, 'plan.json');
         const label = `[run ${run}/${a.k}]`;
         const botDir = writeBotEnv(names.scored);
+        const t0 = Date.now();
         let child: Child;
         try {
             child = await rehearse(
@@ -523,6 +531,7 @@ async function main(argv: string[]): Promise<number> {
         } finally {
             rmSync(botDir, { recursive: true, force: true });
         }
+        const secs = Math.round((Date.now() - t0) / 1000);
         const chain = existsSync(planFile) ? (JSON.parse(readFileSync(planFile, 'utf8')) as RehearsalPlan).chain : slice.chain;
         const m = runMetrics(existsSync(log) ? parseLog(readFileSync(log, 'utf8')) : [], readJsonl<VitalsLine>(vitals), resolveTarget(chain, a.target), child.code);
         const refused = m.rows === 0;
@@ -533,11 +542,11 @@ async function main(argv: string[]): Promise<number> {
             m.periodMs !== null && Math.abs(m.periodMs - labTick) > 0.2 * labTick ? `measured tick period ${m.periodMs} ms` : null,
         ].filter(Boolean).join('; ');
         const score = refused ? null : m.pass ? m.ticks : expected !== null ? failurePrice(m.ticks, expected, restart.ticks) : null;
-        const r: RunResult = { ...m, run, account: names.scored, refused, score, notes, log };
+        const r: RunResult = { ...m, run, account: names.scored, refused, score, secs, notes, log };
         results.push(r);
         const status = refused ? 'refused' : m.pass ? 'pass' : 'fail';
-        appendResults(a.out, [tsvRow({ commit, target: a.target, tick_ms: labTick, run, account: names.scored, status, ticks: refused ? null : m.ticks, score, late: m.late, glued: m.glued, gaps: m.gaps, hp_min: m.hpMin, food: m.food, cheats: m.cheats.join('; '), notes, log, at: new Date().toISOString() })]);
-        console.log(`[bench] run ${run}/${a.k} ${status}: ${refused ? '-' : m.ticks} ticks; TICKMON ${m.minutes} min late ${m.late} glued ${m.glued} gaps ${m.gaps}; hp min ${m.hpMin ?? '-'}; food ${m.food ?? '-'}; cheats ${m.cheats.join(', ') || 'none'}${notes ? `; ${notes}` : ''}`);
+        appendResults(a.out, [tsvRow({ commit, target: a.target, tick_ms: labTick, run, account: names.scored, status, ticks: refused ? null : m.ticks, score, secs, late: m.late, glued: m.glued, gaps: m.gaps, hp_min: m.hpMin, food: m.food, cheats: m.cheats.join('; '), notes, log, at: new Date().toISOString() })]);
+        console.log(`[bench] run ${run}/${a.k} ${status}: ${refused ? '-' : m.ticks} ticks in ${secs} s; TICKMON ${m.minutes} min late ${m.late} glued ${m.glued} gaps ${m.gaps}; hp min ${m.hpMin ?? '-'}; food ${m.food ?? '-'}; cheats ${m.cheats.join(', ') || 'none'}${notes ? `; ${notes}` : ''}`);
     }
 
     const ran = results.filter(r => !r.refused);
@@ -548,7 +557,7 @@ async function main(argv: string[]): Promise<number> {
     const sum = (k: 'late' | 'glued' | 'gaps') => ran.reduce((x, r) => x + r[k], 0);
     console.log(`\nBENCH ${a.target} @${labTick}ms K=${a.k}: ${spread}, pass ${passed.length}/${a.k}${ran.length < a.k ? ` (${a.k - ran.length} never reached the step)` : ''}; score ${score ?? '-'} | ${cells.text}${a.expected ? `; scored against --expected ${a.expected}` : ''} | TICKMON late ${sum('late')} glued ${sum('glued')} gaps ${sum('gaps')} | commit ${commit}`);
     console.log(`SCORE ${score ?? 'none'}`);
-    console.log(`RESULT bench-step ${JSON.stringify({ target: a.target, tickMs: labTick, k: a.k, commit, score, expected, best: cells.best, restart: restart.ticks, runs: results.map(({ run, account, pass, refused, ticks, score, late, glued, gaps, minutes, hpMin, food, cheats, notes, log }) => ({ run, account, pass, refused, ticks, score, late, glued, gaps, minutes, hpMin, food, cheats, notes, log })) })}`);
+    console.log(`RESULT bench-step ${JSON.stringify({ target: a.target, tickMs: labTick, k: a.k, commit, score, expected, best: cells.best, restart: restart.ticks, runs: results.map(({ run, account, pass, refused, ticks, score, secs, late, glued, gaps, minutes, hpMin, food, cheats, notes, log }) => ({ run, account, pass, refused, ticks, score, secs, late, glued, gaps, minutes, hpMin, food, cheats, notes, log })) })}`);
     console.log(`[bench] results appended to ${a.out}`);
     return ran.length ? 0 : 3;
 }

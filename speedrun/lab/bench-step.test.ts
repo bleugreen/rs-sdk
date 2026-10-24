@@ -37,6 +37,11 @@ describe('benchArgs', () => {
         expect(benchArgs(['S12']).k).toBe(5);
     });
 
+    test("a step name lab.sh split at its colons rejoins after lab.sh's bot", () => {
+        expect(benchArgs(['benchlab', 'woodcutting', 'oak-15-73', '--k=2']).target).toBe('woodcutting:oak-15-73');
+        expect(benchArgs(['woodcutting:oak-15-73']).target).toBe('woodcutting:oak-15-73');
+    });
+
     test('refuses an unknown flag, a K the account names cannot carry, and no target', () => {
         expect(() => benchArgs(['S12', '--bot=x'])).toThrow('unknown flag');
         expect(() => benchArgs(['S12', '--k=36'])).toThrow('1 to 35');
@@ -182,7 +187,7 @@ describe('accounts and helpers', () => {
 
 describe('results.tsv', () => {
     test('one row per run in the column order, tabs and newlines in a refusal flattened', () => {
-        const line = tsvRow({ commit: 'abc', target: 'S12', tick_ms: 150, run: 1, account: 'benchk3x1', status: 'fail', ticks: 300, score: 843.9, late: 0, glued: 0, gaps: 0, hp_min: 12, food: 2, cheats: 'stage S12', notes: 'S12:B\tfailed\nhere', log: '/tmp/l', at: 'now' });
+        const line = tsvRow({ commit: 'abc', target: 'S12', tick_ms: 150, run: 1, account: 'benchk3x1', status: 'fail', ticks: 300, score: 843.9, secs: 210, late: 0, glued: 0, gaps: 0, hp_min: 12, food: 2, cheats: 'stage S12', notes: 'S12:B\tfailed\nhere', log: '/tmp/l', at: 'now' });
         expect(line.split('\t')).toHaveLength(TSV_COLUMNS.length);
         expect(line).toContain('S12:B failed here');
         expect(line.endsWith('\n')).toBe(true);
