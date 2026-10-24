@@ -24,7 +24,16 @@
  * `--run-ended`; `--ramp=0` turns the ramp off; `--park=1` sets `foodFallback: 'park'`; `--restart=M` stops the runner after M minutes and starts it again. The Exchange check's maker leaves its shark ask open for the rebuy.
  *
  * `--fresh=1` stages nobody: every account starts on Tutorial Island and the runner's own stages do everything (the
- * Hitpoints-site lab). `--min-free-mb=N` (default 1200) stops the run with SIGINT when the host's available memory
+ * Hitpoints-site lab).
+ *
+ * The sale round trip and the pickaxe stage (rs/732): `--sell=1` enables sales of iron ore (floor `--iron-floor`,
+ * default 80, into the Exchange check's iron bid, so keep `--exchange=1`) every `--sell-every` minutes (default 5).
+ * Of the `--iron` accounts, the first `--bare` leave Tutorial Island with an empty pack (no pickaxe) at the Lumbridge
+ * spawn, and the next `--away` the same on the Ardougne side with 200 coins, as a knight sent to iron from the market
+ * would be after a death; the rest stay fresh.
+ *
+ *   . markets/methods/lab/block.sh M20 && LAB_RUNNERS=0 LAB_TIMEOUT=3600 speedrun/lab/lab.sh p2s00 \
+ *     'markets/phase2/lab.ts:--prefix=p2s:--knights=0:--guards=0:--iron=4:--bare=1:--away=1:--sell=1:--sigint=45:--out=/tmp/rs732' `--min-free-mb=N` (default 1200) stops the run with SIGINT when the host's available memory
  * falls below N MB, so a shared lab host keeps room for its other tenants; the memory is logged every 30 s.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -33,7 +42,7 @@ import { executionContext } from '../../sdk/execution-context';
 import type { BotSDK } from '../../sdk/index';
 import { pointMarketAtServer } from '../../speedrun/helpers/mule';
 import { memoryRoleState } from '../../speedrun/helpers/role';
-import { cheat, leaveTutorial, mustTele, setStats } from '../../speedrun/lab/setup';
+import { cheat, clearInventory, leaveTutorial, mustTele, setStats } from '../../speedrun/lab/setup';
 import { depositMatching } from '../../speedrun/lib/bank';
 import { openDirectSession, type DirectSession } from '../../speedrun/lib/direct';
 import { loadBotEnv, ROOT } from '../../speedrun/lib/session';
@@ -47,6 +56,7 @@ import { aliasOf } from './names.ts';
 
 const DRAYNOR_BANK = { x: 3092, z: 3245 };
 const LUMBRIDGE = { x: 3222, z: 3218 };
+const ARDOUGNE_MARKET = { x: 2665, z: 3290 };
 const IRON_ORE = { id: 440, name: 'Iron ore' };
 
 const labBot = process.argv[2] ?? '';
@@ -64,6 +74,13 @@ const out = arg('out', join(process.env.TMPDIR ?? '/tmp', 'phase2-lab'));
 const exchange = arg('exchange', '1') === '1';
 const fresh = arg('fresh', '0') === '1';
 const minFreeMb = count('min-free-mb', 1200);
+const bare = count('bare', 0);
+const away = count('away', 0);
+const sell = arg('sell', '0') === '1';
+const sellEvery = count('sell-every', 5);
+const ironFloor = count('iron-floor', 80);
+/** Iron ore the Exchange check's maker bids for at 100; its own check sells 500 of it. */
+const ironBid = count('iron-bid', 1000);
 const trained = arg('trained', '0') === '1';
 const coins = count('coins', 0);
 const legacySharks = arg('legacy-sharks', '0') === '1';
@@ -130,21 +147,36 @@ async function stageKnight(name: string): Promise<void> {
     });
 }
 
+/** Off Tutorial Island with nothing carried or worn: no pickaxe. On the Ardougne side with 200 coins for its fares. */
+async function stageWithoutPickaxe(name: string, where: 'lumbridge' | 'ardougne'): Promise<void> {
+    await withSession(name, async sdk => {
+        await clearInventory(sdk);
+        if (where === 'ardougne') {
+            await cheat(sdk, 'give coins 200');
+            await waitUntil(sdk, s => s.inventory.some(i => /^coins$/i.test(i.name)), { maxTicks: 10 });
+        }
+        const to = where === 'ardougne' ? ARDOUGNE_MARKET : LUMBRIDGE;
+        await mustTele(sdk, to.x, to.z);
+        const s = sdk.getState()!;
+        log('staged without a pickaxe', { name, where, carried: s.inventory.map(i => `${i.name} x${i.count}`), worn: s.equipment.map(i => i.name) });
+    });
+}
+
 /** Both Exchange errands against this engine's own book. */
 async function exchangeCheck(): Promise<void> {
     const [maker, taker] = [`${prefix}x1`, `${prefix}x2`];
     ensureBot(maker);
     ensureBot(taker);
     const book = new DemoMarket(new Gentle({ server, minIntervalMs: 500 }));
-    // the maker bids 100 for 1,000 iron ore and offers 300 sharks at 600
+    // the maker bids 100 for `--iron-bid` (1,000) iron ore and offers 300 sharks at 600
     await withSession(maker, async (sdk, bot) => {
         await mustTele(sdk, VARROCK_WEST_BANK.x, VARROCK_WEST_BANK.z);
-        await cheat(sdk, 'give coins 100000');
+        await cheat(sdk, `give coins ${ironBid * 100}`);
         await cheat(sdk, 'give cert_shark 300');
         await waitUntil(sdk, s => s.inventory.some(i => /^shark$/i.test(i.name)), { maxTicks: 10 });
         const g = await bot.openGE();
         if (!g.success) throw new Error(`openGE: ${g.message}`);
-        const bid = await bot.placeGEOffer({ item: IRON_ORE.id, side: 'buy', quantity: 1000, price: 100 });
+        const bid = await bot.placeGEOffer({ item: IRON_ORE.id, side: 'buy', quantity: ironBid, price: 100 });
         const ask = await bot.placeGEOffer({ item: SHARK_ID, side: 'sell', quantity: 300, price: 600 });
         log('maker offers', { bid: bid.message, ask: ask.message });
         await bot.closeInterface().catch(() => undefined);
@@ -199,7 +231,8 @@ async function fullPackCheck(book: DemoMarket): Promise<void> {
 
 const names = (tag: string, n: number) => Array.from({ length: n }, (_, i) => `${prefix}${tag}${String(i + 1).padStart(2, '0')}`);
 const knightNames = names('k', knights);
-const accounts = [...names('g', guards).map(a => ({ account: a, method: 'guards' })), ...knightNames.map(a => ({ account: a, method: 'knights' })), ...names('i', iron).map(a => ({ account: a, method: 'iron' }))];
+const ironNames = names('i', iron);
+const accounts = [...names('g', guards).map(a => ({ account: a, method: 'guards' })), ...knightNames.map(a => ({ account: a, method: 'knights' })), ...ironNames.map(a => ({ account: a, method: 'iron' }))];
 for (const a of accounts) ensureBot(a.account);
 mkdirSync(out, { recursive: true });
 
@@ -208,7 +241,11 @@ if (exchange) await exchangeCheck();
 // four at a time, the last `hungry` knights left fresh
 const staged = fresh ? [] : knightNames.slice(0, Math.max(0, knights - hungry));
 for (let i = 0; i < staged.length; i += 4) await Promise.all(staged.slice(i, i + 4).map(n => stageKnight(n)));
-log('staging done', { knights: staged.length, fresh: accounts.length - staged.length });
+const bareNames = ironNames.slice(0, bare);
+const awayNames = ironNames.slice(bare, bare + away);
+for (const n of bareNames) await stageWithoutPickaxe(n, 'lumbridge');
+for (const n of awayNames) await stageWithoutPickaxe(n, 'ardougne');
+log('staging done', { knights: staged.length, withoutPickaxe: bareNames.length + awayNames.length, fresh: accounts.length - staged.length - bareNames.length - awayNames.length });
 
 // the purchase record the runner wrote before SharkState (errands.ts buySharks' record with its `at`)
 if (legacySharks)
@@ -227,7 +264,8 @@ const plan = {
     ...(buy
         ? { sharks: { source: 'buy', perAccount: count('per-account', 20), minimum: count('minimum', 5), rebuyMinSharks: count('rebuy-min', 5), ceiling: count('ceiling', 650), fillMinutes: 1 }, foodFallbackMix: { guards: 1 } }
         : {}),
-    ...(park ? { foodFallback: 'park' } : {})
+    ...(park ? { foodFallback: 'park' } : {}),
+    ...(sell ? { sell: { enabled: true, cap: 500, everyMinutes: sellEvery, floors: { 'Iron ore': ironFloor }, fillMinutes: 1 } } : {})
 };
 const planPath = join(out, 'plan.json');
 writeFileSync(planPath, JSON.stringify(plan, null, 2));
