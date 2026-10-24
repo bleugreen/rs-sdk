@@ -19,7 +19,10 @@
 // --rows: the rows run, a subset of H1,H4,H4k in that order (default all three). --late=<s>: a carrier
 // late on purpose (rs/603): seeded, then logged out; it logs back in and starts its role <s> seconds
 // after SCORED stands at the first row, whose step starts at once (with --entry-wait=none), so the
-// row's cue ready gate (delivery-owner.ts awaitReady, 600 ticks) is what waits for it.
+// row's cue ready gate (delivery-owner.ts awaitReady, 600 ticks) is what waits for it. The late
+// carrier launches its own lite client each time (give it to lab.sh as LAB_BOTS, not LAB_HELPERS),
+// so its logout really leaves the world and its return is a fresh login, as a relaunch is:
+//   LAB_RUNNERS=0 LAB_BOTS=<mule> ... 'speedrun/lab/delivery-chain.ts:--mule=<mule>:--rows=H1:--entry-wait=none:--late=60'
 //
 // Exit 0 every row served and its step's postconditions held, 1 otherwise.
 
@@ -34,7 +37,7 @@ import { readMulePreparation, readMuleReady } from '../helpers/mule-readiness';
 import { openRoleState } from '../helpers/role';
 import { depositAll } from '../lib/bank';
 import { objPack } from '../lib/obj-pack';
-import { closeSession, isLoopbackHost, loadBotEnv, openSession, ROOT, type Session } from '../lib/session';
+import { closeSession, isLoopbackHost, loadBotEnv, logoutClean, openSession, ROOT, type Session } from '../lib/session';
 import { TickLog } from '../lib/ticks';
 import { waitUntil } from '../lib/wait';
 import { opIndex } from '../lib/world';
@@ -174,7 +177,7 @@ try {
     emit('start', { host: hostname(), revision: revision(), tickRate: process.env.NODE_TICKRATE, client, hold, entryWait, lateMs, runId, root, rows: ROWS });
     if (client === 'browser') secure = await openSecureLabSession(scoredName);
     scored = secure?.session ?? await openSession(scoredName, { client, launch: true });
-    mule = await openSession(muleName);
+    mule = await openSession(muleName, lateMs ? { launch: true } : {});
     for (const s of [scored, mule]) { await leaveTutorial(s); await clearInventory(s.sdk); }
     await seedCarrier();
     // Recipient stock is not under test: the fixture's items arrive by staff command at each row.
@@ -201,9 +204,11 @@ try {
         }).then(() => { if (!stop.signal.aborted) roleError = new Error('the mule role exited'); }, e => { roleError = e; emit('role-error', { error: String(e) }); });
     };
     if (lateMs) {
-        // The late carrier is out of the world until SCORED stands at the first row.
+        // The late carrier is out of the world until SCORED stands at the first row: a clean logout ends its launched client.
+        const out = await logoutClean(mule);
         await closeSession(mule);
-        emit('carrier-logout');
+        emit('carrier-logout', { ok: out.ok, reason: out.reason ?? null });
+        if (!out.ok) throw new Error(`the late carrier did not log out: ${out.reason}`);
     } else startCarrier();
 
     if (hold && !lateMs) {
@@ -243,7 +248,7 @@ try {
                 late = (async () => {
                     await new Promise(r => setTimeout(r, lateMs));
                     if (stop.signal.aborted) return;
-                    mule = await openSession(muleName);
+                    mule = await openSession(muleName, { launch: true });
                     emit('carrier-login', { row, afterMs: lateMs });
                     startCarrier();
                 })().catch(e => { roleError = e; emit('carrier-login-error', { error: String(e) }); });
