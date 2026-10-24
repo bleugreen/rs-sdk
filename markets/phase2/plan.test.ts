@@ -140,3 +140,13 @@ describe('fallback split', () => {
         expect(Object.fromEntries(assigned)).toEqual(Object.fromEntries([...fallbackMix(20, mix)].filter(([, n]) => n > 0)));
     });
 });
+
+describe('hpSites', () => {
+    test('default caps from the sites, overridden per site, refused when unknown or all closed', () => {
+        expect(parsePlan({ accounts: accounts(2, 'knights') }).hpSites).toMatchObject({ cows: 4, farm: 4 });
+        expect(parsePlan({ accounts: accounts(2, 'knights'), hpSites: { cows: 1, goblins: 0 } }).hpSites).toEqual({ cows: 1, goblins: 0 });
+        expect(problems({ accounts: accounts(2, 'knights'), hpSites: { crabs: 3, cows: 1.5 } })).toEqual(['hpSites.crabs: not a low Hitpoints site (cows, goblins, chickens, farm, champions, crafting, sarim)', 'hpSites.cows must be a whole number']);
+        expect(problems({ accounts: accounts(2, 'knights'), hpSites: { cows: 0 } })).toEqual(['hpSites closes every site, so no account could train Hitpoints']);
+        expect(problems({ accounts: accounts(2, 'iron'), hpSites: { cows: 0 } })).toEqual([]);
+    });
+});
