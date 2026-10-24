@@ -244,6 +244,26 @@ describe('prayer points (rs/687)', () => {
         expect([...full.sent, ...none.sent]).toEqual([]);
     });
 
+    test('a drink dropped by a scene delay is re-sent after 3 ticks and lands', async () => {
+        const sdk = new FakeSdk(at(4, [potion(0, 4)]));
+        potionServer(sdk, { ignore: 1 });
+        const run = drinkPrayerTo(sdk, 8);
+        for (let i = 0; i < 4; i++) setTimeout(() => sdk.tick(), 2 + i);
+        expect(await run).toBe(1);
+        expect(sdk.state!.prayers.prayerPoints).toBe(35);
+        expect(sdk.sent.filter(a => a.method === 'sendUseItem')).toHaveLength(2);
+    });
+
+    test('never clicks while a chat page is open (a pack click closes it): waits, then gives up without a drink', async () => {
+        const s = at(4, [potion(0, 4)]);
+        const sdk = new FakeSdk({ ...s, dialog: { ...s.dialog, isOpen: true } });
+        potionServer(sdk);
+        const run = drinkPrayerTo(sdk, 8, 3);
+        for (let i = 0; i < 5; i++) setTimeout(() => sdk.tick(), 2 + i);
+        expect(await run).toBe(0);
+        expect(sdk.sent).toEqual([]);
+    });
+
     test('a drink that never lands throws, naming the points and the doses', async () => {
         const sdk = new FakeSdk(at(0, [potion(0, 4)]));
         potionServer(sdk, { ignore: 1 });
