@@ -5,6 +5,7 @@
  * A plan names accounts, so the plan file lives outside the checkout like the accounts list; the committed
  * example (`plan.example.json`) uses placeholder names.
  */
+import { FARE } from '../../speedrun/lib/ships';
 import { LOW_SITES } from '../methods/hp-train.ts';
 import { defaultCaps, type HpSiteCaps } from './hp-sites.ts';
 
@@ -134,8 +135,13 @@ export interface Plan {
     options: Partial<Record<MethodId, Record<string, unknown>>>;
 }
 
-/** Methods worked within walking distance of the Exchange (Varrock west bank): the only ones a sale can run from. */
-export const SALE_ROUTE: readonly MethodId[] = ['guards'];
+/**
+ * How a method's account reaches the Exchange (the Varrock west bank) to sell: on foot from its work, or by ship from
+ * the Ardougne side and back (errands.ts `sellByShip`, 120 coins of fares). A method without one cannot sell: the
+ * knights and heroes earn coins, and a trip would cost their pickpocketing for nothing a floor should name (their
+ * banks hold the sharks they eat); no code yet takes a Shilo account out through the Shilo gate.
+ */
+export const SALE_ROUTE: Readonly<Partial<Record<MethodId, 'walk' | 'ship'>>> = { guards: 'walk', iron: 'ship' };
 
 export const PLAN_B_MIX: Mix = { iron: 12, heroes: 8, guards: 23 };
 export const LOW_FOOD_MIX: Mix = { iron: 12, guards: 23 };
@@ -309,8 +315,8 @@ export function parsePlan(raw: unknown): Plan {
         const knights = accounts.some(a => a.method === 'knights');
         const eaters = accounts.some(a => NEEDS[a.method].sharks) || (knights && Object.keys(ramp?.fallbackMix ?? {}).some(m => NEEDS[m as MethodId].sharks));
         const methods = [...accounts.map(a => a.method), ...(knights ? Object.keys(ramp?.fallbackMix ?? {}) : []), ...(eaters ? Object.keys(foodFallbackMix) : [])] as MethodId[];
-        const away = [...new Set(methods)].filter(m => !SALE_ROUTE.includes(m));
-        if (away.length) problems.push(`sell.enabled: ${away.join(', ')} accounts cannot reach the Exchange (no return trip from Ardougne or Shilo exists yet); enable sales in a plan without them`);
+        const away = [...new Set(methods)].filter(m => !SALE_ROUTE[m]);
+        if (away.length) problems.push(`sell.enabled: ${away.join(', ')} accounts have no sale route to the Exchange (guards walk, iron sails); enable sales in a plan without them`);
     }
 
     let hpSites = defaultCaps();
@@ -391,6 +397,8 @@ export type Stage =
     | { do: 'thieving'; to: number }
     /** At least `n` coins in the pack: from the bank, else earned on the Lumbridge men. */
     | { do: 'coins'; n: number }
+    /** A pickaxe usable at the account's Mining level: from the bank when last seen there, else bought (pickaxe.ts). */
+    | { do: 'pickaxe' }
     /** Mining to `to` with speedrun/skills/mining.ts's lite-client steps (copper at Rimmington, to 15 at most). */
     | { do: 'mining'; to: number }
     | { do: 'wield'; item: string }
@@ -401,9 +409,11 @@ export type Stage =
     | { do: 'method'; method: MethodId };
 
 export const SHIP_COINS = 100;
+/** A sale by ship from the Ardougne side: four voyages (speedrun/lib/ships.ts FARE). */
+export const ROUND_TRIP_FARES = 4 * FARE;
 
 /** Everything an account does from a fresh login to its method, in order. Each stage is skipped once its goal holds. */
-export function sequenceFor(a: Pick<AccountPlan, 'method' | 'hp'>, plan: Pick<Plan, 'hp' | 'sharks' | 'ramp'>): Stage[] {
+export function sequenceFor(a: Pick<AccountPlan, 'method' | 'hp'>, plan: Pick<Plan, 'hp' | 'sharks' | 'ramp' | 'sell'>): Stage[] {
     const n = NEEDS[a.method];
     if (n.staged) return [{ do: 'method', method: a.method }];
     const out: Stage[] = [{ do: 'tutorial' }];
@@ -413,7 +423,10 @@ export function sequenceFor(a: Pick<AccountPlan, 'method' | 'hp'>, plan: Pick<Pl
     if (a.method === 'knights' && plan.ramp) out.push({ do: 'admission' });
     if (n.sharks && plan.sharks.source === 'buy') out.push({ do: 'buy-sharks' });
     if (n.mining) {
-        out.push({ do: 'coins', n: SHIP_COINS });
+        // before the coins: Bob's pickaxe costs 1 and the stage earns it on the men beside his shop
+        out.push({ do: 'pickaxe' });
+        // a selling account carries its first round trip's fares over: mine.ts banks them in Ardougne with the ore
+        out.push({ do: 'coins', n: SHIP_COINS + (plan.sell.enabled && SALE_ROUTE[a.method] === 'ship' ? ROUND_TRIP_FARES : 0) });
         out.push({ do: 'mining', to: Math.min(n.mining, 15) });
         out.push({ do: 'wield', item: 'pickaxe' });
     }
