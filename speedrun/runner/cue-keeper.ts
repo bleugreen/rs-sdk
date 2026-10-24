@@ -208,6 +208,24 @@ export class CueKeeper implements CueSink {
         if (delivery && !o.failed) this.delivery!.served(scope.step);
     }
 
+    /**
+     * A row the chain skips without its cue (an H4m load at Prayer 99): nothing opens, so nothing waits
+     * on its carrier. A delivery carrier's carry-ahead moves to its next row as after a served stop;
+     * with `final` (the carrier's last row) the row's session is written as a final stop, the
+     * launcher's logout trigger, so the carrier never stands until the launcher ends.
+     */
+    skip(scope: CueScope, o: { final: boolean }): void {
+        const owner = this.ownerOf(scope);
+        if (o.final) {
+            this.endCurrent(!this.current || !sameScope(this.current.scope, scope));
+            const writer = this.newWriter(scope, owner);
+            writer.stop(this.lastBeacons(writer), { final: true });
+            // Another session now owns the file, as after open(): the one stood down is past finalizing.
+            this.stood = null;
+        }
+        owner?.served(scope.step);
+    }
+
     private endCurrent(final: boolean): void {
         if (!this.current) return;
         this.assertCurrent(this.current.writer);
@@ -282,6 +300,10 @@ export class RunCues implements CueSink {
 
     stop(scope: CueScope, _ctx?: StepContext<unknown>, o: { final?: boolean; failed?: boolean } = {}): void {
         this.keeper(scope).stop(scope, _ctx, o);
+    }
+
+    skip(scope: CueScope, o: { final: boolean }): void {
+        this.keeper(scope).skip(scope, o);
     }
 
     close(o: { final: boolean }): void {

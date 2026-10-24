@@ -357,25 +357,25 @@ describe('ledger-derived mule delivery fixtures', () => {
         expect(retired.unresolved).toEqual([{ row: 'H4m', reasons: ['H4m: expected exactly one ledger row, found 0'] }]);
     });
 
-    test("H4m's loads: fixtures from the one fallback row, after H4p; load 1 carried with H4p (22 slots), SCORED on the east stay", () => {
+    test("H4m's loads: fixtures from the one fallback row, after H4p; load 1 carried with H4p (23 slots: the pickaxe, 2 logs, 20 bones), SCORED on the east stay", () => {
         const withRow = manifest.replace(/^\| H4e \|/m, '| H4m.1-H4m.3 | big bones @532 x20 [u] | - | - | 20 | fixture (r) |\n| H4e |');
         const p = plan(withRow, ['H4p', 'H4m.1', 'H4m.2', 'H4m.3']);
         expect(p.unresolved).toEqual([]);
         expect(p.fixtures.map(f => f.row)).toEqual(['H4p', 'H4m.1', 'H4m.2', 'H4m.3']);
         const [h4p, ...loads] = p.fixtures;
         expect(h4p!.carryNext).toBe('H4m.1');
-        expect(h4p!.slots.helperStaged).toBe(22);
+        expect(h4p!.slots.helperStaged).toBe(23);
         expect(h4p!.helperAfterInventory.map(i => [i.id, i.count])).toEqual([[532, 20]]);
         for (const f of loads) {
             expect(f.at).toEqual({ x: 2606, z: 3234, level: 0 });
             expect(f.receivingArea).toEqual({ x: 2605, z: 3234, level: 0, tol: 0 });
             expect(f.receive.map(i => [i.id, i.count])).toEqual([[532, 20]]);
-            expect(f.beforeInventory.map(i => [i.name, i.count])).toEqual([['Knife', 1], ['Logs', 2], ['Rune pickaxe', 1]]);
+            expect(f.beforeInventory.map(i => [i.name, i.count])).toEqual([['Knife', 1], ['Rune pickaxe', 1], ['Logs', 2]]);
             expect(f.slots.afterSwap).toBe(24);
             expect(f.ledger.anchor).toBe('H4p');
         }
         expect(loads[1]!.carryNext).toBeUndefined();
-        expect(p.bankSeed!.map(i => [i.debugName, i.count])).toEqual([['rune_pickaxe', 1], ['logs', 1], ['big_bones', 60]]);
+        expect(p.bankSeed!.map(i => [i.debugName, i.count])).toEqual([['rune_pickaxe', 1], ['logs', 2], ['big_bones', 60]]);
         expect(plan(withRow, ['H4p', 'H4m.4']).unresolved[0]!.reasons.join()).toContain("not one of the manifest's H4m loads");
         expect(plan(withRow, ['H4m.1']).unresolved[0]!.reasons.join()).toContain('follows H4p');
         expect(plan(manifest, ['H4p', 'H4m.1']).unresolved[0]!.reasons.join()).toContain("not one of the manifest's H4m loads");
