@@ -3,7 +3,8 @@
 // speedrun/run.ts.
 
 import { type Link, type Probe, type ResumeEvent, runResumable } from '../runner/resume';
-import type { Step } from '../runner/step';
+import { describeExit, leaveAfterFailure } from '../runner/retreat';
+import { StepError, type Step, type StepRecord } from '../runner/step';
 import { EXIT_HOST_RESERVED, type HostReservation, type ReservationWatch, reservationText } from './host-reservation';
 import type { LogoutResult, Session } from './session';
 import type { BotWorldState } from '../../sdk/types';
@@ -38,6 +39,8 @@ export interface AttemptOptions {
     from?: number | string;
     /** The probes the chain's steps read on a resume walk (runner/resume.ts stepProbes). */
     probes?: Readonly<Record<string, Probe>>;
+    /** The attempt's step record (run.ts's AttemptRecord.steps): runSteps marks each step, the resume walk reads it. */
+    record?: StepRecord;
     /** Read at every logout-safe boundary (ReservationWatch.boundary), before the other stops. */
     reservation: ReservationWatch;
     /** Ctrl-C asked for a stop. */
@@ -84,6 +87,7 @@ export async function runAttempt(session: Session, chain: ReadonlyArray<Step<any
             ...(o.from !== undefined ? { from: o.from } : {}),
             ...(o.recover ? { recover: o.recover } : {}),
             ...(o.probes ? { probes: o.probes } : {}),
+            ...(o.record ? { record: o.record } : {}),
             ...(o.onEvent ? { onEvent: o.onEvent } : {}),
         });
         if (r.resumeAt === undefined) return { outcome: r.drops ? `chain done after ${r.drops} drop(s)` : 'chain done', code: 0, paused: null };
@@ -111,9 +115,24 @@ export async function runAttempt(session: Session, chain: ReadonlyArray<Step<any
     } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         // A step that logged out on purpose (a PausedForPlayer pause) left the world itself.
-        const r = !session.expectInWorld ? { outcome: `paused by the step, already logged out: ${msg}`, code: 4 } : { outcome: `FAILED: ${msg}`, code: 1 };
+        const r = !session.expectInWorld ? { outcome: `paused by the step, already logged out: ${msg}`, code: 4 } : { outcome: `FAILED: ${msg}${await retreatedExit(session, chain, e, o)}`, code: 1 };
         console.error(`[${o.label ?? 'rehearse'}] ${r.outcome}`);
         return { ...r, paused: null };
+    }
+}
+
+/**
+ * The exit after a failed step that declares `retreat` (runner/retreat.ts): out of the aggressors'
+ * reach, then the logout, said as the outcome's tail. Empty for any other failure, whose logout the
+ * caller makes as it always has.
+ */
+async function retreatedExit(session: Session, chain: ReadonlyArray<Step<any>>, e: unknown, o: AttemptOptions): Promise<string> {
+    const failed = e instanceof StepError ? chain.find(s => s.name === e.step) : undefined;
+    if (!failed?.retreat) return '';
+    try {
+        return `; ${describeExit(await leaveAfterFailure(session, failed, { log: o.log, account: o.account, logout: o.logout }))}`;
+    } catch (err) {
+        return `; the exit after it failed too: ${err instanceof Error ? err.message : String(err)}`;
     }
 }
 

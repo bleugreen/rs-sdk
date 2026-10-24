@@ -50,7 +50,7 @@ export type Check<C> = (s: BotWorldState, c: C) => true | string;
  * times a login-armed deadline reads (skills/cooking.ts); `launchId` tells a step row spanning an
  * in-page relog (one count) from one spanning a relaunch (lib/ticks.ts tickCounter).
  */
-export type RunnerSession = Pick<Session, 'sdk' | 'bot' | 'name' | 'sessionId'> & Partial<Pick<Session, 'tickBase' | 'launchId'>>;
+export type RunnerSession = Pick<Session, 'sdk' | 'bot' | 'name' | 'sessionId'> & Partial<Pick<Session, 'tickBase' | 'launchId' | 'died'>>;
 
 /**
  * What the resume walk (runner/resume.ts) knows about the game: the published
@@ -60,6 +60,18 @@ export type RunnerSession = Pick<Session, 'sdk' | 'bot' | 'name' | 'sessionId'> 
 export interface Observed {
     state: BotWorldState;
     probed: Readonly<Record<string, unknown>>;
+    /** This attempt's step record: a step whose postconditions passed in this attempt, in any process. Absent outside a run (tests, lab stand-ins). */
+    record?: StepMarks;
+}
+
+/** The attempt's step marks as a `done` reads them: keyed by the Step's `name` as runSteps runs it (runner/attempt-record.ts). */
+export interface StepMarks {
+    has(stepName: string): boolean;
+}
+
+/** The attempt's step marks as runSteps writes them. */
+export interface StepRecord extends StepMarks {
+    mark(stepName: string, tick: number): void;
 }
 
 export type ObservedCheck<C> = (o: Observed, c: C) => boolean;
@@ -113,6 +125,24 @@ export interface Step<C = Record<string, never>> {
      * marker only where the step before it finished or the step after it can start (runner/resume.ts).
      */
     marker?: true;
+    /**
+     * Its `run` starts safely with the account in combat (S14 and S27 set the cannon up among
+     * aggressive spiders). Without it, the resume walk holds a logoutSafe:false step it would enter
+     * through `run` while the account is in combat (runner/resume.ts MidStepError).
+     */
+    startsInCombat?: true;
+    /**
+     * A bounded walk out of the aggressors' reach, for a step that can fail among aggressive NPCs
+     * (S14 and S27 at the Wilderness poison spiders). The server refuses a logout while the account
+     * is in combat (lib/world.ts inCombatWindow), and logoutClean holds through that window being hit.
+     * After this step fails with SCORED in the window, or once a logout is refused for combat, the
+     * attempt runs `retreat` first and then logs out (runner/retreat.ts, from lib/attempt.ts's
+     * failure path). The runner bounds it in ticks, fences its sends past the bound, and watches it
+     * for a death. It picks nothing up and may start anywhere the step can fail, so it returns at once
+     * where there is nothing to walk out of; it throws when it ends still in reach. Absent: the logout
+     * after a failure is exactly what it was.
+     */
+    retreat?(ctx: StepContext<C>): Promise<void>;
 }
 
 export class StepError extends Error {
@@ -147,6 +177,12 @@ export interface RunStepsOptions<C> {
      * attempts instead); an object overrides its thresholds.
      */
     tickMonitor?: TickMonitorSetting;
+    /**
+     * This attempt's step record (run.ts's AttemptRecord.steps): each step's name is marked once its
+     * postconditions pass, entered through `run` or `resume` alike. Absent: nothing is marked (unit
+     * tests, lab stand-ins).
+     */
+    record?: StepRecord;
 }
 
 export interface RunStepsResult {
@@ -294,6 +330,7 @@ export async function runSteps<C>(session: RunnerSession, steps: ReadonlyArray<S
                 failRow(opts.log, session, step.name, 'postcondition', post);
                 throw new StepError(step.name, 'postcondition', post);
             }
+            opts.record?.mark(step.name, sdk.getState()?.tick ?? -1);
 
             if (opts.signal?.aborted) return { completed: i + 1 - start, resumeAt: i + 1, aborted: true };
             if (step.logoutSafe && i + 1 < steps.length && shouldStop()) {

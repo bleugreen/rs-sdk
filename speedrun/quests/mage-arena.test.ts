@@ -4,9 +4,11 @@ import { drive, FakeSdk, baseState, runeNeedProblems } from '../lib/fake-sdk';
 import { TickLog } from '../lib/ticks';
 import type { Observed, StepContext } from '../runner/step';
 import {
-    AIR_RUNES, ARRIVAL, barredReason, entryRefusal, exitClean, exitDropItems, exitMagic, FALLBACK_RUNES, fightKolodion, formPicker, KEEP_SHARKS, kit, LETTERS, newTally, prayerBudget, quest,
-    FIRE_WAVE_MAX_CASTS, RUNE_NEED, RUNE_USE, SPELL_RUNES, SPELLS, spellReady, stepId, steps, type Options,
+    AIR_RUNES, ARRIVAL, barredReason, entryRefusal, exitClean, exitDropItems, exitMagic, FALLBACK_RUNES, fightKolodion, fightReady, formPicker, KEEP_SHARKS, kit, LETTERS, newTally, prayerBudget, quest,
+    FIRE_WAVE_MAX_CASTS, RUNE_NEED, RUNE_USE, SPELL_RUNES, SPELLS, spellReady, spentKit, stepId, steps, type Options,
 } from './mage-arena';
+import { Observation, resolveResume } from '../runner/resume';
+import type { RunnerSession } from '../runner/step';
 
 // Config ids from server/content/pack/obj.pack: entryRefusal reads the categories by id.
 const ID = {
@@ -195,15 +197,17 @@ describe('A: postconditions (kit held, fight ready)', () => {
         s.inventory = s.inventory.map(i => (/blood/i.test(i.name) ? { ...i, count: 89 } : i));
         expect(post(s)).toMatch(/kit missing: 1 x/);
     });
+    // fightReady is B's start check; a part-spent kit is also B's restart entry (the spent-kit tests below).
     test("B's start check names both rune counts: blood >= 90 and death >= 25", () => {
         const s = without(without(arrival(), /greegree/i), /death/i);
         s.inventory = s.inventory.map(i => (/blood/i.test(i.name) ? { ...i, count: 70 } : i));
-        expect(seg('B').preconditions(s, {})).toBe('kit (H13): blood rune 70 held, want >= 90; death rune 0 held, want >= 25');
+        expect(fightReady('fire_wave')(s, {})).toBe('kit (H13): blood rune 70 held, want >= 90; death rune 0 held, want >= 25');
     });
     test('the lab\'s spellRunes lowers the blood the start check wants', () => {
         const s = without(arrival(), /greegree/i);
         s.inventory = s.inventory.map(i => (/blood/i.test(i.name) ? { ...i, count: 20 } : i));
-        expect(seg('B').preconditions(s, {})).toMatch(/blood rune 20 held, want >= 90/);
+        expect(fightReady('fire_wave')(s, {})).toMatch(/blood rune 20 held, want >= 90/);
+        expect(fightReady('fire_wave', 20)(s, {})).toBe(true);
         expect(seg('B', { spellRunes: 20 }).preconditions(s, {})).toBe(true);
     });
     test('the Fire Blast option wants 90 death runes instead', () => {
@@ -246,6 +250,102 @@ describe('B and C: the arena', () => {
         const s = arrival();
         expect(seg('C').postconditions(s, {})).toBe(true);
         expect(seg('C').postconditions({ ...s, dialog: { ...s.dialog, isOpen: true } }, {})).toMatch(/dialogue/);
+    });
+});
+
+describe('B after a runner process restart: the fight won in an earlier process (rs/185 P1)', () => {
+    /** The cellar with `blood` and `death` of H13's spell stacks, 200 air and the prayer spent: what a won fight leaves. */
+    const cellar = (blood: number, death: number): BotWorldState => {
+        const s = without(arrival({}, { points: 12 }), /greegree|prayer potion/i);
+        return { ...s, inventory: s.inventory.map(i => (/^blood rune$/i.test(i.name) ? { ...i, count: blood } : /^death rune$/i.test(i.name) ? { ...i, count: death } : /^air rune$/i.test(i.name) ? { ...i, count: 200 } : i)).filter(i => i.count > 0) };
+    };
+    const walk = (s: BotWorldState) => resolveResume(steps(), new Observation(s, {}, {} as RunnerSession), {});
+
+    test('spentKit: some of the spell stacks held and one below the kit; none (before A) or the full kit is not spent', () => {
+        const spent = spentKit('fire_wave');
+        expect([spent(cellar(40, 25)), spent(cellar(0, 12)), spent(cellar(89, 25)), spent(cellar(90, 24))]).toEqual([true, true, true, true]);
+        expect([spent(cellar(0, 0)), spent(cellar(90, 25))]).toEqual([false, false]);
+        expect(spentKit('fire_blast')(cellar(0, 40))).toBe(true);
+    });
+
+    test('a fresh steps() in the cellar with 40 blood / 25 death resolves B, and 0 blood / 12 death (the guard spent) too', async () => {
+        for (const [b, d] of [[40, 25], [0, 12]] as const) {
+            const p = await walk(cellar(b, d));
+            expect([p.step, p.mode]).toEqual(['S16:B-kolodion', 'run']);
+        }
+    });
+
+    test('0/0 (before A) does not resolve B; 90/25 resolves B on the start check as today', async () => {
+        const before = await walk(cellar(0, 0)).catch((e: Error) => e);
+        expect(before instanceof Error ? before.message : before.step).not.toBe('S16:B-kolodion');
+        const ready = without(arrival(), /greegree/i);
+        expect(fightReady('fire_wave')(ready, {})).toBe(true);
+        expect([(await walk(ready)).step]).toEqual(['S16:B-kolodion']);
+    });
+
+    /** Kolodion beside SCORED; the fake server opens `pages` one at a time on the talk and each continue, and closes on close-modal. */
+    function kolodionSdk(s: BotWorldState, pages: string[]) {
+        const kol = { kind: 'npc', id: 905, index: 41, name: 'Kolodion', combatLevel: 0, x: ARRIVAL.x + 1, z: ARRIVAL.z, distance: 1, hp: null, optionsWithIndex: [{ text: 'Talk-to', opIndex: 1 }] } as unknown as NearbyNpc;
+        const sdk = new FakeSdk({ ...s, nearbyNpcs: [kol] });
+        const show = (text: string) => ({ dialog: { isOpen: true, options: [], isWaiting: false, allComponents: [{ text }] } }) as unknown as Partial<BotWorldState>;
+        const closed = { dialog: { isOpen: false, options: [], isWaiting: false } } as unknown as Partial<BotWorldState>;
+        let next = 0;
+        let pending: Partial<BotWorldState> | null = null;
+        sdk.onSend = a => {
+            if (a.method === 'sendInteractNpc' && next === 0) pending = show(pages[next++]!);
+            else if ((a.method === 'sendClickDialog' || a.method === 'clickDialogByText') && next < pages.length) pending = show(pages[next++]!);
+            else if (a.method === 'sendCloseModal') pending = closed;
+        };
+        const each = (): Partial<BotWorldState> => {
+            const p = pending;
+            pending = null;
+            return p ?? {};
+        };
+        const ctx = { sdk, c: {}, log: TickLog.memory('t') } as unknown as StepContext<unknown>;
+        return { sdk, each, ctx };
+    }
+    const continues = (sdk: FakeSdk) => sdk.sent.filter(a => a.method === 'sendClickDialog' || a.method === 'clickDialogByText').length;
+
+    test("'You're a tough one': B sets the fight won, closes the talk; C is then skipped and D can start in the same steps()", async () => {
+        const list = steps();
+        const s = cellar(40, 25);
+        const { sdk, each, ctx } = kolodionSdk(s, ['Hello, Kolodion.', "Hello, young mage. You're a tough one.", 'What now?']);
+        await drive(sdk, list[1]!.run(ctx) as Promise<unknown>, 40, each);
+        const end = sdk.getState()!;
+        expect(end.dialog.isOpen).toBe(false);
+        expect(continues(sdk)).toBe(1);
+        expect(sdk.sent.some(a => a.method === 'sendCloseModal')).toBe(true);
+        expect(list[1]!.postconditions(end, {})).toBe(true);
+        expect(list[2]!.preconditions(end, {})).toBe(true);
+        expect(list[2]!.postconditions(end, {})).toBe(true);
+        expect(list[3]!.preconditions(end, {})).toBe(true);
+    });
+
+    test("'Hi.' (1-5, the next page is the arena teleport): closed unanswered, and B throws for the operator", async () => {
+        const list = steps();
+        const { sdk, each, ctx } = kolodionSdk(cellar(40, 25), ['Hi.', 'You return, young conjurer. You obviously have a taste for the dark side of magic.']);
+        await expect(drive(sdk, list[1]!.run(ctx) as Promise<unknown>, 40, each)).rejects.toThrow(
+            'kolodion: kit spent (blood rune 40, death rune 25) and the fight is not won (his talk opened "Hi."): H13 cannot resupply'
+        );
+        expect(continues(sdk)).toBe(0);
+        expect(sdk.sent.some(a => a.method === 'sendCloseModal')).toBe(true);
+        expect(sdk.getState()!.dialog.isOpen).toBe(false);
+        expect(list[3]!.preconditions(sdk.getState()!, {})).toMatch(/fight is not known to be won/);
+    });
+
+    test("a takeover in the arena with Kolodion's form attacking resolves C through its resume entry (the fight's own run), not a hold", async () => {
+        const s = at(without(arrival(), /greegree/i), ARENA_AT);
+        const fighting = { ...s, player: { ...s.player!, combat: { inCombat: true, lastDamageTick: s.tick - 1, targetIndex: 9001, targetType: 'npc' } } } as BotWorldState;
+        const p = await walk(fighting);
+        expect([p.step, p.mode]).toEqual(['S16:C-fight', 'resume']);
+    });
+
+    test('a full kit (90/25) runs B as today: the fight talk, never the spent-kit ask', async () => {
+        const ready = without(arrival(), /greegree/i);
+        const { sdk, each, ctx } = kolodionSdk(ready, ['Hello there. What is this place?']);
+        // Today\'s talk sets Protect from Magic first: its click is the first send, before any talk.
+        await drive(sdk, steps()[1]!.run(ctx) as Promise<unknown>, 6, each).catch(() => undefined);
+        expect(sdk.sent[0]?.method).not.toBe('sendInteractNpc');
     });
 });
 
@@ -469,7 +569,7 @@ describe('exitMagic: what S18 sees', () => {
 
 describe('rune pins: RUNE_USE and RUNE_NEED agree with the kit (tools/rune-pins.ts)', () => {
     test("RUNE_NEED.B is exactly what B's fightReady wants held (H13's kit)", () => {
-        expect(runeNeedProblems(s => seg('B').preconditions(s, {}), without(arrival(), /greegree/i), RUNE_NEED.B!)).toEqual([]);
+        expect(runeNeedProblems(s => fightReady('fire_wave')(s, {}), without(arrival(), /greegree/i), RUNE_NEED.B!)).toEqual([]);
     });
     test("C's use is the guarded worst case, the whole kit: every Wave, then every fallback Blast", () => {
         expect(RUNE_USE.C).toEqual({ bloodrune: SPELL_RUNES.fire_wave, deathrune: FALLBACK_RUNES, airrune: AIR_RUNES });

@@ -108,7 +108,14 @@ Where the module differs from the step list above:
 
 ## Risks and gotchas
 
-- None found. No fight, no random step, no forced wait. Doric's house door is open.
+- No fight, no random step, no forced wait.
+- **Doric can be shut in or out.** His room (x 2950-2953, z 3449-3452, maps/m46_53) has two
+  ordinary doors, west (2949,3450) and north (2952,3453), and his wanderrange 3 reaches the west
+  door's tile, which lies outside the wall. With a door shut between him and SCORED, every Talk-to
+  goes unrouted (lab: 'no dialogue opened' after 48 ticks on the pre-fix talk). The shared
+  `small-quest.ts` talk now opens the closed doors on the route to his live tile first
+  (`lib/approach.ts` `approachNpc`): +0 ticks when he is reachable, B 7-10 against 6 when shut in
+  (fedora, 400 ms, burst, lite and browser 3/3 each; the lab driver's `--shut-in`).
 - Logout-safe: `%doricquest` is `scope=perm` (`quest_doric.varp`), and the quest tab shows every
   stage, so a resume needs no journal read.
 - The quest-complete scroll needs no dismissing on this client (none was seen in the lab runs);

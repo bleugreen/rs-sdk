@@ -9,9 +9,11 @@ import { TickLog } from '../lib/ticks';
 import { MANIFEST, parseLedger } from '../tools/slot-ledger';
 import { ASK_FILE, readTopUpAsk } from '../helpers/altar-cue';
 import {
-    askFor, giveSpecs, handOffFrom, handOffMissing, handOffPre, handOffRoom, handOffStep, HandOffRecord, HANDOFFS_FILE, itemPattern, loadHandOff, planHandOff, runHandOff, runHandOffOnCue, slotPlan, toUnequip, tradeKind, tradeLanded,
-    type HandOffPlan, type HandOffReport,
+    askFor, giveSpecs, handOffFrom, handOffMissing, handOffPre, handOffRoom, handOffStep, itemPattern, loadHandOff, planHandOff, resolvePlan, rollbackWitnesses, runHandOff, runHandOffOnCue, slotPlan, toUnequip, tradeKind, tradeLanded,
+    type Given, type HandOffPlan, type HandOffReport,
 } from './handoff';
+import { AttemptRecord, ATTEMPT_RECORD_FILE } from './attempt-record';
+import { PLACEMENT } from './chain';
 import { Observation, resolveResume } from './resume';
 import type { Step, StepContext } from './step';
 
@@ -281,6 +283,96 @@ describe('the post-hand-off state', () => {
     test('a worn item the row gives is taken off; one it gives from the pack is not', () => {
         expect(toUnequip(state([], [wornItem('Mithril scimitar')]), plan('H12')).map(i => i.name)).toEqual(['Mithril scimitar']);
         expect(toUnequip(state(pack(['Magic shortbow'])), plan('H13'))).toEqual([]);
+    });
+});
+
+// ------------------------------------------------------------------ `any`: whatever is held, zero or more
+
+describe("an `any` count gives or drops whatever is held, and none held is nothing to give (main's ruling, rs/663)", () => {
+    const ANY = `
+| row | in | out | equip | needAtStart | source |
+|---|---|---|---|---|---|
+| H13 | knife x1 [u] | magic shortbow x1 (swap); blood rune any (swap: dead stock); shark any (drop: a backstop) | - | 1 | fixture (r) |
+| H15 | knife x1 [u] | blood rune any (swap) | - | 1 | fixture (r) |
+| H16 | knife x1 [u] | blood rune all (swap) | - | 1 | fixture (r) |
+`;
+    const p = (id: string) => handOffFrom(ANY, id);
+    const counts = (gs: readonly Given[]) => gs.map(g => [g.name, g.count]);
+
+    test('the plan keeps `any`; resolvePlan makes it `all` when some is held and drops the entry when none is', () => {
+        expect(counts(p('H13').give)).toEqual([['magic shortbow', 1], ['blood rune', 'any']]);
+        expect(counts(p('H13').drop)).toEqual([['shark', 'any']]);
+        const some = resolvePlan(state(pack(['Magic shortbow'], ['Blood rune', 12], ['Shark', 2])), p('H13'));
+        expect([counts(some.give), counts(some.drop)]).toEqual([[['magic shortbow', 1], ['blood rune', 'all']], [['shark', 'all']]]);
+        const none = resolvePlan(state(pack(['Magic shortbow'])), p('H13'));
+        expect([counts(none.give), counts(none.drop)]).toEqual([[['magic shortbow', 1]], []]);
+        // a row of `any` gives alone, none held, only receives
+        expect(tradeKind(p('H15'))).toBe('swap');
+        expect(tradeKind(resolvePlan(state(filler(2)), p('H15')))).toBe('receive');
+    });
+
+    test('handOffPre: an `any` give with none held is no refusal; `all` with none held still refuses, and a count still needs its count', () => {
+        expect(handOffPre(state(pack(['Magic shortbow'])), p('H13'), PARTNER)).toBe(true);
+        expect(handOffPre(state(filler(2)), p('H15'), PARTNER)).toBe(true);
+        expect(handOffPre(state(filler(2)), p('H16'), PARTNER)).toMatch(/H16: holds no blood rune to give/);
+        expect(handOffPre(state(pack(['Blood rune', 9])), p('H13'), PARTNER)).toMatch(/holds no magic shortbow to give/);
+    });
+
+    test('the slots: an `any` held frees its slots, none held frees none', () => {
+        expect(slotPlan(state(pack(['Magic shortbow'], ['Blood rune', 12], ['Shark', 2])), p('H13')).freed).toBe(4);
+        expect(slotPlan(state(pack(['Magic shortbow'])), p('H13')).freed).toBe(1);
+    });
+
+    test('the trade offers an `any` give that is held, all of it; with none held the row only receives', async () => {
+        const some = new TradeServer(state(pack(['Tinderbox'], ['Blood rune', 30])), tradeItems([['Knife']]));
+        const a = await runStep(some, p('H15'));
+        expect(a.reports[0]).toMatchObject({ id: 'H15', trade: 'swap', ok: true, gave: ['Blood rune x30'], received: ['Knife x1'] });
+        expect(giveSpecs(state(pack(['Blood rune', 30])), p('H15'))).toEqual([{ item: p('H15').give[0]!.pattern, n: 'all' }]);
+        expect(a.step.postconditions(some.state!, {})).toBe(true);
+
+        const none = new TradeServer(state(pack(['Tinderbox'])), tradeItems([['Knife']]));
+        const b = await runStep(none, p('H15'));
+        expect(b.reports[0]).toMatchObject({ id: 'H15', trade: 'receive', ok: true, gave: [], received: ['Knife x1'] });
+        expect(none.sent.some(x => x.method === 'sendOfferItem')).toBe(false);
+        expect(b.step.postconditions(none.state!, {})).toBe(true);
+    });
+
+    describe("the manifest's exhaustible gives (rs/158's classification): none held passes, held is given", () => {
+        const ANY_GIVES: Record<string, string[]> = {
+            // a dose family (`antipoison(*)`) plans under its bare name
+            H12: ['antipoison', 'coins', 'death rune', 'chaos rune'],
+            H13: ['coins', 'superantipoison', 'fire rune'],
+            H15: ['bronze arrow', 'iron arrow', 'steel arrow', 'mithril arrow', 'adamant arrow', 'coins', 'shark', 'blood rune', 'nature rune'],
+        };
+        const cap = (n: string) => n.charAt(0).toUpperCase() + n.slice(1);
+        /** One held item `g` matches: a family by one dose, an @id by its obj. */
+        const heldOf = (g: Given, slot: number, count: number): InventoryItem => {
+            const name = g.pattern.test(cap(g.name)) ? cap(g.name) : `${cap(g.name)}(2)`;
+            return { slot, id: g.ids?.[0] ?? IDS[name] ?? 9999, name, count, optionsWithIndex: [] };
+        };
+        /** The row's other gives at their counts (`all` as one), slot by slot. */
+        const mustHave = (plan: HandOffPlan) => plan.give.filter(g => g.count !== 'any').flatMap(g => Array.from({ length: typeof g.count === 'number' ? g.count : 1 }, () => g));
+
+        for (const id of Object.keys(ANY_GIVES)) {
+            test(`${id}: the \`any\` gives are ${ANY_GIVES[id]!.join(', ')}; with none of them held the hand-off passes, with all held each is given`, () => {
+                const row = loadHandOff(id);
+                expect(row.give.filter(g => g.count === 'any').map(g => g.name)).toEqual(ANY_GIVES[id]!);
+                const kit = mustHave(row).map((g, slot) => heldOf(g, slot, 1));
+                const without = state(kit);
+                expect(handOffPre(without, row, PARTNER)).toBe(true);
+                expect(resolvePlan(without, row).give.map(g => g.name)).toEqual(row.give.filter(g => g.count !== 'any').map(g => g.name));
+                const exhaustible = row.give.filter(g => g.count === 'any').map((g, k) => heldOf(g, kit.length + k, 5));
+                expect(resolvePlan(state([...kit, ...exhaustible]), row).give.filter(g => ANY_GIVES[id]!.includes(g.name)).map(g => g.count)).toEqual(ANY_GIVES[id]!.map(() => 'all'));
+            });
+        }
+
+        test("H11r keeps `all`: the cannon set without its cannonballs still refuses, because a missing cannon is a real loss", () => {
+            const row = loadHandOff('H11r');
+            expect(row.give.map(g => [g.name, g.count])).toEqual([['cannon base', 1], ['cannon stand', 1], ['cannon barrels', 1], ['cannon furnace', 1], ['cannonball', 'all']]);
+            const parts = mustHave(row).filter(g => g.name !== 'cannonball').map((g, slot) => heldOf(g, slot, 1));
+            expect(handOffPre(state(parts), row, PARTNER)).toMatch(/H11r: holds no cannonball to give/);
+            expect(handOffPre(state([...parts, heldOf(row.give[4]!, 4, 30)]), row, PARTNER)).toBe(true);
+        });
     });
 });
 
@@ -730,21 +822,22 @@ describe('resume after a mid-trade logout', () => {
 
 describe('the completion record: done once marked, whatever the band after it consumed (rs/562)', () => {
     const h13 = plan('H13');
-    const recordIn = (attempt = 'a1') => new HandOffRecord(mkdtempSync(join(tmpdir(), 'handoffs-')), attempt);
+    const attemptIn = (attempt = 'a1') => new AttemptRecord(mkdtempSync(join(tmpdir(), 'handoffs-')), attempt);
+    const recordIn = (attempt = 'a1') => attemptIn(attempt).handOffs;
     const PACKAGE = tradeItems([['Staff of fire'], ['Knife'], ['Blood rune', 70], ['Prayer potion(4)'], ['Prayer potion(4)']]);
     /** Past the trade, the band has spent blood runes and a prayer potion: the post-hand-off state no longer shows. */
     const spent = state(pack(['Knife'], ['Blood rune', 12], ['Prayer potion(4)']), [wornItem('Staff of fire')]);
 
     test('per attempt, on disk, marked once: a new process reads it, another attempt does not', () => {
-        const r = recordIn();
-        expect(r.has('H13')).toBe(false);
-        r.mark('H13', 120);
-        r.mark('H13', 130);
-        const again = new HandOffRecord(r.dir, 'a1');
-        expect(again.has('H13')).toBe(true);
-        expect(again.entries().map(e => [e.attempt, e.row, e.tick])).toEqual([['a1', 'H13', 120]]);
-        expect(new HandOffRecord(r.dir, 'a2').has('H13')).toBe(false);
-        expect(existsSync(join(r.dir, HANDOFFS_FILE))).toBe(true);
+        const r = attemptIn();
+        expect(r.handOffs.has('H13')).toBe(false);
+        r.handOffs.mark('H13', 120);
+        r.handOffs.mark('H13', 130);
+        const again = new AttemptRecord(r.dir, 'a1');
+        expect(again.handOffs.has('H13')).toBe(true);
+        expect(again.entries().map(e => [e.attempt, e.kind, e.key, e.tick])).toEqual([['a1', 'handoff', 'H13', 120]]);
+        expect(new AttemptRecord(r.dir, 'a2').handOffs.has('H13')).toBe(false);
+        expect(existsSync(join(r.dir, ATTEMPT_RECORD_FILE))).toBe(true);
     });
 
     test('run marks it once the post-hand-off state shows; then done holds after the band consumes', async () => {
@@ -847,5 +940,42 @@ describe('a cue-served hand-off (the cannon holder): the cue, the partner in sig
         const step = handOffStep<Record<string, never>>(h11, { partner: PARTNER, cue: { scope: { step: 'S27', family: 'cannon' }, open: async () => {}, waitTicks: 8 } });
         await expect(drive(sdk, step.run(ctxOf(sdk)), 100)).rejects.toThrow('did not come into sight within 8 ticks of the S27/cannon cue');
         expect(sdk.tradeClicks).toEqual([]);
+    });
+});
+
+describe('rollbackWitnesses: what the record clause reads as a rollback (rs/577)', () => {
+    const text = readFileSync(MANIFEST, 'utf8');
+    const rows = parseLedger(text).rows;
+    const later = (id: string) => rows.slice(rows.findIndex(r => r.row === id) + 1);
+    const placed = (row: string) => PLACEMENT[row] !== undefined;
+    const witnesses = (id: string) => rollbackWitnesses(handOffFrom(text, id), later(id), placed).map(w => [w.give.name, w.until]);
+
+    test("H13: S18's rune arrows and coins are no evidence; H23's shortbow and superantipoison wait for H23; the rest always", () => {
+        expect(witnesses('H13')).toEqual([
+            ['magic shortbow', ['H23']], ['amulet of magic', []], ['diamond', []], ['superantipoison', ['H23']], ['fire rune', []], ['khazard helmet', []], ['khazard armour', []],
+        ]);
+    });
+
+    test("H14's knife waits for H18 and H23 (rs/562 A's rollback case); H11r's cannon for H23; with nothing after it, every give and drop", () => {
+        expect(witnesses('H14')).toEqual([['knife', ['H18', 'H23']]]);
+        expect(witnesses('H11r').every(([, until]) => (until as string[]).join() === 'H23')).toBe(true);
+        const h13 = handOffFrom(text, 'H13');
+        expect(rollbackWitnesses(h13, [], placed).map(w => w.give.name)).toEqual([...h13.give, ...h13.drop].map(g => g.name));
+    });
+
+    test('a recorded hand-off with a returned item held: done only with the witnesses, and H14 only once H18 is recorded', () => {
+        const record = new AttemptRecord(mkdtempSync(join(tmpdir(), 'handoff-witness-')), 'attempt-1').handOffs;
+        const step = (id: string, w: boolean) => handOffStep(handOffFrom(text, id), { partner: 'p', record, ...(w ? { witnesses: rollbackWitnesses(handOffFrom(text, id), later(id), placed) } : {}) });
+        const holding = (id: string, name: string, count: number) => {
+            const g = handOffFrom(text, id).give.find(x => x.name === name)!;
+            return new Observation(baseState({ inventory: [{ slot: 0, id: g.ids?.[0] ?? 995, name: name[0]!.toUpperCase() + name.slice(1), count, optionsWithIndex: [] }] }));
+        };
+        record.mark('H13', 1);
+        expect(step('H13', false).done!(holding('H13', 'coins', 22450), {})).toBe(false);
+        expect(step('H13', true).done!(holding('H13', 'coins', 22450), {})).toBe(true);
+        record.mark('H14', 2);
+        expect(step('H14', true).done!(holding('H14', 'knife', 1), {})).toBe(false);
+        record.mark('H18', 3);
+        expect(step('H14', true).done!(holding('H14', 'knife', 1), {})).toBe(true);
     });
 });

@@ -37,7 +37,7 @@ import { levelForXp, XP_RATE, xpForLevel } from '../lib/xp';
 import { buildChain, chainPartners, KIT_PARTNER_ROWS, muleCueDir, PLACEMENT, S09_MINING, type ChainStep, type RunConfig } from '../runner/chain';
 import { RunCues } from '../runner/cue-keeper';
 import { deliveryOwnerFor, type DeliveryOwner } from '../runner/delivery-owner';
-import { HandOffRecord } from '../runner/handoff';
+import { AttemptRecord } from '../runner/attempt-record';
 import { runSteps } from '../runner/step';
 import * as mining from '../skills/mining';
 import { arg, botArg, result } from './common';
@@ -84,7 +84,7 @@ const cfg: RunConfig = {
 // The lab's one override: its /playercount answers two bots (respawn 'auto' would schedule 20).
 Object.assign(S09_MINING, { respawn: 13 });
 const cues = new RunCues({ main: cfg.cueDir, mule: muleCueDir(cfg) }, scoredName);
-const full = buildChain(cfg, { cues, manifest, attempt: runId, handOffs: new HandOffRecord(root, runId) });
+const full = buildChain(cfg, { cues, manifest, attempt: runId, record: new AttemptRecord(root, runId) });
 const slice: ChainStep[] = full.slice(full.findIndex(s => s.id === 'H4p'), full.findIndex(s => s.id === 'T09-10'));
 const loads = slice.filter(s => s.name.startsWith('mining.bury')).length;
 

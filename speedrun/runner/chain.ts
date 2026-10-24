@@ -66,7 +66,8 @@ import { MANIFEST, parseLedger, type LedgerRow } from '../tools/slot-ledger';
 import { h4mLoadRows, parseFallbacks } from '../helpers/mule-ledger';
 import { XP_RATE, xpForLevel } from '../lib/xp';
 import { READY_MAX_TICKS } from './delivery-owner';
-import { askFor, handOffFrom, handOffStep, planHandOff, type HandOffCue, type HandOffPlan, type HandOffRecord } from './handoff';
+import type { AttemptRecord } from './attempt-record';
+import { askFor, handOffFrom, handOffStep, planHandOff, rollbackWitnesses, type HandOffCue, type HandOffPlan } from './handoff';
 import { legById, legsFor, splitLeg, type LegStep } from './legs';
 import { type Probe, stepProbes } from './resume';
 import { scoredLoginStep, scoredLogoutStep } from './scored-relog';
@@ -90,7 +91,21 @@ export type ChainStep = AnyStep & {
     cue?: CueScope;
     /** cueAround: whether a success ends the cue with a final stop (a throw's stop is never final). */
     finalStop?: boolean;
+    /** Where the step's preconditions require SCORED to start, as data (chainSeams reads it). */
+    startTile?: StartTile;
 };
+
+/**
+ * A step's required start position: within `within` tiles (Chebyshev, as every module's own check
+ * is) of (x,z) on `level` (default 0). `source` names the module check it mirrors.
+ */
+export interface StartTile {
+    x: number;
+    z: number;
+    level?: number;
+    within: number;
+    source: string;
+}
 
 // ------------------------------------------------------------------ the run config
 
@@ -186,11 +201,11 @@ export interface ChainOptions {
     s21Relog?: boolean;
     relogs?: RelogBudget;
     /**
-     * The attempt's hand-off completion record (run.ts: <run dir>/handoffs.json under `attempt`), which
-     * keeps a placed hand-off done once its band has eaten into what it brought (handoff.ts, Resume).
+     * The attempt record (run.ts: <run dir>/attempt-record.json under `attempt`), whose hand-off rows
+     * keep a placed hand-off done once its band has eaten into what it brought (handoff.ts, Resume).
      * Absent: a hand-off reads done from the state and the next milestone only.
      */
-    handOffs?: HandOffRecord;
+    record?: AttemptRecord;
     /**
      * The attempt's id, the same in every process that resumes it (run.ts: the run id of its tick log's
      * first row). A cue whose givers count work per session takes its session from it (S07's bone cue,
@@ -283,7 +298,243 @@ export function h4mPlan(cfg: Pick<RunConfig, 's07PrayerTo' | 'partners'>, manife
         const base = (xp: number) => (xp / XP_RATE).toFixed(2);
         throw new Error(`H4m: ${rows.length} loads of ${bones.count} ${name} bring ${base(brings)} base, and from Prayer ${p}'s floor (${base(xpForLevel(p))} base) to ${S09_PRAYER_TO} (${base(xpForLevel(S09_PRAYER_TO))}) needs ${base(need)}: ${Math.ceil(need / (bone.base * XP_RATE))} ${name}`);
     }
-    return { rows, plan, perLoad: bones.count, bone, pattern: `^${name}$` };
+    return { rows, plan, perLoad: bones.count, bone, pattern: `^${name}// The scored run's chain, S00 to S17: one table of the run's steps in RUN-ORDER.md order, each
+// tagged with its RUN-ORDER id, built from the step modules' own `steps()` (the call selects the
+// run's portion; nothing here filters a module by anything but the names it emits), the transition
+// legs (runner/legs.ts, the body-altar catalogue), and the hand-offs the modules do not perform
+// themselves (runner/handoff.ts, one per inventory-ledger row, placed by PLACEMENT below).
+//
+// Pure: buildChain reads STEP-MANIFEST.md's ledger and calls the modules' builders, and touches
+// neither the game nor the cue directory. speedrun/run.ts runs it; lab/dress-rehearsal.ts runs it
+// with the missing steps swapped for lab stand-ins.
+//
+// Wrappers (each a Step around a Step, so the runner and the resume walk see ordinary steps):
+// - whenNeeded: a fallback that is a 0-tick note when its milestone already holds (runSteps does
+//   not skip a step whose `done` holds mid-chain);
+// - missingStep: a step whose module is not on main yet refuses with the owner's name, and its
+//   `done` is the quest's completion, so an account that has it is walked past;
+// - withCue: the helper's cue for the step's scope is opened before the module runs, on `run` and
+//   on `resume` (a resumed step writes a fresh session, which a separate cue step would miss);
+// - censused: a 0-tick `(census)` note before every step (pack, free slots, worn items).
+//
+// Expected figures are not copied here: the report reads them from RUN-ORDER.md section 2
+// (parseStepTable), the one source, at report time.
+
+import { existsSync, readFileSync } from 'fs';
+import { join, resolve } from 'path';
+import type { BotWorldState } from '../../sdk/types';
+import { writeAnvilPlan } from '../helpers/anvil';
+import { CueWriter, writeJsonAtomicSync, writeTopUpAsk, type CueScope } from '../helpers/altar-cue';
+import { GO_FILE, type GoCue } from '../helpers/fm-row';
+import { INVENTORY_SIZE } from '../lib/items';
+import { questDone, type QuestKey } from '../lib/quests';
+import type { GiveSpec } from '../lib/trade';
+import { tickMs } from '../lib/wait';
+import { skillLevel } from '../lib/world';
+import * as cooksAssistant from '../quests/cooks-assistant';
+import * as doricsQuest from '../quests/dorics-quest';
+import * as dragonSlayer from '../quests/dragon-slayer';
+import * as druidicRitual from '../quests/druidic-ritual';
+import * as goblinDiplomacy from '../quests/goblin-diplomacy';
+import * as romeoJuliet from '../quests/romeo-juliet';
+import * as dwarfCannon from '../quests/dwarf-cannon';
+import * as fightArena from '../quests/fight-arena';
+import * as fishingContest from '../quests/fishing-contest';
+import * as grandTree from '../quests/grand-tree';
+import * as mageArena from '../quests/mage-arena';
+import * as monkeyMadness from '../quests/monkey-madness';
+import * as plagueCity from '../quests/plague-city';
+import * as seaSlug from '../quests/sea-slug';
+import * as treeGnomeVillage from '../quests/tree-gnome-village';
+import * as agility from '../skills/agility';
+import * as cooking from '../skills/cooking';
+import * as crafting from '../skills/crafting';
+import * as firemaking from '../skills/firemaking';
+import * as fletching from '../skills/fletching';
+import * as fishing from '../skills/fishing';
+import * as herblore from '../skills/herblore';
+import * as magic from '../skills/magic';
+import * as mining from '../skills/mining';
+import * as prayer from '../skills/prayer';
+import * as ranged from '../skills/ranged';
+import * as runecraft from '../skills/runecraft';
+import * as smithing from '../skills/smithing';
+import * as start from '../skills/start';
+import * as thieving from '../skills/thieving';
+import * as woodcutting from '../skills/woodcutting';
+import { MANIFEST, parseLedger, type LedgerRow } from '../tools/slot-ledger';
+import type { AttemptRecord } from './attempt-record';
+import { askFor, handOffFrom, handOffStep, rollbackWitnesses, type HandOffPlan } from './handoff';
+import { legById, legsFor, splitLeg, type LegStep } from './legs';
+import { type Probe, stepProbes } from './resume';
+import { scoredLoginStep, scoredLogoutStep } from './scored-relog';
+import { RelogBudget } from './relog-budget';
+import type { ObservedCheck, Step, StepContext } from './step';
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyStep = Step<any>;
+
+export type ChainKind = 'step' | 'leg' | 'handoff' | 'missing' | 'fallback' | 'cue';
+
+export type ChainStep = AnyStep & {
+    /** The RUN-ORDER id (S07), the leg id (T13-14a) or the ledger row (H9). */
+    id: string;
+    kind: ChainKind;
+    /** kind 'missing': who builds it. */
+    owner?: string;
+    /** A step this run config cannot run, and why (the H12o login with an incomplete h12o block): it refuses on the path. */
+    refuses?: string;
+    /** withCue: the helper cue opened before it runs. */
+    cue?: CueScope;
+    /** cueAround: whether a success ends the cue with a final stop (a throw's stop is never final). */
+    finalStop?: boolean;
+    /** Where the step's preconditions require SCORED to start, as data (chainSeams reads it). */
+    startTile?: StartTile;
+};
+
+/**
+ * A step's required start position: within `within` tiles (Chebyshev, as every module's own check
+ * is) of (x,z) on `level` (default 0). `source` names the module check it mirrors.
+ */
+export interface StartTile {
+    x: number;
+    z: number;
+    level?: number;
+    within: number;
+    source: string;
+}
+
+// ------------------------------------------------------------------ the run config
+
+/**
+ * The run's helpers, from the run config (gitignored: account names). `partners` names the partner
+ * of every placed ledger row and every quest kit row (H6, H7, H8, H16, H22); the rest are the
+ * modules' own helpers.
+ */
+export interface RunConfig {
+    partners: Readonly<Record<string, string>>;
+    /** S03's row, the same tiles the fm-row droppers lay (HS6). */
+    firemakingTiles: NonNullable<firemaking.FiremakingOptions['tiles']>;
+    /** S04's ring giver (H3) and its loads (default magic.ts ROUTE_LOADS). */
+    rings: { giver: string; loads?: magic.MagicOptions['loads'] };
+    /** S07's bone giver (H4.x). */
+    bones: woodcutting.BonesOptions;
+    /**
+     * S07's close target, the Prayer level its last band closes at and its early last load fires at
+     * (an integer from 1 to 99; absent: S07_PRAYER_TO). Below 99 it turns on H4m: S09's bury steps
+     * bury the rest from H4m's carrier (`partners.H4m`) and carry the chain's Prayer 99 (h4mPlan).
+     */
+    s07PrayerTo?: number;
+    /** S18's courier (H14.x) and the food count below which it tops up. */
+    courier: { giver: string; below: number };
+    /** S25a's anvil helper (H21a). */
+    anvil: { giver: string };
+    /** S25c's wine giver (H21c; default cooking.ts WINE_GIVER). */
+    wineGiver?: string;
+    /** S21's body-altar giver roster, login names, for its pre-login (default: runecraft.ts's count, helpers/roster.ts BODY_ROSTER_SIZE). */
+    s21Givers?: readonly string[];
+    /** The cue directory the helpers read (run.ts sets RC_CUE_DIR to it, so thieving's asks land there too). */
+    cueDir: string;
+    /** mule1's own cue directory, where its package cues and top-up asks go (default muleCueDir: <cueDir>/mule). */
+    muleCueDir?: string;
+    /**
+     * H12o's helper (h45, SUPPLIES.md H12o). `account` is its login name, the partner of both receive
+     * legs (Monkey Madness's topUpFrom); `cueDir` is its role folder, which Monkey Madness's module
+     * alone writes (H12oM and H12oP, opens and stops); `loginDir` is the launcher's login-only folder
+     * (its entry's `loginOn.cueDir`), which h12oLogin alone writes, once, at segment M's start (rs/185),
+     * ahead of M's travel to the H12o-M leg; `leadTicks` is the staging lead h45 needs before M, checked
+     * and never assumed. Absent or incomplete: the top-ups are off and the login step refuses.
+     */
+    h12o?: { account?: string; cueDir: string; loginDir: string; leadTicks?: number };
+    /**
+     * The banked delivery carriers' run (runner/delivery-owner.ts): `run` is the attempt's one
+     * delivery id (e.g. `a1-20261023`), the `--delivery-run` every carrier's config is generated with
+     * (helpers/mule-ledger.ts); `launcherConfig` is the helper launcher's config those carriers run
+     * from, which run.ts's preflight checks against it. Required when the path has a mule row.
+     */
+    delivery?: { run: string; launcherConfig: string };
+    /**
+     * The helper launcher configs the role-phase gate reads to learn who serves each step and each bone
+     * giver's sites (run.ts hostPhaseGates). Default: `delivery.launcherConfig` alone. Give every
+     * launcher file when the families are split across several.
+     */
+    helperLaunchers?: readonly string[];
+}
+
+/**
+ * S09's mining options: a contested zoo band may move to any other site whose hunters leave SCORED's
+ * combat level alone (`fallback: 'auto'`, mining.ts nextSite with the `safeFrom` gate, #371).
+ * `acceptHazards` is never set for SCORED: it is for rehearsals that mean to walk into a site's hunters.
+ */
+export const S09_MINING: mining.MiningOpts = { travel: 'none', dropAtExit: true, fallback: 'auto' };
+
+/** mule1's cue directory (STEP-MANIFEST.md "Cue layout"): the run config's `muleCueDir`, else `<cueDir>/mule`. */
+export function muleCueDir(cfg: Pick<RunConfig, 'cueDir' | 'muleCueDir'>): string {
+    return cfg.muleCueDir ?? join(cfg.cueDir, 'mule');
+}
+
+/** Where the modules' cues go: run.ts's CueKeeper, a recorder in tests. */
+export interface CueSink {
+    /** Open `scope`'s cue (a fresh session when `fresh`, else only when another scope or none is open). */
+    open(scope: CueScope, ctx: Pick<StepContext<unknown>, 'sdk'>, o: { fresh: boolean }): Promise<void>;
+    /** Write the stop of `scope`'s cue if it is the open one (`failed`: the step threw). */
+    stop(scope: CueScope, ctx: StepContext<unknown>, o?: { final?: boolean; failed?: boolean }): void;
+    /** Rewrite `scope`'s open delivery cue now, just before its trade; record-only sinks may omit this. */
+    refresh?(scope: CueScope): boolean;
+    /** Runtime ownership of a module's direct writer; record-only sinks may omit this. */
+    writer?(scope: CueScope): runecraft.CueSink;
+    /**
+     * True until the owned scope ends, including between Runecraft segment sessions: a cue stop is
+     * `done` once its scope is no longer open. Without it the stop has no `done`.
+     */
+    isOpen?(scope: CueScope): boolean;
+}
+
+export interface ChainOptions {
+    /** STEP-MANIFEST.md's text (default: read from MANIFEST). */
+    manifest?: string;
+    cues: CueSink;
+    /** SCORED's relog between S21's pre-login and its band (run.ts --s21-relog; default on). */
+    s21Relog?: boolean;
+    relogs?: RelogBudget;
+    /**
+     * The attempt record (run.ts: <run dir>/attempt-record.json under `attempt`), whose hand-off rows
+     * keep a placed hand-off done once its band has eaten into what it brought (handoff.ts, Resume).
+     * Absent: a hand-off reads done from the state and the next milestone only.
+     */
+    record?: AttemptRecord;
+    /**
+     * The attempt's id, the same in every process that resumes it (run.ts: the run id of its tick log's
+     * first row). A cue whose givers count work per session takes its session from it (S07's bone cue,
+     * boneSession), so a resume carries the session on. Absent: each process has its own.
+     */
+    attempt?: string;
+}
+
+/** S07's bone cue session for an attempt. */
+export const boneSession = (attempt: string): string => `${attempt}.S07.bone`;
+
+/** S07's close target when the run config names none: Prayer 99 inside S07 (fold-in 23). */
+export const S07_PRAYER_TO = 99;
+
+/** The run config's S07 close target (`s07PrayerTo`), validated; S07_PRAYER_TO when absent. */
+export function s07PrayerTo(cfg: Pick<RunConfig, 's07PrayerTo'>): number {
+    const v = cfg.s07PrayerTo;
+    if (v === undefined) return S07_PRAYER_TO;
+    if (typeof v !== 'number' || !Number.isInteger(v) || v < 1 || v > 99) throw new Error(`run config: s07PrayerTo must be an integer from 1 to 99, got ${JSON.stringify(v)}`);
+    return v;
+}
+
+/**
+ * S07's woodcutting options: burying from the oaks to 99 (so the oak and willow bands run the knife,
+ * woodcutting.ts bandTechnique), Prayer to the run config's s07PrayerTo (99 unless it says), the axe
+ * dropped at the end, and the attempt's bone cue session for a giver group.
+ */
+export function s07Woodcutting(cfg: Pick<RunConfig, 'bones' | 's07PrayerTo'>, attempt?: string): woodcutting.WoodcuttingOptions {
+    return { bury: true, bones: cfg.bones, dropAxe: true, prayerTo: s07PrayerTo(cfg), ...(attempt && cfg.bones.group ? { boneSession: boneSession(attempt) } : {}) };
+}
+
+ };
 }
 
 /**
@@ -531,6 +782,7 @@ function bound(s: AnyStep): AnyStep {
         ...(s.resume ? { resume: s.resume.bind(s) } : {}),
         ...(s.done ? { done: s.done.bind(s) } : {}),
         ...(s.inProgress ? { inProgress: s.inProgress.bind(s) } : {}),
+        ...(s.retreat ? { retreat: s.retreat.bind(s) } : {}),
     };
 }
 
@@ -691,9 +943,9 @@ export function isCueStop(s: ChainStep, of?: string): boolean {
     return s.kind === 'cue' && (of === undefined ? s.id.endsWith(' cue stop') : s.id === `${of} cue stop`);
 }
 
-/** What the pack holds at a boundary. */
-export function census(s: BotWorldState): { inventory: { name: string; count: number }[]; free: number; worn: string[] } {
-    return { inventory: s.inventory.map(i => ({ name: i.name, count: i.count })), free: INVENTORY_SIZE - s.inventory.length, worn: s.equipment.map(e => e.name) };
+/** What the pack holds at a boundary, each item by obj id as well as name (runner/rune-census.ts reads the runes back by id). */
+export function census(s: BotWorldState): { inventory: { name: string; count: number; id: number }[]; free: number; worn: string[] } {
+    return { inventory: s.inventory.map(i => ({ name: i.name, count: i.count, id: i.id })), free: INVENTORY_SIZE - s.inventory.length, worn: s.equipment.map(e => e.name) };
 }
 
 export const CENSUS_STEP = '(census)';
@@ -741,9 +993,12 @@ export function anvilAnnounce(cueDir: string): NonNullable<smithing.SmithingOpti
     return m => void writeAnvilPlan(cueDir, m);
 }
 
-/** H21a's swap-outs, from the ledger row smithing.ts takes them back by. */
+/**
+ * H21a's swap-outs, from the ledger row smithing.ts takes them back by. A ledger `any` is the spec's
+ * `all`: smithing's give-back gives nothing for a spec that matches nothing held (giveBackItems).
+ */
 export function h21aGiveBack(manifest: string): GiveSpec[] {
-    return handOffFrom(manifest, 'H21a').give.map(g => ({ item: g.ids ? g.ids[0]! : g.pattern, n: g.count }));
+    return handOffFrom(manifest, 'H21a').give.map(g => ({ item: g.ids ? g.ids[0]! : g.pattern, n: g.count === 'any' ? 'all' : g.count }));
 }
 
 // ------------------------------------------------------------------ the chain
@@ -784,7 +1039,7 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
     if (missingPartners.length) throw new Error(`the run config names no partner for ${missingPartners.join(', ')}`);
     const h4m = h4mPlan(cfg, manifest);
     // A bury step is done once the next load is recorded, the one thing that tells load k's step from load k+1's.
-    if (h4m && !o.handOffs) throw new Error('H4m: the S09 bury steps resume by the hand-off record (ChainOptions.handOffs), and none is given');
+    if (h4m && !o.record) throw new Error('H4m: the S09 bury steps resume by the attempt record (ChainOptions.record), and none is given');
     const partner = (id: string) => (h4m?.rows.includes(id) ? cfg.partners[H4M_ROW]! : cfg.partners[id]!);
     const kitFrom = (id: string) => ({ kitFrom: partner(id) });
 
@@ -846,7 +1101,7 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
      */
     const s09WithH4m = (h: H4mPlan): Entry[] => {
         const all = mining.steps({ ...S09_MINING, bury: h.pattern, buryLoads: h.rows.length, buryPrayerTo: S09_PRAYER_TO });
-        const record = o.handOffs!;
+        const record = o.record!.handOffs;
         const bones = new RegExp(h.pattern, 'i');
         // the level, not the points (skillLevel's current level)
         const prayerAt = (st: BotWorldState) => st.skills.find(k => k.name.toLowerCase() === 'prayer')?.baseLevel ?? 0;
@@ -984,7 +1239,7 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         ...before('S25d'),
         ...steps('S25d', crafting.steps()),
         ...steps('S25e', herblore.steps()),
-        // S25b's bones are buried inside S07 (fold-in 23), or S09 under H4m; the booth runs only if Prayer is short.
+        // S25b's bones are buried inside S07 (fold-in 23); the booth runs only if Prayer is short.
         ...prayer.steps().map(s => whenNeeded('S25b-fallback', s, at99('prayer'), h4m ? "Prayer 99 in S09's H4m bury steps" : 'Prayer 99 inside S07 (fold-in 23)')),
         ...steps('S25c', cooking.steps(cfg.wineGiver ? { giver: cfg.wineGiver } : {})),
         L('T25-26'),
@@ -1024,11 +1279,88 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         const cue = scope ? { scope, open: (ctx: Pick<StepContext<unknown>, 'sdk'>) => o.cues.open(scope, ctx, { fresh: false }) } : e.mule ? h4mCue(e.row) : ask;
         const muleRow = !scope && (e.mule ?? MULE_ROWS.includes(e.row));
         const beforeTrade = muleRow ? { beforeTrade: () => { o.cues.refresh?.(muleScope(e.row)); } } : {};
-        const s = tag(e.id, 'handoff', handOffStep(plan, { partner: partner(e.row), ...(supersededBy ? { supersededBy } : {}), ...(o.handOffs ? { record: o.handOffs } : {}), ...(cue ? { cue } : {}), ...beforeTrade }), cue ? { cue: cue.scope } : {});
+        // H4m's loads (the fallback table) follow H4p in the walk
+        const at = e.plan ? 'H4p' : e.row;
+        const witnesses = rollbackWitnesses(plan, rows.slice(rows.findIndex(r => r.row === at) + 1), row => PLACEMENT[row] !== undefined);
+        const s = tag(e.id, 'handoff', handOffStep(plan, { partner: partner(e.row), ...(supersededBy ? { supersededBy } : {}), ...(o.record ? { record: o.record.handOffs, witnesses } : {}), ...(cue ? { cue } : {}), ...beforeTrade }), cue ? { cue: cue.scope } : {});
         const placed = e.mule ? walkedTo(s, H4M_TRADE_TILE) : s;
         out.unshift(muleRow ? mule(placed, e.row) : placed);
     }
-    return cueMuleRows(out, muleRows, partner, o.cues).map(censused);
+    const tileOf = startTiles(cfg);
+    return cueMuleRows(out, muleRows, partner, o.cues).map(censused).map(s => {
+        const t = tileOf(s.name);
+        return t ? { ...s, startTile: t } : s;
+    });
+}
+
+// ------------------------------------------------------------------ the seam check
+
+/**
+ * The start tiles of the chain's steps whose preconditions ask for a position, read from the
+ * modules' own exports so the data and the check cannot drift apart: S02's coop radius, S03's row
+ * entry (the run config's firemakingTiles), S07's band stands (woodcutting.ts SITES, the default
+ * route), S22's river and S25a's anvil.
+ */
+export function startTiles(cfg: Pick<RunConfig, 'firemakingTiles'>): (name: string) => StartTile | undefined {
+    const fm = firemaking.resolveOptions({ tiles: cfg.firemakingTiles });
+    const byName = new Map<string, StartTile>();
+    byName.set(magic.S02_ID, { x: magic.COOP.x, z: magic.COOP.z, within: magic.COOP_RADIUS, source: 'magic.ts s02Pre (COOP, COOP_RADIUS)' });
+    if (fm.entry) byName.set(fm.id, { x: fm.entry[0], z: fm.entry[1], within: fm.near, source: "firemaking.ts precheck (the row's entry, near)" });
+    for (const b of woodcutting.BANDS) {
+        const [x, z] = woodcutting.SITES[b.tree].stand;
+        byName.set(b.name, { x, z, within: woodcutting.NEAR, source: `woodcutting.ts ${b.name} (SITES.${b.tree}.stand, NEAR)` });
+    }
+    byName.set('fishing:fly-78-99', { x: fishing.RIVER.x, z: fishing.RIVER.z, within: fishing.NEAR, source: 'fishing.ts bandStep (RIVER, NEAR)' });
+    const anvil: StartTile = { x: smithing.ANVIL.x, z: smithing.ANVIL.z, within: smithing.NEAR, source: 'smithing.ts nearAnvil (ANVIL, NEAR)' };
+    return name => byName.get(name) ?? (name.startsWith('S25a smithing') ? anvil : undefined);
+}
+
+/** One step with a start tile whose position a leg fixes: the leg's end against the tile. */
+export interface Seam {
+    index: number;
+    id: string;
+    name: string;
+    /** The leg that leaves SCORED there. */
+    leg: string;
+    /** Where the leg ends: its dest (and nextStart), with their tolerances. */
+    ends: Array<{ x: number; z: number; level: number; tol: number }>;
+    start: StartTile;
+    /** The farthest SCORED can stand from the start tile once the leg has arrived (Infinity: another level). */
+    distance: number;
+    ok: boolean;
+    detail: string;
+}
+
+/** Chain entries that leave SCORED where it stands: hand-offs, cue steps, markers. */
+const stays = (s: ChainStep) => s.kind === 'handoff' || s.kind === 'cue' || !!s.marker;
+
+/**
+ * The chain-build seam check: for every step with a start tile, the leg before it (past any
+ * hand-off or cue step) must leave SCORED within the tile's tolerance wherever its arrival allows,
+ * so the step's position check cannot refuse on a correct run. A step that follows another step
+ * (whose end the chain does not fix) has no seam to check. Pure: the chain's data only.
+ */
+export function chainSeams(chain: readonly ChainStep[]): Seam[] {
+    const out: Seam[] = [];
+    chain.forEach((s, index) => {
+        const start = s.startTile;
+        if (!start) return;
+        let j = index - 1;
+        while (j >= 0 && stays(chain[j]!)) j--;
+        const prev = chain[j];
+        if (!prev || prev.kind !== 'leg') return;
+        const def = (prev as unknown as LegStep).def;
+        const ends = [def.dest, ...(def.nextStart ? [def.nextStart] : [])].map(a => ({ x: a.x, z: a.z, level: a.level ?? 0, tol: a.tol ?? 0 }));
+        const level = start.level ?? 0;
+        const distance = Math.max(...ends.map(e => (e.level !== level ? Infinity : Math.max(Math.abs(e.x - start.x), Math.abs(e.z - start.z)) + e.tol)));
+        const ok = distance <= start.within;
+        const at = ends.map(e => `${e.x},${e.z}${e.level ? `,${e.level}` : ''} tol ${e.tol}`).join(' or ');
+        out.push({
+            index, id: s.id, name: s.name, leg: prev.id, ends, start, distance, ok,
+            detail: `#${index} ${s.name}: ${prev.id} ends at ${at}, ${distance} tiles from ${start.x},${start.z}${level ? `,${level}` : ''}; the step starts within ${start.within} (${start.source})`,
+        });
+    });
+    return out;
 }
 
 // ------------------------------------------------------------------ slicing

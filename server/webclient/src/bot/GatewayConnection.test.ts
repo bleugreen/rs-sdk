@@ -2,7 +2,15 @@ import { expect, test } from 'bun:test';
 
 import '../lite/test-support/browser-globals.js';
 
-import { getBotPassword, getBotUsername, redeemLoginToken, type LoginTokenWindow } from './GatewayConnection.js';
+import { getBotPassword, getBotUsername, getLaunchId, redeemLoginToken, type LoginTokenWindow } from './GatewayConnection.js';
+
+test("the page's ?launch= id, which stays when the token leaves the URL; none without one", () => {
+    expect(getLaunchId('?server=world.example&bot=srtok&launch=0123456789ab&token=t0k')).toBe('0123456789ab');
+    expect(getLaunchId('?server=world.example&bot=srtok&launch=0123456789ab')).toBe('0123456789ab');
+    expect(getLaunchId('?bot=srtok')).toBeNull();
+    expect(getLaunchId('?bot=srtok&launch=')).toBeNull();
+    expect(getLaunchId(undefined)).toBeNull();
+});
 
 function fakeWindow(href: string, answer: () => Response) {
     const calls: { url: string; body: string; addressBar: string }[] = [];

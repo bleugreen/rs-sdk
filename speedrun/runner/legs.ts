@@ -29,6 +29,7 @@ import {
 import { currentTick } from '../lib/wait';
 import { invCount, invItem, pos, skillLevel, type LocQuery, type OpPattern } from '../lib/world';
 import type { Observed, Step, StepContext } from './step';
+import { DeathWatch } from './death';
 
 export const skill = 'legs';
 
@@ -363,9 +364,17 @@ export async function runLeg(def: LegDef, ctx: Pick<StepContext<unknown>, 'sdk' 
     };
     const beforeHop = async (at: number): Promise<string | null> => (def.drops?.length ? await dropAt(at) : null) ?? (await stopAt(at));
     const from = resumeHop(def, s);
-    const r = await travel(ctx.sdk as unknown as TravelSdk, def.hops, { bot: ctx.bot, from, ...(def.food ? { eat: {} } : {}), ...(def.drops?.length || def.stops?.length ? { beforeHop } : {}) });
-    const why = r.ok ? await dropAt(def.hops.length) : null;
+    // A relocation travel sees fails the hop only as a death the watch corroborates; any other jump re-paths as before.
+    const watch = new DeathWatch(s, `on ${def.id}`);
+    const unwatch = ctx.sdk.onStateUpdate(st => watch.see(st));
+    const onRelocated: TravelOptions['onRelocated'] = rel => (rel.respawn && watch.death() ? 'fail' : 'repath');
+    const r = await travel(ctx.sdk as unknown as TravelSdk, def.hops, { bot: ctx.bot, from, onRelocated, ...(def.food ? { eat: {} } : {}), ...(def.drops?.length || def.stops?.length ? { beforeHop } : {}) })
+        .finally(() => unwatch());
+    const death = watch.death();
+    if (death && ctx.session) ctx.session.died ??= death;
+    const why = r.ok && !death ? await dropAt(def.hops.length) : null;
     if (ctx.log && ctx.session) logTravel(ctx as StepContext<unknown>, name, from, r, drops, stops);
+    if (death) throw new Error(`${def.id}: ${death.reason}`);
     // Drops refused before a hop stop the trip; their reason (naming what is held) is the leg's.
     const refused = drops.find(d => !d.ok);
     if (refused) throw new Error(refused.reason!);
@@ -502,6 +511,12 @@ const NORTH_OF_KEEP: Region[] = [{ x: [3140, 3175], z: [3951, 3975] }, { x: [317
 const TO_SPIDERS: Hop[] = [...ARDOUGNE_TO_LEVER, ...LEVER_AND_KEEP_WEB, run(T.spiders.x, T.spiders.z, T.spiders.tol)];
 const TO_SPIDERS_CHECKPOINTS: Checkpoint[] = [{ after: 2, in: [KEEP] }, { after: 3, in: NORTH_OF_KEEP }];
 const WILD_FOOD = 2;
+/**
+ * T14-15's first hop, the leg out of S14: south from the spiders down the Wilderness toward the
+ * ditch, to level 20 for the Ardougne teleport. The cannon steps' retreat runs it too, stopping
+ * where the spiders' reach ends (skills/ranged.ts spiderRetreat).
+ */
+export const SPIDERS_SOUTH: Hop = { kind: 'run', to: { x: 3288, z: 3660 }, wildernessAtMost: 20 };
 
 export const LEGS: readonly LegStep[] = [
     leg('T01-02', T.lumbridgeSpawn, T.coop, [run(T.coop.x, T.coop.z, T.coop.tol)], {
@@ -576,7 +591,7 @@ export const LEGS: readonly LegStep[] = [
         expected: { ticks: 181.5, label: 'm', source: rt('L13L') + ': 182, 181', net: 181.5 },
     }),
     leg('T14-15', T.spiders, T.grandTreeDoor, [
-        { kind: 'run', to: { x: 3288, z: 3660 }, wildernessAtMost: 20 },
+        SPIDERS_SOUTH,
         tele('ardougne'),
         run(T.khazardTree.x, T.khazardTree.z, T.khazardTree.tol),
         { kind: 'tree', to: 'village' },

@@ -539,12 +539,13 @@ describe('leg drops: the STEP-MANIFEST ledger contract', () => {
         );
     });
 
-    test("T07-08's row drops the S07 last load's <bones>, which the leg's /bones$/i takes; the walk leaves H6 its 12", () => {
-        expect(dropsOn('T07-08')).toEqual([{ name: 'bones', placeholder: true, count: 'all', reason: 'drop' }]);
-        expect(rows.find(r => r.row === 'S07 last load')!.in).toContainEqual({ name: 'bones', placeholder: true, count: 21, kind: 'u' });
+    test("T07-08's row drops `<bones> any`, the backstop the leg's /bones$/i performs; S07's last load brings none (rs/663), so the walk drops nothing and leaves H6 its 12", () => {
+        expect(dropsOn('T07-08')).toEqual([{ name: 'bones', placeholder: true, count: 'any', reason: 'drop' }]);
+        expect(legById('T07-08').def.drops).toEqual([/bones$/i]);
+        expect(rows.find(r => r.row === 'S07 last load')!.in.some(i => i.name === 'bones')).toBe(false);
         const entries = walk(rows);
         const at = (row: string) => entries.find(e => e.row.row === row)!;
-        expect(at('S07 last load')).toMatchObject({ verdict: 'pass', used: 25 });
+        expect(at('S07 last load')).toMatchObject({ verdict: 'pass', used: 4 });
         expect(at('T07-08')).toMatchObject({ verdict: 'pass', used: 2, held: 'knife x1, logs x1' });
         expect(at('H6')).toMatchObject({ verdict: 'pass', need: 12 });
     });
@@ -807,5 +808,65 @@ describe("T14-15 prays at the East Ardougne church altar when Prayer points are 
         expect(() => leg('TX', TILES.doric, TILES.doric, [{ kind: 'run', to: TILES.doric }], {
             after: 'A', before: 'B', method: 'm', stops: [{ ...CHURCH_ALTAR, before: 1 }], expected: { ticks: 1, label: 'i', source: 'test', net: 1 },
         })).toThrow("TX: stop 'East Ardougne church altar' comes before hop 1 of 1");
+    });
+});
+
+describe("a death on a leg (rs/709 on rs/593's relocation detector)", () => {
+    const legTo = (to: { x: number; z: number }, hops: Hop[], start = { x: 3240, z: 3250 }) => leg('TX', { ...start, tol: 1 }, { ...to, tol: 1 }, hops, {
+        after: 'A', before: 'B', method: 'test', expected: { ticks: 1, label: 'i', source: 'test', net: 1 },
+    });
+    const north = legTo({ x: 3240, z: 3300 }, [{ kind: 'run', to: { x: 3240, z: 3300, tol: 1 } }]);
+    const ctxDied = (sdk: FakeSdk) => ctxFor(sdk) as StepContext<unknown> & { session: RunnerSession };
+
+    test('the run hop lands on the respawn with hp at 0 before it: the leg fails DIED, recorded on the session', async () => {
+        const sdk = new FakeSdk(state(3240, 3250));
+        simulateWalking(sdk);
+        const ctx = ctxDied(sdk);
+        const dying = (s: BotWorldState): Partial<BotWorldState> => {
+            const t = s.tick + 1;
+            if (t === 104 || t === 105) return { player: { ...s.player!, hp: 0 } };
+            if (t === 106) return { player: { ...s.player!, ...player(3222, 3218), hp: 40 } };
+            return {};
+        };
+        await expect(drive(sdk, north.run(ctx), 600, dying)).rejects.toThrow(/^TX: SCORED died on TX: \(3240,32\d\d,0\) on tick 105 to \(32\d\d,32\d\d,0\) on tick \d+ \(dead, respawn-tile; hp 40 at the start, lowest 0, /);
+        expect(ctx.session.died).toMatchObject({ signs: ['dead', 'respawn-tile'], tick: 104, hpMin: 0 });
+        const row = ctx.log.rows.find(r => r.kind === 'travel')!;
+        expect(row.ok).toBe(false);
+        expect(row.error).toMatch(/^run to 3240,3300: relocated from 3240,32\d\d to 3222,3218: respawn \(\d+ tiles in 1 tick; hp 0 before it, lowest 0\)$/);
+    });
+
+    test('a long jump off the route that is not a respawn re-paths as before and the leg arrives', async () => {
+        const sdk = new FakeSdk(state(3240, 3250));
+        simulateWalking(sdk);
+        const ctx = ctxDied(sdk);
+        const pushed = (s: BotWorldState): Partial<BotWorldState> => (s.tick + 1 === 104 ? { player: { ...s.player!, ...player(3200, 3260) } } : {});
+        const r = await drive(sdk, runLeg(north.def, ctx), 600, pushed);
+        expect(r?.ok).toBe(true);
+        expect(r?.relocated).toMatchObject({ respawn: false, to: { x: 3200, z: 3260 } });
+        expect(inArea(sdk.state!, { x: 3240, z: 3300, tol: 1 })).toBe(true);
+        expect(ctx.session.died).toBeUndefined();
+    });
+
+    test('a forced teleport onto the respawn square mid-run, hp as it was, re-paths: not a death', async () => {
+        const sdk = new FakeSdk(state(3240, 3250));
+        simulateWalking(sdk);
+        const ctx = ctxDied(sdk);
+        const pushed = (s: BotWorldState): Partial<BotWorldState> => (s.tick + 1 === 104 ? { player: { ...s.player!, ...player(3222, 3218), hp: s.player!.hp } } : {});
+        const r = await drive(sdk, runLeg(north.def, ctx), 600, pushed);
+        expect(r?.ok).toBe(true);
+        expect(r?.relocated).toMatchObject({ respawn: true });
+        expect(ctx.session.died).toBeUndefined();
+    });
+
+    test('a Lumbridge Teleport hop lands on the respawn square and is never flagged', async () => {
+        const runes = [item(0, 'Earth rune', 1), item(1, 'Air rune', 3), item(2, 'Law rune', 1)];
+        const sdk = new FakeSdk(state(3240, 3250, { inventory: runes }));
+        serveTeleport(sdk, SPELLS.lumbridge.landing);
+        const ctx = ctxDied(sdk);
+        const home = legTo(SPELLS.lumbridge.landing, [{ kind: 'teleport', spell: 'lumbridge' }]);
+        const r = await drive(sdk, runLeg(home.def, ctx));
+        expect(r?.ok).toBe(true);
+        expect(inArea(sdk.state!, SPELLS.lumbridge.landing)).toBe(true);
+        expect(ctx.session.died).toBeUndefined();
     });
 });

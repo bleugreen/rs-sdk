@@ -221,7 +221,7 @@ function resolve(h: Held, o: ConcreteFixtureOverride | undefined, pack: ObjPack,
 }
 
 const recoil: ConcreteFixtureOverride = { items: [{ id: 2550, count: 20 }], reason: 'Explicitly authorized lab-only H4 enchanted-ring fixture: ring_of_recoil 2550 x20' };
-function authorizedRecoil(row: string, ref: ItemRef, count: number | 'all' | null, pack: ObjPack): ConcreteFixtureOverride | undefined {
+function authorizedRecoil(row: string, ref: ItemRef, count: number | 'all' | 'any' | null, pack: ObjPack): ConcreteFixtureOverride | undefined {
     if (row !== 'H4' || !ref.placeholder || ref.name !== 'enchanted ring' || count !== 20) return undefined;
     if (pack.names.get(2550) !== 'ring_of_recoil') fail('Authorized H4 recoil id does not match obj.pack');
     return recoil;
@@ -337,11 +337,12 @@ export function planMuleDeliveryFixtures(o: MuleDeliveryFixtureOptions): MuleDel
                 if (e.count === null) fail(itemLabel(e) + ' x?: unknown canonical return quantity');
                 if (e.reason !== 'swap' && e.reason !== 'trade') fail(itemLabel(e) + ': not a trade return');
                 const chosen = overrides.takeBacks?.[itemLabel(e)] ?? authorizedRecoil(rowId, e, e.count, o.pack);
-                if ((e.placeholder || e.family || e.count === 'all') && !chosen) fail(itemLabel(e) + ': all/family/placeholder return requires explicit concrete fixture override');
+                if ((e.placeholder || e.family || e.count === 'all' || e.count === 'any') && !chosen) fail(itemLabel(e) + ': all/any/family/placeholder return requires explicit concrete fixture override');
                 const items = chosen ? overridden(chosen, o.pack, catalog) : [...beforeInventory, ...beforeEquipment].filter(i => matches(e, i));
                 const expected = e.placeholder ? materialized.get(itemLabel(e)) ?? [] : [...beforeInventory, ...beforeEquipment].filter(i => matches(e, i));
                 if (!same(items, expected)) fail(itemLabel(e) + ': return override differs from the intended before-state');
-                if (!items.length || (e.count !== 'all' && total(items) !== e.count)) fail(itemLabel(e) + ': return count differs from canonical count ' + e.count);
+                // `any` may return nothing (stock an earlier step used up)
+                if ((!items.length && e.count !== 'any') || (typeof e.count === 'number' && total(items) !== e.count)) fail(itemLabel(e) + ': return count differs from canonical count ' + e.count);
                 subtract([...beforeInventory, ...beforeEquipment], items);
                 return items;
             }, [])));

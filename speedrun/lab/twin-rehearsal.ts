@@ -18,6 +18,8 @@
 //            Varrock, Falador and Camelot teleports to 59, keeping one law rune for T04-05.
 //   H7 dropping the amulet of magic also replaces S10b's A-kit segment with one that does not want it.
 //   S07: 'babydragon' uses the rehearsal's five bone loads and does not require Prayer 99.
+//   S14:     { "minAttack": N }  the cannon session's Attack floor lowered from 99 to N (a rehearsal that
+//            skipped Fight Arena's Attack reward); the cannon then rolls a lower accuracy than the scored row.
 //
 // Every substituted step is named `SUBSTITUTE ...` and writes a `(substitute) ...` note row, so the
 // report keeps it out of the measured columns. The driver refuses (exit 3, nothing logged in) for a
@@ -47,6 +49,7 @@ import { patchMethod } from '../runner/fence';
 import { inRoom } from '../skills/runecraft';
 import { steps as woodcuttingSteps } from '../skills/woodcutting';
 import { steps as agilitySteps } from '../skills/agility';
+import { cannonSessionStep } from '../skills/ranged';
 import { handOffFrom, handOffStep } from '../runner/handoff';
 import { formatRunReport, runReport } from '../runner/run-report';
 import type { StepContext } from '../runner/step';
@@ -72,6 +75,8 @@ export interface Substitutions {
     S07?: 'babydragon';
     /** The tree's climb still needs 25 when H8 has no agility potion. */
     S11a?: 25;
+    /** S14 below Attack 99 (Fight Arena's reward skipped): the cannon session's Attack floor. */
+    S14?: { minAttack: number };
 }
 
 const lower = (s: string) => s.trim().toLowerCase();
@@ -329,6 +334,19 @@ export function substitutedChain(cfg: RunConfig, cues: CueSink, subs: Substituti
         if (!step) throw new Error('substitute S11a: no gnome agility step');
         chain = chain.map(s => s.id === 'S11a' ? censused(tag(s.id, s.kind, step)) : s);
     }
+    if (subs.S14) {
+        const min = subs.S14.minAttack;
+        if (!Number.isInteger(min) || min < 1 || min > 99) throw new Error(`substitute S14: minAttack ${min} is not a level`);
+        // Only the preconditions change: the step keeps its run, its cue wrapping and its done.
+        const floor = cannonSessionStep({ s14MinAttack: min });
+        let found = 0;
+        chain = chain.map(s => {
+            if (s.id !== 'S14' || s.name !== 'S14 cannon session') return s;
+            found++;
+            return { ...s, preconditions: floor.preconditions };
+        });
+        if (found !== 1) throw new Error(`substitute S14: ${found} S14 cannon session steps on the chain, expected 1`);
+    }
     return chain.map(s => {
         const reason = substitutionReason(s, subs);
         if (!reason) return s;
@@ -357,6 +375,7 @@ function substitutionReason(s: ChainStep, subs: Substitutions): string | null {
     if (s.id === 'H4k' && subs.ledger?.H4k) return 'H4k substituted axe';
     if (s.id === 'S07' && (subs.ledger?.H4k || subs.S07)) return 'S07 substituted axe/bones; not Prayer 99';
     if (s.name === 'S05:A-h4-swap' && subs.S04) return 'H4 give-only (no rings)';
+    if (s.id === 'S14' && subs.S14) return `S14 at an Attack floor of ${subs.S14.minAttack}, not 99; cannon accuracy below the scored row`;
     if (subs.ledger?.H7?.drop?.length && ['H7', 'S10b', 'S11b', 'S12'].includes(s.id)) return 'H7 kit without amulet; fights not scored-equivalent';
     return null;
 }

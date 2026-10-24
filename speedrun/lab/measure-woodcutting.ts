@@ -506,11 +506,17 @@ await runScript(async ({ bot: actions, sdk }) => {
         // rs/700: the pure-bury tail (first frame past `to` to the close) and the band's own bury rate before it.
         for (const r of log.rows.filter(r => (r.meta as { kind?: string } | undefined)?.kind === 'wc-band')) {
             const m = r.meta as { buryTail?: { fromTick: number; ticks: number; buried: number; buryTicks: number; sends: number; resends: number; passes: number; loads: number; ticksPerBone: number | null } };
+            // the summary row's step is `<band>:summary`; its segment and load rows name the band itself
+            const band = r.step.replace(/:summary$/, '');
             const until = m.buryTail?.fromTick ?? r.endTick;
-            const segs = log.rows.filter(x => x.step === `${r.step}:segment` && x.startTick >= r.startTick && x.endTick <= until);
+            const segs = log.rows.filter(x => x.step === `${band}:segment` && x.startTick >= r.startTick && x.endTick <= until);
             const inBand = segs.reduce((n, x) => n + (((x.meta as { counters?: Record<string, number> }).counters ?? {}).buried ?? 0), 0);
-            const bandLoads = loadRows.filter(x => x.endTick >= r.startTick && x.endTick <= until && ((x.meta as { band?: string }).band ?? r.step) === r.step).length;
-            console.log(`IN-BAND ${r.step}: buried ${inBand} in ${until - r.startTick} band ticks (trades included) = ${until > r.startTick ? (inBand / (until - r.startTick)).toFixed(3) : '-'} bones/tick; ${bandLoads} loads before the tail`);
+            const runTicks = segs.reduce((n, x) => n + (x.endTick - x.startTick), 0);
+            const bandLoads = loadRows.filter(x => x.endTick >= r.startTick && x.endTick <= until && (x.meta as { band?: string }).band === band).length;
+            console.log(
+                `IN-BAND ${band}: buried ${inBand} in ${until - r.startTick} band ticks (trades and waits included) = ${until > r.startTick ? (inBand / (until - r.startTick)).toFixed(3) : '-'} bones/tick; ` +
+                    `in the knife-cycle runs alone ${runTicks} t = ${runTicks ? (inBand / runTicks).toFixed(3) : '-'} bones/tick; ${bandLoads} loads before the tail`
+            );
             const t = m.buryTail;
             if (t)
                 console.log(

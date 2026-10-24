@@ -7,7 +7,8 @@ import { ASK_FILE, CUE_FILE, CueWatcher, CueWriter, type Cue, type CueScope, typ
 import * as monkeyMadness from '../quests/monkey-madness';
 import { PLAN_FILE } from '../helpers/anvil';
 import { GO_FILE } from '../helpers/fm-row';
-import { handOffFrom, HandOffRecord } from './handoff';
+import { AttemptRecord } from './attempt-record';
+import { handOffFrom } from './handoff';
 import { runAttempt } from '../lib/attempt';
 import { baseState, FakeSdk } from '../lib/fake-sdk';
 import { ReservationWatch } from '../lib/host-reservation';
@@ -22,16 +23,16 @@ import * as cooking from '../skills/cooking';
 import * as mining from '../skills/mining';
 import * as woodcutting from '../skills/woodcutting';
 import {
-    ALTERNATIVES, anvilAnnounce, CANNON_ROWS, cueAround, cueMuleRows, FAMILY_CUES, KIT_PARTNER_ROWS, KIT_SEGMENTS, buildChain, CENSUS_STEP, chainIds, chainProbes, ledgerCoverage, ledgerRows, missingOnPath, missingStep, MULE_ROWS, muleCued, muleCueDir, muleScope, s07PrayerTo, S07_PRAYER_TO, s07Woodcutting, S09_MINING, parseStepTable, PLACEMENT, resolveFrom, sliceUntil, tag,
+    ALTERNATIVES, anvilAnnounce, CANNON_ROWS, cueAround, cueMuleRows, FAMILY_CUES, KIT_PARTNER_ROWS, KIT_SEGMENTS, buildChain, CENSUS_STEP, chainIds, chainProbes, chainSeams, ledgerCoverage, ledgerRows, missingOnPath, missingStep, MULE_ROWS, muleCued, muleCueDir, muleScope, s07PrayerTo, S07_PRAYER_TO, s07Woodcutting, S09_MINING, parseStepTable, PLACEMENT, resolveFrom, sliceUntil, tag,
     whenNeeded, withCue, askedOnTrade, h12oLogin, h12oLoginRefusal, h12oTopUp, H12O_LOGIN, type ChainStep, type CueSink, type RunConfig,
-    H4M_BONES, chainPartners, H4M_MIN_PRAYER, H4M_ROW, H4M_TRADE_TILE, S09_PRAYER_TO, type ChainOptions,
 } from './chain';
+import { chainPartners, H4M_BONES, H4M_MIN_PRAYER, H4M_ROW, H4M_TRADE_TILE, S09_PRAYER_TO, type ChainOptions } from './chain';
 import { CUE_BEACONS, CueKeeper, exitStopIsFinal, prepareCueDir, RunCues } from './cue-keeper';
 import { ScopeSessions } from '../helpers/standalone';
 import { FencedError } from './fence';
-import { legsFor, netTotal, type LegStep } from './legs';
+import { leg, legsFor, netTotal, type LegStep } from './legs';
 import { Observation, resolveResume, type Link } from './resume';
-import type { RunnerSession, Step, StepContext } from './step';
+import { runSteps, type RunnerSession, type Step, type StepContext } from './step';
 
 const prevTick = process.env.SPEEDRUN_TICK_MS;
 beforeAll(() => { process.env.SPEEDRUN_TICK_MS = '5'; });
@@ -44,7 +45,8 @@ const RUN_ORDER = readFileSync(join(import.meta.dir, '../../docs/speedrun/RUN-OR
 const PARTNERS: Record<string, string> = { ...Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS].map(id => [id, `p_${id.toLowerCase()}`])), H12a: 'p_h12', H12b: 'p_h12' };
 const CONFIG: RunConfig = {
     partners: PARTNERS,
-    firemakingTiles: '3240,3296;3239,3296;3238,3296',
+    // The castle lap's west end (rehearsals/firemaking.md), entered where T02-03 ends.
+    firemakingTiles: '3222,3219;3221,3219;3220,3219',
     rings: { giver: 'ring_giver' },
     bones: { giver: 'bone_giver' },
     courier: { giver: 'courier', below: 3 },
@@ -76,6 +78,37 @@ const CARRIERS: Record<string, readonly string[]> = {
 const CARRIER_CONFIG: RunConfig = { ...CONFIG, partners: Object.fromEntries(Object.entries(CARRIERS).flatMap(([who, rows]) => rows.map(r => [r, who]))) };
 /** Each mule-cued step of `c`: its row and whether a success stops it final. */
 const muleStops = (c: readonly ChainStep[]) => c.filter(s => s.cue?.family === 'mule').map(s => `${s.cue!.step}:${s.finalStop ? 'final' : 'plain'}`);
+
+describe('the seam check: each step start tile against the leg before it', () => {
+    test('the whole chain: every declared start tile a leg reaches is within its step\'s tolerance', () => {
+        const seams = chainSeams(chain);
+        expect(seams.filter(s => !s.ok).map(s => s.detail)).toEqual([]);
+        // S07's oak band follows the walk-oaks step, not a leg, so it has no seam; S25a's later inventories follow S25a.
+        expect(seams.map(s => [s.id, s.leg, s.distance])).toEqual([
+            ['S02', 'T01-02', 2], ['S03', 'T02-03', 0], ['S07', 'T07a', 1], ['S22', 'T21-22', 0], ['S25a', 'T24-25', 1],
+        ]);
+        // The data is the modules' own: S03's tile is the run config's row entry, at firemaking.ts's `near`.
+        expect(chain.find(s => s.name === 'S03 firemaking')!.startTile).toMatchObject({ x: 3222, z: 3219, within: 15 });
+    });
+
+    test("attempt 1's seam fails: the castle row's entry against T02-03 to the coop placeholder (3240,3296), 77 tiles", () => {
+        const at = chain.findIndex(s => s.id === 'T02-03');
+        const old = legsFor({ s21Altar: 'body' }).find(l => l.def.id === 'T02-03')!;
+        const coopLeg = tag('T02-03', 'leg', leg('T02-03', old.def.start, { x: 3240, z: 3296, tol: 0 }, [{ kind: 'run', to: { x: 3240, z: 3296, tol: 0 } }], { after: 'S02', before: 'S03', method: 'the old placeholder', expected: old.def.expected }));
+        const attempt1 = [...chain.slice(0, at), coopLeg, ...chain.slice(at + 1)];
+        const bad = chainSeams(attempt1).filter(s => !s.ok);
+        expect(bad.map(s => [s.id, s.leg, s.distance, s.start.within])).toEqual([['S03', 'T02-03', 77, 15]]);
+        expect(bad[0]!.detail).toContain('T02-03 ends at 3240,3296 tol 0, 77 tiles from 3222,3219');
+    });
+
+    test('a hand-off or cue step between the leg and the step does not move SCORED; a step does, and ends the seam', () => {
+        const at = chain.findIndex(s => s.id === 'S03');
+        const cueStep = { ...chain[at - 1]!, kind: 'cue' as const, id: 'X', name: 'X cue' };
+        expect(chainSeams([...chain.slice(0, at), cueStep, ...chain.slice(at)]).find(s => s.id === 'S03')!.leg).toBe('T02-03');
+        const walker = { ...chain[at - 1]!, kind: 'step' as const, id: 'W', name: 'W walks' };
+        expect(chainSeams([...chain.slice(0, at), walker, ...chain.slice(at)]).some(s => s.id === 'S03')).toBe(false);
+    });
+});
 
 describe('chainProbes', () => {
     test("every probe the chain's steps read, S25c's wineBank from cooking.ts's PROBES, none missing", () => {
@@ -1013,8 +1046,8 @@ describe('a placed hand-off stays done once the band after it consumes what it b
             nearbyPlayers: o.partner ? ([{ index: 9, name: o.partner, x, z, level: 3 }] as unknown as BotWorldState['nearbyPlayers']) : [],
         });
     /** The real chain with this attempt's record, sliced from leg `from` up to (not including) `to`. */
-    const sliceWith = (record: HandOffRecord | undefined, from: string, to: string) => {
-        const full = buildChain(CONFIG, { cues: recorder().cues, ...(record ? { handOffs: record } : {}) });
+    const sliceWith = (record: AttemptRecord | undefined, from: string, to: string) => {
+        const full = buildChain(CONFIG, { cues: recorder().cues, ...(record ? { record } : {}) });
         return full.slice(full.findIndex(s => s.id === from), full.findIndex(s => s.id === to));
     };
     const where = async (steps: readonly ChainStep[], s: BotWorldState): Promise<[string | null, string]> => {
@@ -1026,11 +1059,11 @@ describe('a placed hand-off stays done once the band after it consumes what it b
         }
     };
     const marked = (row: string) => {
-        const r = new HandOffRecord(mkdtempSync(join(tmpdir(), 'chain-handoffs-')), 'attempt-1');
-        r.mark(row, 1000);
+        const r = new AttemptRecord(mkdtempSync(join(tmpdir(), 'chain-handoffs-')), 'attempt-1');
+        r.handOffs.mark(row, 1000);
         return r;
     };
-    const unmarked = () => new HandOffRecord(mkdtempSync(join(tmpdir(), 'chain-handoffs-')), 'attempt-1');
+    const unmarked = () => new AttemptRecord(mkdtempSync(join(tmpdir(), 'chain-handoffs-')), 'attempt-1');
 
     // S18 at the knights' anchor (thieving.ts BANDS), Thieving inside the band, as on arrival from T16-18.
     const KNIGHTS = { x: 2670, z: 3305 };
@@ -1091,18 +1124,55 @@ describe('a placed hand-off stays done once the band after it consumes what it b
 
     test('every placed hand-off: recorded in this attempt and nothing it gave held, done with its package spent; another attempt\'s record is not this one', () => {
         const record = marked('none');
-        const other = new HandOffRecord(record.dir, 'attempt-0');
-        const full = buildChain(CONFIG, { cues: recorder().cues, handOffs: record });
+        const other = new AttemptRecord(record.dir, 'attempt-0');
+        const full = buildChain(CONFIG, { cues: recorder().cues, record });
         const handOffs = full.filter(s => s.kind === 'handoff');
         expect(handOffs.length).toBeGreaterThan(15);
         const spent = new Observation(at(0, 0, { held: [] }));
         for (const s of handOffs) {
             const row = s.name.replace(/ hand-off$/, '');
-            other.mark(row, 1);
+            other.handOffs.mark(row, 1);
             expect([row, s.done!(spent, {})]).toEqual([row, false]);
-            record.mark(row, 1);
+            record.handOffs.mark(row, 1);
             expect([row, s.done!(spent, {})]).toEqual([row, true]);
         }
+    });
+
+    // H13 gives SCORED's ranged and S15 kit at the mage-arena landing; S18 then fletches rune arrows and
+    // pickpockets coins, and H23 brings a magic shortbow and a superantipoison(4). H13's next milestone is
+    // S16's pool, done only in the chamber, so the record carries H13 past S16 (rs/577); the shortbow and
+    // superantipoison count as a rollback only until H23, which brings them, is recorded.
+    const h13 = handOffFrom(MANIFEST_TEXT, 'H13');
+    const h13Step = (record: AttemptRecord) => buildChain(CONFIG, { cues: recorder().cues, record }).find(s => s.name === 'H13 hand-off')!;
+    const given = (name: string, n: number): Held => [name, n, h13.give.find(g => g.name === name)!.ids?.[0]];
+
+    test('H13 stays done once S18 and H23 bring back items it gave (rune arrows worn, coins, a magic shortbow, a superantipoison)', () => {
+        const h23 = handOffFrom(MANIFEST_TEXT, 'H23');
+        const fromH23 = (re: RegExp): Held => {
+            const r = h23.receive.find(x => re.test(x.name))!;
+            return [r.name, 1, r.ids?.[0]];
+        };
+        const afterS18 = at(KNIGHTS.x, KNIGHTS.z, { held: [given('coins', 22450), ['shark', 2]], worn: [given('rune arrow', 570)], skills: [level('Thieving', 99)] });
+        const afterH23 = at(3105, 3935, { held: [fromH23(/^magic shortbow$/), fromH23(/^superantipoison/), ['shark', 12]], worn: [given('rune arrow', 570)] });
+        const record = marked('H13');
+        const s = h13Step(record);
+        expect(s.done!(new Observation(afterS18), {})).toBe(true);
+        expect(s.done!(new Observation(afterH23), {})).toBe(false);
+        record.handOffs.mark('H23', 2000);
+        expect(s.done!(new Observation(afterH23), {})).toBe(true);
+    });
+
+    test('H13 is not done in a fresh attempt with its gives held, nor after a rollback hands back the gives no later row returns', () => {
+        // T15-16's pack at the landing, H13 not traded: everything it gives still held, the rune arrows and Khazard set worn.
+        const wornGives = /^(rune arrow|khazard)/;
+        const beforeH13 = at(3105, 3935, {
+            held: h13.give.filter(g => !wornGives.test(g.name)).map(g => given(g.name, typeof g.count === 'number' ? g.count : 1)),
+            worn: h13.give.filter(g => wornGives.test(g.name)).map(g => given(g.name, typeof g.count === 'number' ? g.count : 1)),
+        });
+        expect(h13Step(unmarked()).done!(new Observation(beforeH13), {})).toBe(false);
+        expect(h13Step(marked('H13')).done!(new Observation(beforeH13), {})).toBe(false);
+        const rolledBack = at(3105, 3935, { held: [given('amulet of magic', 1), given('diamond', 3)] });
+        expect(h13Step(marked('H13')).done!(new Observation(rolledBack), {})).toBe(false);
     });
 });
 
@@ -1270,6 +1340,54 @@ describe('S11a: the gnome course to Agility 25', () => {
     });
 });
 
+describe('the attempt record through the real chain (rs/724)', () => {
+    /** rs/723's record-read milestones: the names the quest modules give them. */
+    const RECORDED = ['S16:D-pool', 'S16:E-statue', 'S16:F-guardian', 'S05:C-doric-hand-in'];
+    const recordAt = () => new AttemptRecord(mkdtempSync(join(tmpdir(), 'chain-attempt-record-')), 'attempt-1');
+    /** An observation where every declared probe reads unanswered, so the walk runs no probe. */
+    const observe = (s: BotWorldState, steps: readonly ChainStep[], record?: AttemptRecord) => {
+        const o = new Observation(s, {}, undefined, record?.steps);
+        for (const st of steps) for (const p of st.probes ?? []) o.probed[p] = null;
+        return o;
+    };
+
+    test('runSteps marks the chain step under the module\'s own name: S16:D-pool, S16:E-statue, S16:F-guardian, S05:C-doric-hand-in', async () => {
+        const record = recordAt();
+        const full = buildChain(CONFIG, { cues: recorder().cues, record });
+        for (const n of RECORDED) expect([n, full.filter(s => s.name === n).length]).toEqual([n, 1]);
+        // Each chain step as the chain built it (tag, its wrappers), its game work stubbed out.
+        const stubbed = RECORDED.map(n => ({ ...full.find(s => s.name === n)!, preconditions: () => true as const, postconditions: () => true as const, run: async () => {}, offline: true as const }));
+        const sdk = new FakeSdk(baseState({ tick: 1 }));
+        const session = { sdk, bot: {}, name: 'lab', sessionId: 0 } as unknown as RunnerSession;
+        await runSteps(session, stubbed, { log: TickLog.memory('t'), c: {}, shouldStop: () => false, tickMonitor: false, record: record.steps });
+        expect(RECORDED.map(n => [n, new AttemptRecord(record.dir, 'attempt-1').steps.has(n)])).toEqual(RECORDED.map(n => [n, true]));
+    });
+
+    test('S21 logged out between its halves, every step before it recorded: the walk resolves to the login half, not S00; H12o\'s trigger and the quests count as done', async () => {
+        const record = recordAt();
+        const relogs = new RelogBudget(join(record.dir, 'relog'));
+        relogs.beginPlanned(SCORED_RELOG, 100);
+        const full = buildChain(COMPLETE, { cues: recorder().cues, record, relogs, attempt: 'attempt-1' });
+        const logout = full.findIndex(s => s.name === SCORED_LOGOUT);
+        const login = full.findIndex(s => s.name === SCORED_LOGIN);
+        expect(logout).toBeGreaterThan(0);
+        const h12o = full.findIndex(s => s.id === 'H12o login');
+        expect(h12o).toBeGreaterThan(0);
+        expect(h12o).toBeLessThan(logout);
+        // The real run marks every step it completes; up to here that is every step before the logout half's end.
+        full.slice(0, logout + 1).forEach((s, i) => record.steps.mark(s.name, 1000 + i));
+        const out = baseState({ tick: 5000, inGame: false, player: null });
+        const p = await resolveResume(full, observe(out, full, record), {});
+        expect([p.step, p.mode]).toEqual([SCORED_LOGIN, 'run']);
+        expect(p.firstUndone).toBe(login);
+        // Every milestone before it read done, H12o's journal-read trigger and the quest segments with them.
+        expect(p.lastDone).toBeGreaterThan(h12o);
+        // Without the record the walk stops far before S21, at the first milestone (S00 reads the player).
+        const bare = await resolveResume(full, observe(out, full), {}).catch(e => e as { firstUndone: number });
+        expect(bare.firstUndone).toBeLessThan(h12o);
+    });
+});
+
 // rs/701: main's H4m lever. S07 closes at s07PrayerTo below 99 and S09 buries the rest from H4m's carrier
 // (the fallback table's H4m.1-H4m.N, rs/705's h4mLoadRows); at 99 the chain is today's.
 describe('H4m: S07 closes below 99 and S09 buries the rest', () => {
@@ -1278,8 +1396,8 @@ describe('H4m: S07 closes below 99 and S09 buries the rest', () => {
     const H4M_LINE = '| H4m.1-H4m.5 | babydragon bones @534 x20 [u] | - | - | 20 | fixture: rs/158\'s row (main 06:5xZ) |';
     const WITH_H4M = MANIFEST_TEXT.replace(`${H4E}\n`, `${H4E}\n${H4M_LINE}\n`);
     const H4M: RunConfig = { ...CONFIG, s07PrayerTo: 98, partners: { ...PARTNERS, H4m: 'p_h4m' } };
-    const record = () => new HandOffRecord(mkdtempSync(join(tmpdir(), 'chain-h4m-')), 'attempt-1');
-    const build = (cfg: RunConfig = H4M, o: Partial<ChainOptions> = {}) => buildChain(cfg, { cues: recorder().cues, manifest: WITH_H4M, handOffs: record(), ...o });
+    const record = () => new AttemptRecord(mkdtempSync(join(tmpdir(), 'chain-h4m-')), 'attempt-1');
+    const build = (cfg: RunConfig = H4M, o: Partial<ChainOptions> = {}) => buildChain(cfg, { cues: recorder().cues, manifest: WITH_H4M, record: record(), ...o });
     const s09 = (c: readonly ChainStep[]) => c.slice(c.findIndex(s => s.id === 'H4p'), c.findIndex(s => s.id === 'T09-10')).map(s => `${s.id}: ${s.name}`);
     const shape = (c: readonly ChainStep[]) => c.map(s => [s.id, s.kind, s.name, s.cue ?? null, s.finalStop ?? null]);
     const LOADS = Array.from({ length: 5 }, (_, i) => `H4m.${i + 1}`);
@@ -1355,7 +1473,7 @@ describe('H4m: S07 closes below 99 and S09 buries the rest', () => {
         expect(() => build(H4M, { manifest: big(8) })).toThrow(/8 loads of 20 big bones bring 2400\.00 base.*179 big bones/);
         expect(() => build(H4M, { manifest: MANIFEST_TEXT })).toThrow("s07PrayerTo 98 leaves Prayer 99 to S09's H4m loads, and STEP-MANIFEST.md's fallback hand-offs have no H4m row");
         expect(() => build({ ...H4M, partners: PARTNERS })).toThrow('names no partner for H4m');
-        expect(() => buildChain(H4M, { cues: recorder().cues, manifest: WITH_H4M })).toThrow(/hand-off record/);
+        expect(() => buildChain(H4M, { cues: recorder().cues, manifest: WITH_H4M })).toThrow(/attempt record/);
         expect(() => build(H4M, { manifest: WITH_H4M.replace('babydragon bones @534 x20 [u]', 'bones @526 x20 [u]') })).toThrow('must receive one bone by id, unnoted and a fixed count, of dragon_bones @536, babydragon_bones @534, big_bones @532');
         expect(() => build(H4M, { manifest: WITH_H4M.replace('babydragon bones @534 x20 [u]', 'babydragon bones @534 x20 [n]') })).toThrow(/must receive one bone by id, unnoted/);
         expect(H4M_BONES.map(b => [b.id, b.base])).toEqual([[536, 72], [534, 30], [532, 15]]);
@@ -1364,7 +1482,7 @@ describe('H4m: S07 closes below 99 and S09 buries the rest', () => {
 
     test("a load: room for 20 is its precondition, not the carrier in view; it opens its own mule cue fresh (the carrier's readiness), walks onto the east stay, then waits for the carrier", async () => {
         const r = recorder();
-        const c = buildChain(H4M, { cues: r.cues, manifest: WITH_H4M, handOffs: record() });
+        const c = buildChain(H4M, { cues: r.cues, manifest: WITH_H4M, record: record() });
         const load = c.find(s => s.id === 'H4m.1')!;
         expect(load.preconditions(zoo(), {})).toBe(true);
         // 24 free less 20 is S09's 4; with 5 more items held the load does not fit
@@ -1402,8 +1520,8 @@ describe('H4m: S07 closes below 99 and S09 buries the rest', () => {
 
     test('resume: the record tells the load steps apart; Prayer 99 walks past the loads left', async () => {
         const h = record();
-        for (const row of ['H4p', 'H4m.1', 'H4m.2', 'H4m.3']) h.mark(row, 100);
-        const full = buildChain(H4M, { cues: recorder().cues, manifest: WITH_H4M, handOffs: h });
+        for (const row of ['H4p', 'H4m.1', 'H4m.2', 'H4m.3']) h.handOffs.mark(row, 100);
+        const full = buildChain(H4M, { cues: recorder().cues, manifest: WITH_H4M, record: h });
         const slice = full.slice(full.findIndex(s => s.id === 'H4p'), full.findIndex(s => s.id === 'T09-10'));
         const where = async (s: BotWorldState) => {
             const p = await resolveResume(slice, new Observation(s), {});
@@ -1416,7 +1534,7 @@ describe('H4m: S07 closes below 99 and S09 buries the rest', () => {
         // Prayer 99: every bury step is done, the loads left are superseded, the band resumes
         expect(await where(zoo({ prayer: 99 }))).toEqual(['mining.iron-63', 'resume']);
         // every load recorded and none held: the band resumes
-        for (const row of LOADS) h.mark(row, 200);
+        for (const row of LOADS) h.handOffs.mark(row, 200);
         expect(await where(zoo())).toEqual(['mining.iron-63', 'resume']);
     });
 });
