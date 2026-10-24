@@ -14,6 +14,7 @@ import { muleFromLedger, muleRunOptions } from './mule-ledger';
 import { cancelMulePreparation, deliverySession, heldFor, holdMule, muleReadyPath, prepareMule, readMuleReady, readyFor, type MuleHeldExpected, type MuleReadyExpected } from './mule-readiness';
 import { memoryRoleState, type RoleContext } from './role';
 import { CueGate } from './standalone';
+import { JAIL_DETOUR } from './mule-route';
 
 const manifest = readFileSync(MANIFEST, 'utf8');
 const catalog = loadFixtureCatalog(objPack());
@@ -762,6 +763,29 @@ function simulatePassages(f: ReturnType<typeof fixture>, mode: 'pass' | 'missing
     };
     return { scans: () => scans };
 }
+
+describe('the Draynor jail detour', () => {
+    test('H18 walks from Draynor bank through the lane north of the jail, then back the same way to bank', async () => {
+        const f = fixture(['H18']);
+        const pkg = f.options.packages[0]!;
+        const expected = f.prepare(pkg);
+        f.start();
+        try {
+            await f.until(() => f.ready(expected));
+            const meeting = f.logs.find(l => l.message === 'delivery travel' && l.data?.purpose === 'meeting')!;
+            expect(meeting.data).toMatchObject({ ok: true, via: [...JAIL_DETOUR] });
+            const clicks = f.walk.clicks.map(c => `${c.x},${c.z}`);
+            expect(clicks.indexOf('3106,3262')).toBeGreaterThanOrEqual(0);
+            expect(clicks.indexOf('3134,3266')).toBeGreaterThan(clicks.indexOf('3106,3262'));
+            const cue = f.cue(pkg);
+            await f.until(() => f.completedOffers.length === 1);
+            cue.stop([{ tick: f.sdk.state!.tick, ms: Date.now() }]);
+            await f.until(() => f.bankVisits.length === 2);
+            const back = f.logs.filter(l => l.message === 'delivery travel' && l.data?.purpose === 'bank').at(-1)!;
+            expect(back.data).toMatchObject({ ok: true, via: [...JAIL_DETOUR].reverse() });
+        } finally { await f.stop(); }
+    }, 30_000);
+});
 
 describe('generated delivery passage traversal', () => {
     for (const row of ['H8', 'H12']) test(row + ' traverses the canonical gate before readiness and again before banking', async () => {
