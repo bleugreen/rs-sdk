@@ -32,16 +32,14 @@ import type { TickRow } from '../../lib/ticks';
 import { questStatus } from '../../lib/quests';
 import { teleport, type TravelSdk } from '../../lib/travel';
 import { give as tradeGive, type GiveResult } from '../../lib/trade';
-import { configId, invCount, skillXp, worn } from '../../lib/world';
+import { configId, findNpc, invCount, opIndex, skillXp, worn } from '../../lib/world';
 import { closeSession, openSession, type Session } from '../../lib/session';
 import { HOUSE_DOORS, quest, stepId, steps, type Options, type ScrollRead } from '../../quests/plague-city';
 import { labMain, STAGING, type LabQuest, type QuestFixture } from './run';
 import { arg, result } from '../common';
-import { clearInventory, give, leaveTutorial, mustTele, tele } from '../setup';
+import { cheat, clearInventory, give, leaveTutorial, mustTele, tele } from '../setup';
 import { openDoor, opLoc } from '../../lib/act';
-import { findNpc, opIndex } from '../../lib/world';
 import { waitUntil } from '../../lib/wait';
-import { cheat } from '../setup';
 
 export const LEVELS = { magic: 59, mining: 49, firemaking: 99, runecraft: 44, woodcutting: 99, prayer: 95 } as const;
 
