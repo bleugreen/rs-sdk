@@ -1,5 +1,8 @@
 import { preLoginDeadline, preLoginReady, type RunecraftOptions } from '../skills/runecraft';
-import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import { fakeCdp, fakeWorld } from './fake-cdp';
 import { FakeSdk, flush, runToggleServer } from './fake-sdk';
 import { IF_RUN_ON, runIsOn } from './run-mode';
@@ -28,7 +31,13 @@ import {
     openInterface,
     backoffMs,
     browserUrl,
+    closeSession,
+    formatBotEnv,
     gatewayPath,
+    liteRunnerEnv,
+    loadBotEnv,
+    openSession,
+    runnerEnvFor,
     isLoopbackHost,
     loggedOutBy,
     login,
@@ -1792,6 +1801,110 @@ describe("waitOwnLaunch: a launched tab's session is known by its launch id, not
             expect((await p).tick).toBe(2);
         } finally {
             cdp.stop();
+        }
+    });
+});
+
+describe('the lite runner a session launches reads that session’s environment (rs/783)', () => {
+    // Attempt 4's one-offs (02:47Z, 12:54Z): the scored login's alias bots/host-oneoff names the isolated
+    // gateway 7781, its own bots/<login>/bot.env the run's 7780.
+    const DEMO = 'rs-sdk-demo.fly.dev';
+    const RUN_GW = 'ws://127.0.0.1:7780';
+    const ONEOFF_GW = 'ws://127.0.0.1:7781';
+    let bots: string;
+    beforeAll(() => {
+        bots = mkdtempSync(join(tmpdir(), 'rs783-bots-'));
+        const put = (dir: string, gw: string) => {
+            mkdirSync(join(bots, dir));
+            writeFileSync(join(bots, dir, 'bot.env'), `BOT_USERNAME=srtest\nPASSWORD=pw\nSERVER=${DEMO}\nGATEWAY_URL=${gw}\nSHOW_CHAT=false\n`);
+        };
+        put('srtest', RUN_GW);
+        put('host-oneoff', ONEOFF_GW);
+    });
+    afterAll(() => rmSync(bots, { recursive: true, force: true }));
+
+    const defaultFile = () => join(bots, 'srtest', 'bot.env');
+    /** What the runner reads (server/webclient/src/lite/runner.ts main): LITE_BOT_ENV, else bots/<login>/bot.env. */
+    const runnerReads = (env: Record<string, string | undefined>) => env.LITE_BOT_ENV || defaultFile();
+    /** And the gateway it publishes to: that file's GATEWAY_URL, else the process's. */
+    const runnerGateway = (env: Record<string, string | undefined>) => parseBotEnv(readFileSync(runnerReads(env), 'utf-8')).GATEWAY_URL || env.GATEWAY_URL;
+    /** The parent's environment at its worst: a LITE_BOT_ENV and GATEWAY_URL naming the run's own. */
+    const parent = () => ({ PATH: '/usr/bin', LITE_BOT_ENV: defaultFile(), GATEWAY_URL: RUN_GW });
+
+    test('opened with the alias env passed in: the runner reads a private copy of the alias, never bots/<login>/bot.env, and is removed after', () => {
+        const alias = loadBotEnv('host-oneoff', bots);
+        const runnerEnv = runnerEnvFor('srtest', alias, alias, sessionGateway(alias, DEMO), bots);
+        expect(runnerEnv).toEqual({ env: alias, gatewayUrl: ONEOFF_GW });
+        const { env, remove } = liteRunnerEnv({ runnerEnv: runnerEnv! }, parent());
+        const file = runnerReads(env);
+        try {
+            expect(file).not.toBe(defaultFile());
+            expect(parseBotEnv(readFileSync(file, 'utf-8'))).toEqual(alias);
+            expect(statSync(file).mode & 0o777).toBe(0o600);
+            expect(env.GATEWAY_URL).toBe(ONEOFF_GW);
+            expect(runnerGateway(env)).toBe(ONEOFF_GW);
+            expect(env.PATH).toBe('/usr/bin');
+            expect(env.LITE_LOGIN_JITTER_MS).toBe('0');
+        } finally {
+            remove();
+        }
+        expect(existsSync(file)).toBe(false);
+    });
+
+    test('opened from the alias dir: the runner reads the alias file itself', () => {
+        const alias = loadBotEnv('host-oneoff', bots);
+        const runnerEnv = runnerEnvFor('host-oneoff', undefined, alias, sessionGateway(alias, DEMO), bots);
+        expect(runnerEnv).toEqual({ file: join(bots, 'host-oneoff', 'bot.env'), env: alias, gatewayUrl: ONEOFF_GW });
+        const { env } = liteRunnerEnv({ runnerEnv: runnerEnv! }, parent());
+        expect(runnerReads(env)).toBe(join(bots, 'host-oneoff', 'bot.env'));
+        expect(runnerGateway(env)).toBe(ONEOFF_GW);
+    });
+
+    test('an env passed in without GATEWAY_URL: the runner gets the gateway the session resolved, not an inherited one', () => {
+        const lab = parseBotEnv('BOT_USERNAME=srtest\nPASSWORD=pw\nSERVER=localhost:9300\n');
+        const { env, remove } = liteRunnerEnv({ runnerEnv: runnerEnvFor('srtest', lab, lab, 'ws://localhost:9380', bots)! }, parent());
+        try {
+            expect(runnerGateway(env)).toBe('ws://localhost:9380');
+        } finally {
+            remove();
+        }
+    });
+
+    test('opened with no explicit environment: no RunnerEnv, and the runner gets the process env exactly as before', () => {
+        const own = loadBotEnv('srtest', bots);
+        expect(runnerEnvFor('srtest', undefined, own, sessionGateway(own, DEMO), bots)).toBeUndefined();
+        const base = parent();
+        expect(liteRunnerEnv({}, base).env).toEqual({ ...base, LITE_LOGIN_JITTER_MS: '0' });
+        expect(liteRunnerEnv({}, { ...base, LITE_LOGIN_JITTER_MS: '2500' }).env.LITE_LOGIN_JITTER_MS).toBe('2500');
+    });
+
+    test('an env value with a line break is refused, not written where the runner would misread it', () => {
+        expect(() => formatBotEnv({ BOT_USERNAME: 'srtest', PASSWORD: 'pw\nGATEWAY_URL=ws://127.0.0.1:7780' })).toThrow(/PASSWORD holds a line break/);
+    });
+
+    test('openSession records the env it was given for the runner it would launch', async () => {
+        const gw = Bun.serve({
+            port: 0,
+            hostname: '127.0.0.1',
+            fetch: (req, srv) => (srv.upgrade(req) ? undefined : new Response('Gateway Service')),
+            websocket: {
+                message(ws, m) {
+                    const msg = JSON.parse(String(m)) as { type: string; mode?: string };
+                    if (msg.type === 'sdk_connect') ws.send(JSON.stringify({ type: 'sdk_connected', success: true, mode: msg.mode, otherControllers: 0 }));
+                },
+            },
+        });
+        const url = `ws://127.0.0.1:${gw.port}`;
+        const alias = { ...loadBotEnv('host-oneoff', bots), GATEWAY_URL: url };
+        try {
+            const s = await openSession('srtest', { env: alias, awaitInWorld: false, pathfinding: false });
+            try {
+                expect(s.runnerEnv).toEqual({ env: alias, gatewayUrl: url });
+            } finally {
+                await closeSession(s);
+            }
+        } finally {
+            gw.stop(true);
         }
     });
 });
