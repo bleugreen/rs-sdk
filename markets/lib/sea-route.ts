@@ -42,10 +42,11 @@ export const KARAMJA_LEG: Readonly<{ out: Leg; in: Leg }> = {
     in: sailLeg(voyage('Port Sarim to Karamja'))
 };
 
+const legOf = (v: Voyage): Leg => [KARAMJA_LEG.out, KARAMJA_LEG.in].find(l => l.kind === 'sail' && l.voyage === v) ?? sailLeg(v);
+
 /** The legs from `from` to `to`: each voyage between their land masses, then the walk to within `tolerance` of `to`. */
 export function routeBetween(from: Tile, to: Tile, tolerance = 3): Leg[] {
-    const legs = voyagesBetween(regionOf(from), regionOf(to)).map(v => (v.name === KARAMJA_LEG.out.name ? KARAMJA_LEG.out : sailLeg(v)));
-    return [...legs.map(l => (l.kind === 'sail' && l.voyage === KARAMJA_LEG.out.voyage ? KARAMJA_LEG.out : l.kind === 'sail' && l.voyage === KARAMJA_LEG.in.voyage ? KARAMJA_LEG.in : l)), { kind: 'walk', name: 'walk', to, tolerance }];
+    return [...voyagesBetween(regionOf(from), regionOf(to)).map(legOf), { kind: 'walk', name: 'walk', to, tolerance }];
 }
 
 /** Coins a route's voyages cost. */
