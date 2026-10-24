@@ -22,7 +22,9 @@ import { objPack } from '../lib/obj-pack';
 import { sameName, swap, type GiveSpec, type WantSpec } from '../lib/trade';
 import { openSession } from '../lib/session';
 import { waitUntil } from '../lib/wait';
-import { handOffFrom, type HandOffPlan } from '../runner/handoff';
+import { h4mLoadRows, parseFallbacks } from '../helpers/mule-ledger';
+import { H4M_ROW } from '../runner/chain';
+import { handOffFrom, planHandOff, type HandOffPlan } from '../runner/handoff';
 import { MANIFEST } from '../tools/slot-ledger';
 import { clearInventory, give, mustTele } from './setup';
 import { labRefusal } from './stand-ins';
@@ -49,11 +51,20 @@ export interface StagedRow {
     want: WantSpec[];
 }
 
+/**
+ * A row's hand-off plan. H4m's loads (H4m.1..H4m.N) have no row of their own: they share the one
+ * `H4m.1-H4m.N` row of the fallback table, as the chain reads it (runner/chain.ts h4mPlan).
+ */
+export function stubPlanOf(manifest: string, row: string): HandOffPlan {
+    if (h4mLoadRows(manifest).includes(row)) return planHandOff(parseFallbacks(manifest).find(r => r.row.startsWith(`${H4M_ROW}.`))!);
+    return handOffFrom(manifest, row);
+}
+
 /** The plan's rows as the giver stages them; every ledger name it cannot ::give is listed, none skipped. */
 export function stageRows(manifest: string, plan: StubPlanFile): { rows: StagedRow[]; unresolved: string[] } {
     const unresolved: string[] = [];
     const rows = plan.rows.map(r => {
-        const p: HandOffPlan = handOffFrom(manifest, r.row);
+        const p: HandOffPlan = stubPlanOf(manifest, r.row);
         const stage = p.receive.flatMap(x => {
             let obj = debugNameFor(x.name, x.ids?.[0], plan.objs);
             // A noted [n] entry named without an id resolves to the unnoted obj: give its note (as boundary.ts stages the pack).
