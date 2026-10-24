@@ -12,15 +12,25 @@
 // - Under a protect prayer the NPC's blocked swings need not trigger
 //   auto-retaliate, so "in combat" can mean only that we are being attacked.
 //   The loop re-attacks when it has dealt no damage for `stallTicks` (rs/56).
+// - A target the client cannot route to (behind a closed gate or door) draws sends that land
+//   nowhere: the browser dispatches the op alone ('unrouted - ap-range attempt', `routed: false`
+//   on the send's result), lite refuses it (cant_reach), and the server acts only when the player
+//   already stands in range with line of sight. The live S12:H of 10-24 re-sent Fire Blast at a
+//   caged Khazard Scorpion for ~150 ticks until the prayer ran out (rs/693). With the opt-in
+//   `unreachable` option, such a send, or `stuckSends` re-sends with no engine effect at all, sends
+//   the player to a tile in range of the target's live tile (approach.ts approachInRange); when
+//   there is none, the fight waits `unreachableTicks` for one and ends 'unreachable', naming the
+//   target's tile. Without it the loop sends exactly what it always has.
 
 import type { BotSDK } from '../../sdk/index';
 import { PRAYER_INDICES, type BotWorldState, type InventoryItem, type NearbyNpc, type PrayerName } from '../../sdk/types';
+import { approachInRange, npcTile, unroutedReply, type InRangeOptions } from './approach';
 import { clickContinue } from './dialogue';
 import { matchesItem, type ItemPattern } from './items';
 import { levelUpChain } from './levelup';
-import { scaleUse, type RuneName, type RuneUse } from './travel';
+import { scaleUse, type RuneName, type RuneUse, type TravelSdk } from './travel';
 import { waitUntil, type Pred, type StateSource } from './wait';
-import { npcByIndex, opIndex, waitForNpc, type NamePattern } from './world';
+import { npcByIndex, opIndex, pos, waitForNpc, type NamePattern } from './world';
 
 export type UpkeepSdk = StateSource & Pick<BotSDK, 'sendUseItem' | 'sendTogglePrayer'>;
 export type CombatSdk = UpkeepSdk & Pick<BotSDK, 'sendInteractNpc' | 'sendSpellOnNpc' | 'sendClickDialog' | 'clickDialogByText'>;
@@ -197,14 +207,45 @@ export interface FightOptions extends UpkeepOptions {
     stallTicks?: number;
     /** Fight-specific moves, once per tick before the attack decision (a weapon swap at low target hp). Return true if it acted, to re-send the attack. */
     onTick?: (s: BotWorldState, target: NearbyNpc | null) => boolean | void | Promise<boolean | void>;
+    /**
+     * Opt-in: the stuck-target watch (an approach to the target's live tile, then 'unreachable').
+     * Absent, the loop is exactly the one without it: nothing extra is ever sent, and a fight that
+     * cannot reach its target runs to `maxTicks`. Fights with scripted pauses (a boss changing
+     * form, a cutscene) leave it off; a caller turns it on where a target can be walled off.
+     */
+    unreachable?: UnreachableOptions;
 }
 
-export type FightEnd = 'killed' | 'gone' | 'done' | 'dialog' | 'died' | 'timeout' | 'no target';
+export interface UnreachableOptions {
+    /**
+     * Re-sends with no engine effect (no hitsplat between the player and the target, no rune or xp
+     * spent, no step taken) that send the player to the target (default 4). An unrouted or
+     * cant_reach send result does so once the target has been untouched 6 ticks.
+     */
+    stuckSends?: number;
+    /** Approaches to the target's live tile before the wait (default 3: the first and 2 re-finds). */
+    approaches?: number;
+    /** Ticks waited, still sending, for the target to become reachable after the approaches, before 'unreachable' (default 15). */
+    unreachableTicks?: number;
+    /** The range the approach puts the player in: default 10 for a spell, 1 otherwise (melee; a ranged fight passes its weapon's range). */
+    range?: number;
+    /** For the approach (approach.ts InRangeOptions: the run's bot, interrupts, the sight check). */
+    approach?: InRangeOptions;
+}
+
+export type FightEnd = 'killed' | 'gone' | 'done' | 'dialog' | 'died' | 'timeout' | 'no target' | 'unreachable';
+
+const xpTotal = (s: BotWorldState) => (s.skills ?? []).reduce((a, k) => a + (k.experience ?? 0), 0);
+const runesHeld = (s: BotWorldState) => s.inventory.reduce((a, i) => (/ rune$/i.test(i.name) ? a + i.count : a), 0);
 
 export interface FightResult {
-    /** killed, gone, done and dialog are ok; died, timeout and no target are not. */
+    /** killed, gone, done and dialog are ok; died, timeout, no target and unreachable are not. */
     ok: boolean;
     end: FightEnd;
+    /** Why an 'unreachable' fight ended: the target and its tile. */
+    reason?: string;
+    /** Approaches to the target's live tile (approachInRange calls). */
+    approaches: number;
     /** Call to end. */
     ticks: number;
     /** Call to the first hitsplat between the player and the target, either way; -1 if none. */
@@ -235,7 +276,7 @@ export async function fight(sdk: CombatSdk, target: NamePattern | NearbyNpc, o: 
     const upkeep = new Upkeep(sdk, o);
     const doses0 = prayerDoses(s0);
     const r: FightResult = {
-        ok: false, end: 'no target', ticks: 0, engaged: -1, dealt: 0, taken: 0, hits: 0, attacks: 0, levelUps: 0,
+        ok: false, end: 'no target', approaches: 0, ticks: 0, engaged: -1, dealt: 0, taken: 0, hits: 0, attacks: 0, levelUps: 0,
         eats: 0, drinks: 0, prayerUsed: 0, prayerDoses: 0, minHp: s0.player?.hp ?? 0, died: false, targetIndex: npc0?.index ?? -1,
     };
     const end = (s: BotWorldState, e: FightEnd): FightResult => {
@@ -255,10 +296,25 @@ export async function fight(sdk: CombatSdk, target: NamePattern | NearbyNpc, o: 
     const meleeOp = opIndex(npc0, /^attack$/i) ?? 2;
     let lastAttack = -Infinity;
     let lastDealt = t0;
+    // The stuck-target watch: the last tick with any engine effect, the sends since, and whether a
+    // send's result said it reached no tile.
+    let lastEffect = t0;
+    let idleSends = 0;
+    let unrouted = false;
+    let waitFrom = -1;
+    let refusal: string | undefined;
+    let lastPos = pos(s0);
+    let lastXp = xpTotal(s0);
+    let lastRunes = runesHeld(s0);
+    const travel = typeof (sdk as Partial<TravelSdk>).findPath === 'function' && typeof (sdk as Partial<TravelSdk>).sendWalk === 'function' ? (sdk as unknown as TravelSdk) : null;
+    const watch = o.unreachable;
+    const range = watch?.range ?? (o.spell !== undefined ? 10 : 1);
     const attack = (tick: number) => {
         lastAttack = tick;
         r.attacks++;
-        void (o.spell !== undefined ? sdk.sendSpellOnNpc(idx, o.spell) : sdk.sendInteractNpc(idx, meleeOp));
+        idleSends++;
+        const sent = o.spell !== undefined ? sdk.sendSpellOnNpc(idx, o.spell) : sdk.sendInteractNpc(idx, meleeOp);
+        void Promise.resolve(sent).then(res => { if (unroutedReply(res)) unrouted = true; }, () => {});
     };
     const attacking = o.attack !== false;
     if (attacking) attack(t0);
@@ -274,10 +330,12 @@ export async function fight(sdk: CombatSdk, target: NamePattern | NearbyNpc, o: 
         if (!w.ok) throw new Error(`fight: the client stopped publishing at tick ${prev}`);
         s = w.state;
         if (s.tick - t0 > (o.maxTicks ?? 600)) return end(s, 'timeout');
+        let effect = false;
         for (const e of s.combatEvents ?? []) {
             const k = `${e.tick}:${e.observationId ?? ''}:${e.type}:${e.damage}:${e.sourceIndex}:${e.targetIndex}`;
             if (e.tick < t0 || seen.has(k)) continue;
             seen.add(k);
+            if ((e.targetType === 'npc' && e.targetIndex === idx) || (e.sourceType === 'npc' && e.sourceIndex === idx)) effect = true;
             // Damage dealt counts only on the tracked target: a hit on another NPC
             // (multi-combat, a cannon) must not reset the protect-prayer stall timer.
             const onTarget = e.type === 'damage_dealt' && e.targetType === 'npc' && e.targetIndex === idx;
@@ -288,6 +346,19 @@ export async function fight(sdk: CombatSdk, target: NamePattern | NearbyNpc, o: 
                 lastDealt = e.tick;
             } else if (e.type === 'damage_taken') r.taken += e.damage;
             if ((onTarget || fromTarget) && r.engaged < 0) r.engaged = e.tick - t0;
+        }
+        const here = pos(s);
+        const xp = xpTotal(s);
+        const runes = runesHeld(s);
+        if (here.x !== lastPos.x || here.z !== lastPos.z || xp > lastXp || runes < lastRunes) effect = true;
+        lastPos = here;
+        lastXp = xp;
+        lastRunes = runes;
+        if (effect) {
+            lastEffect = s.tick;
+            idleSends = 0;
+            unrouted = false;
+            waitFrom = -1;
         }
         if (s.player) r.minHp = Math.min(r.minHp, s.player.hp);
         if (s.player?.isDead) return end(s, 'died');
@@ -326,6 +397,30 @@ export async function fight(sdk: CombatSdk, target: NamePattern | NearbyNpc, o: 
         let resend = upkeep.step(s);
         if (o.onTick && (await o.onTick(s, npc))) resend = true;
         if (!attacking || !npc) continue;
+        const idle = s.tick - lastEffect;
+        if (watch && waitFrom < 0 && ((unrouted && idle >= 6) || (idleSends >= (watch.stuckSends ?? 4) && idle >= 8))) {
+            if (travel && r.approaches < (watch.approaches ?? 3)) {
+                r.approaches++;
+                const a = await approachInRange(travel, npc, range, { refinds: 0, ...watch.approach });
+                if (a.ok) {
+                    s = sdk.getState() ?? s;
+                    lastPos = pos(s);
+                    lastEffect = s.tick;
+                    idleSends = 0;
+                    unrouted = false;
+                    attack(s.tick);
+                    continue;
+                }
+                refusal = a.reason;
+                s = sdk.getState() ?? s;
+            }
+            waitFrom = s.tick;
+        }
+        if (watch && waitFrom >= 0 && s.tick - waitFrom >= (watch.unreachableTicks ?? 15)) {
+            const t = npcTile(npc);
+            r.reason = refusal ?? `${npc.name} untouched by ${r.approaches} approaches and ${s.tick - waitFrom} ticks' wait (at ${t.x},${t.z})`;
+            return end(s, 'unreachable');
+        }
         if (o.spell !== undefined) {
             if (resend || s.tick - lastAttack >= (o.castEvery ?? 2)) attack(s.tick);
             continue;
