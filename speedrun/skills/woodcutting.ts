@@ -1313,7 +1313,7 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null, next
                 // failed before any item could move re-picks rather than failing the band.
                 pick = { waited: 0, repicks: 0, tried: [] };
                 const refusal = runesOnly
-                    ? `the group's final giver did not serve the runes' load (the cue's lastLoad) within ${group.serverWait} observed ticks`
+                    ? `the group's final giver did not serve the runes' load (the cue's lastLoad) within ${group.serverWait} observed ticks: relaunch the bone givers and resume --from=S07`
                     : `no giver of the group served within ${group.serverWait} observed ticks`;
                 let after: number | undefined;
                 let failed: ReceiveResult | null = null;

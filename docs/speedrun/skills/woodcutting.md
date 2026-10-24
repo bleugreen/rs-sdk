@@ -426,6 +426,14 @@ place of one `bones.giver`:
   band to bury them.
 - `handBack: true` names one giver, so it is refused with a group (name the partner instead).
 
+The group's load failures and their recovery. In both cases the band fails, keeps the cue standing,
+and never closes without the runes.
+
+| Failure (the band's error) | Cause | Recovery |
+|---|---|---|
+| `bone load N from the group (...) failed: no giver of the group served within N observed ticks` | no giver loaded and in sight within `serverWait` (all away, faulted or logged out) | the operator relaunches the bone family's launcher and resumes `--from=S07`; the resume re-enters the band in the same cue session and the givers carry on their count |
+| `... the group's final giver did not serve the runes' load (the cue's lastLoad) within N observed ticks: relaunch the bone givers and resume --from=S07` | the cue says lastLoad, and b04 (the only giver that may serve it) is faulted, logged out or stale | the operator relaunches the bone family's launcher (a fresh launcher ignores stale cues) and resumes `--from=S07`. The resume re-enters the closing band, writes `lastLoad` once in the new session, and asks b04 again. Not `handBack`, a path no lab has exercised (rs/186's ruling) |
+
 **Measured** (local engine, `NODE_TICKRATE=300`, a headless Chrome tab on bgsrv-mac, load 2.2-5.2,
 2026-10-22 18:29-18:41Z, `speedrun/lab/measure-woodcutting.ts band --level=15 --bury --givers=4`:
 cairn_b01-b04 under the run-machine launcher with staff-made bones, so a giver's restock takes a

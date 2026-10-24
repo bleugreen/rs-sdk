@@ -876,7 +876,9 @@ export class BoneGiver {
         const flagged = this.cue?.lastLoad === true;
         const extras = carriesFinal || isFinalLoad(o, k, flagged) ? o.finalExtras : [];
         const bones = o.group.length ? o.n : loadBones(o, k, flagged);
-        if (this.mustBank || this.held() !== bones || extras.some(e => count(this.s, exact(e.item)) < e.count)) {
+        // An extras-only load (a lone giver on the cue's lastLoad) offers no bones: whatever it holds is no reason to bank.
+        const bonesOk = this.held() === bones || (bones === 0 && flagged);
+        if (this.mustBank || !bonesOk || extras.some(e => count(this.s, exact(e.item)) < e.count)) {
             this.mustBank = false;
             this.setPhase('restock', carriesFinal ? 'with the last load\'s extras' : extras.length ? 'the last load' : '');
             await this.restock(bones, extras);

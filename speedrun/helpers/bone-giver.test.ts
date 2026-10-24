@@ -1040,12 +1040,12 @@ describe("the cue's lastLoad (rs/663): the final giver's next load is the last, 
             for (const [i, a] of G.slice(0, 3).entries()) putStatus(dir, st(a, 'waiting', Date.now() - 60_000 + i, { session, ms: Date.now(), trades: 3, ...extra }));
         };
         /** A group giver on the oak tile with a fake scored partner in sight that takes whatever it is offered. */
-        const rig = (dir: string, account: string, inventory = pack(23, account === 'cairn_b04')) => {
+        const rig = (dir: string, account: string, inventory = pack(23, account === 'cairn_b04'), solo = false) => {
             const sdk = new FakeTradePartner(baseState({ tick: 10, inventory, player: player(OAK.giver), nearbyPlayers: [scoredP] } as Partial<BotWorldState>), [], { partner: 'scored', stacks: t => /rune$/i.test(t.name), weapon: () => false });
             const logs: Array<[string, Record<string, unknown> | undefined]> = [];
             const g = new BoneGiver({
                 account,
-                options: { group: G, trades: 64, cueDir: dir, scope: S07, noReplyTicks: 3, ...(account === 'cairn_b04' ? { finalExtras: RUNES } : {}) },
+                options: { ...(solo ? {} : { group: G }), trades: 64, cueDir: dir, scope: S07, noReplyTicks: 3, ...(account === 'cairn_b04' ? { finalExtras: RUNES } : {}) },
                 sdk,
                 bot: { dismissBlockingUI: async () => {} },
                 signal: new AbortController().signal,
@@ -1124,6 +1124,21 @@ describe("the cue's lastLoad (rs/663): the final giver's next load is the last, 
             expect(await drive(r.sdk, r.priv.cycle(), 80)).toBe(true);
             expect(trades()[1]).toMatchObject({ ok: true, final: true, lastLoad: true, gave: ['Law rune x1', 'Air rune x5'] });
             expect([r.priv.trades, r.priv.lastGiven]).toEqual([2, true]);
+        });
+
+        test('a lone giver (no group) on the flagged cue holding a load and the runes makes no bank trip: it trades the runes alone and keeps its bones (rs/41)', async () => {
+            const dir = mkdtempSync(join(tmpdir(), 'bone-lastload-solo-'));
+            const r = rig(dir, 'cairn_b04', pack(23, true), true);
+            r.g.onCue(scoredCue(dir, 'a4.S07.bone', true));
+            let restocks = 0;
+            r.priv.restock = async () => {
+                restocks++;
+            };
+            expect(await drive(r.sdk, r.priv.cycle(), 80)).toBe(true);
+            expect(restocks).toBe(0);
+            expect(r.logs.find(([m]) => m === 'trade')![1]).toMatchObject({ ok: true, final: true, lastLoad: true, gave: ['Law rune x1', 'Air rune x5'] });
+            expect(r.sdk.getState()!.inventory.filter(i => /bones$/i.test(i.name))).toHaveLength(23);
+            expect([r.priv.lastGiven, r.priv.lastLoadDone()]).toEqual([true, true]);
         });
 
         test('a giver without the extras under the flag never requests: it waits queued behind b04, and stands down once b04 has served it', async () => {
