@@ -64,7 +64,7 @@ function serve(sdk: FakeSdk, o: { onDrink?: () => void; drop?: (n: number) => bo
 
 const never = (sdk: FakeSdk, ticks: number) => () => waitUntil(sdk, () => false, { maxTicks: ticks });
 
-describe("SCORED's helper waits run under a DeathWatch (rs/761 (f))", () => {
+describe("SCORED's helper waits run under a DeathWatch", () => {
     test("a readiness wait that sees SCORED die ends at once with the death, which run.ts writes as the (death) row and ends EXIT_DIED", async () => {
         const dir = mkdtempSync(join(tmpdir(), 'wait-guard-'));
         // H12's carrier never reports ready (h55 served its row and will not come again).
@@ -97,7 +97,7 @@ describe("SCORED's helper waits run under a DeathWatch (rs/761 (f))", () => {
     });
 });
 
-describe("the wait upkeep: the legs' eat rule and the shared antipoison, held while a trade is open (rs/761 (f))", () => {
+describe("the wait upkeep: the legs' eat rule and the shared antipoison, held while a trade is open", () => {
     test('a poisoned wait drinks once: the dose noted in the tick it is sent, and nothing more once cured', async () => {
         const sdk = new FakeSdk(state({ inventory: [potion(0, 4)] }, { hp: 30 }));
         const cure = flagCure(sdk);
@@ -161,7 +161,7 @@ describe("the wait upkeep: the legs' eat rule and the shared antipoison, held wh
     });
 });
 
-describe('run.ts: the upkeep from login to the first step (rs/761 (c))', () => {
+describe('run.ts: the upkeep from login to the first step', () => {
     const steps = (body: (ctx: StepContext<unknown>) => void) => [{ name: 'S15:A-narnode', run: async (ctx: StepContext<unknown>) => body(ctx) }];
 
     test('a resume with SCORED poisoned at 11 HP eats and cures before the first step\'s body, each a note row; the step\'s entry ends it', async () => {
