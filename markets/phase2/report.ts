@@ -1,6 +1,7 @@
 /**
  * Summarise a phase-2 ledger (run.ts): each account's rate on its method, the per-method medians, the knights
- * ramp's decisions, redirects, Exchange errands, the deaths (by account, cause and pickpocket target) and the logouts.
+ * ramp's decisions, redirects, Exchange errands, the deaths (by account, cause and pickpocket target), the stalls and
+ * parks by stage, the trips (`travel`), and the logouts.
  *
  *   bun markets/phase2/report.ts <ledger.jsonl> [--tick-ms 400]
  *
@@ -25,6 +26,8 @@ export interface Report {
     parked: Record<string, unknown>[];
     errands: Record<string, unknown>[];
     deaths: Deaths;
+    stalls: Stalls;
+    trips: Trips;
     end: Record<string, unknown> | null;
     lastTotals: Record<string, unknown> | null;
     hp: HpSummary | null;
@@ -128,6 +131,41 @@ export function deathsOf(lines: readonly Record<string, unknown>[]): Deaths {
     };
 }
 
+export interface Stalls {
+    /** Stall aborts by stage. */
+    byStage: Record<string, number>;
+    /** Parks by stage, for any reason (unreachable, stalled, food). */
+    parkedByStage: Record<string, number>;
+    lines: Record<string, unknown>[];
+}
+
+const tally = (lines: readonly Record<string, unknown>[], key: (l: Record<string, unknown>) => string): Record<string, number> => {
+    const out: Record<string, number> = {};
+    for (const l of lines) out[key(l)] = (out[key(l)] ?? 0) + 1;
+    return out;
+};
+
+export function stallsOf(lines: readonly Record<string, unknown>[]): Stalls {
+    const stalls = lines.filter(l => l.kind === 'stall');
+    return { byStage: tally(stalls, l => String(l.stage)), parkedByStage: tally(lines.filter(l => l.kind === 'parked'), l => String(l.stage ?? 'unknown')), lines: stalls };
+}
+
+export interface Trips {
+    n: number;
+    /** Each leg's count and median ticks, by its name: a voyage, a passage, 'fares', 'walk'. */
+    byLeg: Record<string, { n: number; medianTicks: number }>;
+    fares: number;
+    lines: Record<string, unknown>[];
+}
+
+export function tripsOf(lines: readonly Record<string, unknown>[]): Trips {
+    const trips = lines.filter(l => l.kind === 'trip');
+    const ticks = new Map<string, number[]>();
+    for (const t of trips) for (const leg of (t.legs as { leg: string; ticks: number }[] | undefined) ?? []) ticks.set(leg.leg, [...(ticks.get(leg.leg) ?? []), leg.ticks]);
+    const byLeg = Object.fromEntries([...ticks].map(([leg, v]) => [leg, { n: v.length, medianTicks: median(v) }]));
+    return { n: trips.length, byLeg, fares: trips.reduce((n, t) => n + Number(t.fares ?? 0), 0), lines: trips };
+}
+
 export function report(lines: readonly Record<string, unknown>[], tickMs: number): Report {
     const rates = methodRates(lines.filter(l => l.kind === 'account') as unknown as AccountLine[], tickMs);
     const byMethod: Report['byMethod'] = {};
@@ -145,6 +183,8 @@ export function report(lines: readonly Record<string, unknown>[], tickMs: number
         parked: lines.filter(l => l.kind === 'parked'),
         errands: lines.filter(l => l.kind === 'buy' || l.kind === 'sale'),
         deaths: deathsOf(lines),
+        stalls: stallsOf(lines),
+        trips: tripsOf(lines),
         end: lines.findLast(l => l.kind === 'end') ?? null,
         lastTotals: lines.findLast(l => l.kind === 'totals') ?? null,
         hp: hpSummary(lines)
@@ -174,6 +214,10 @@ if (import.meta.main) {
         const at = l.at as { x: number; z: number } | undefined;
         console.log(`REPORT death ${l.t} ${l.account} ${l.stage}${l.target ? `/${l.target}` : ''} cause=${l.cause} damage=${JSON.stringify(l.damage)} thieving=${l.thieving} maxHp=${l.maxHp} at=${at ? `${at.x},${at.z}` : '?'} coins=${l.carriedCoins} food=${l.food}${l.missed ? ' (seen from the respawn)' : ''}`);
     }
+    console.log(`REPORT stalls ${r.stalls.lines.length} ${JSON.stringify({ byStage: r.stalls.byStage, parkedByStage: r.stalls.parkedByStage })}`);
+    for (const l of r.stalls.lines) console.log(`REPORT stall ${l.t} ${l.account} ${l.stage} ${l.action} retry=${l.retry}/${l.retries} at=${JSON.stringify(l.at)} after ${l.stalledMinutes} min`);
+    console.log(`REPORT trips ${r.trips.n} ${JSON.stringify({ byLeg: r.trips.byLeg, fares: r.trips.fares })}`);
+    for (const l of r.trips.lines) console.log(`REPORT trip ${l.t} ${l.account} ${l.stage} ${((l.legs as { leg: string; ticks: number }[]) ?? []).map(g => `${g.leg}:${g.ticks}`).join(' ')} (${l.ticks} ticks, ${l.fares} coins)`);
     if (r.hp) {
         console.log(`REPORT hp ${JSON.stringify(r.hp)}`);
         for (const l of lines.filter(x => x.kind === 'hp').sort((p, q) => Number(p.minutesFromLogin) - Number(q.minutesFromLogin)))
