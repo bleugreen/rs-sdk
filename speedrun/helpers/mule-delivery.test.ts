@@ -14,7 +14,8 @@ import { muleFromLedger, muleRunOptions } from './mule-ledger';
 import { cancelMulePreparation, deliverySession, heldFor, holdMule, muleReadyPath, prepareMule, readMuleReady, readyFor, type MuleHeldExpected, type MuleReadyExpected } from './mule-readiness';
 import { memoryRoleState, type RoleContext } from './role';
 import { CueGate } from './standalone';
-import { JAIL_DETOUR, nearJailGuards } from './mule-route';
+import { deliveryVia, JAIL_DETOUR, nearJailGuards } from './mule-route';
+import { findLongPath } from '../../sdk/pathfinding';
 
 const manifest = readFileSync(MANIFEST, 'utf8');
 const catalog = loadFixtureCatalog(objPack());
@@ -792,6 +793,11 @@ describe('the Draynor jail detour', () => {
         const f = fixture(['H18']);
         const pkg = f.options.packages[0]!;
         const expected = f.prepare(pkg);
+        // The SDK's real ground routes, so the clicks are the ones the live walk would send.
+        f.sdk.pathTo = (x, z) => {
+            const p = f.sdk.state!.player!;
+            return { success: true, waypoints: findLongPath(0, p.worldX, p.worldZ, x, z, 500), reachedDestination: true };
+        };
         // The lane east of the first waypoint is impassable: the stretch to the second one stalls.
         f.blockTiles((x, z) => x > 3106 && z >= 3258);
         f.start();
@@ -803,7 +809,9 @@ describe('the Draynor jail detour', () => {
             expect(f.sdk.state!.player).toMatchObject({ worldX: 3106, worldZ: 3262 });
             f.blockTiles(() => false);
             await f.until(() => f.ready(expected));
-            expect(f.logs.filter(l => l.message === 'delivery travel' && l.data?.purpose === 'meeting' && l.data?.ok === true).at(-1)!.data?.via).toEqual([JAIL_DETOUR[1]]);
+            // From the lane the ground route to the stand stays in the lane, so the rule asks for no further waypoint.
+            const retry = f.logs.filter(l => l.message === 'delivery travel' && l.data?.purpose === 'meeting' && l.data?.ok === true).at(-1)!;
+            expect(retry.data?.via ?? []).toEqual(deliveryVia({ x: 3106, z: 3262 }, pkg.at!));
             // No click, before or after the failure, ever sent the mule toward the guards.
             expect(f.walk.clicks.filter(c => nearJailGuards(c))).toEqual([]);
             expect(f.sdk.state!.player).toMatchObject({ worldX: pkg.at!.x, worldZ: pkg.at!.z });
