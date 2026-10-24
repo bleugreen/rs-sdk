@@ -192,11 +192,7 @@ async function pickaxeStep(x: StageCtx, st: PickaxeStep, mining: number): Promis
             await runRoleUntil(x, coinsRole, { target: 'man' }, s => (carriedCoins(s) >= st.until ? `${st.until} coins` : null));
             return;
         case 'bank': {
-            await walk(x, st.at, 3);
-            const opened = await x.bot.openBank();
-            if (!opened.success) throw new Error(`openBank: ${opened.message}`);
-            await waitUntil(x.sdk, s => s.bank?.isOpen === true, { maxTicks: 5 });
-            const bank = x.sdk.getBankItems();
+            const bank = await openBankAt(x, st.at);
             const want = st.take === 'pickaxe' ? bestPickaxe(bank, mining) : bank.find(i => /^coins$/i.test(i.name));
             if (want) {
                 const w = await x.bot.withdrawItem(want, st.take === 'pickaxe' ? 1 : Math.min(want.count, PICKAXE_COINS));
@@ -344,6 +340,23 @@ async function wield(x: StageCtx, item: RegExp): Promise<void> {
     if (!it || !op) throw new Error(`nothing matching ${item} to wield`);
     await x.sdk.sendUseItem(it.slot, op.opIndex);
     await waitUntil(x.sdk, st => st.equipment.some(e => item.test(e.name)), { maxTicks: 10 });
+}
+
+/**
+ * Walk to the bank at `at` and open it afresh, waiting for its items. A sale falls due when the method reports its
+ * bank, so the method is stopped with that bank still open or closing, and reading it then gave no items (lab, rs/732).
+ */
+export async function openBankAt(x: Pick<StageCtx, 'sdk' | 'bot' | 'signal' | 'event'>, at: { x: number; z: number }): Promise<ReturnType<BotSDK['getBankItems']>> {
+    await walk(x, at, 3);
+    if (x.sdk.getState()?.bank?.isOpen) {
+        await x.bot.closeBank();
+        await waitUntil(x.sdk, s => !s.bank?.isOpen, { maxTicks: 5 });
+    }
+    const opened = await x.bot.openBank();
+    if (!opened.success) throw new Error(`openBank: ${opened.message}`);
+    // an empty bank never fills: it costs the wait's 5 ticks
+    await waitUntil(x.sdk, s => s.bank?.isOpen === true && s.bank.items.length > 0, { maxTicks: 5 });
+    return x.sdk.getBankItems();
 }
 
 /** Back west through the toll gate (10 coins): the thieving stage can end among the Al-Kharid warriors. */

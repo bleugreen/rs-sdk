@@ -423,7 +423,10 @@ export function sequenceFor(a: Pick<AccountPlan, 'method' | 'hp'>, plan: Pick<Pl
     if (a.method === 'knights' && plan.ramp) out.push({ do: 'admission' });
     if (n.sharks && plan.sharks.source === 'buy') out.push({ do: 'buy-sharks' });
     if (n.mining) {
-        // before the coins: Bob's pickaxe costs 1 and the stage earns it on the men beside his shop
+        // Before the coins, whose earner lets an HP-10 account die to the Lumbridge men (coins.ts: cheaper than
+        // banking) and so drops the pickaxe: the runner recomputes the first unmet stage, and the pickaxe stage buys
+        // another (1 coin at Bob's, beside the men) once the coins are in. Placed after them, its coin would put the
+        // coins stage one short and send the account back to the men.
         out.push({ do: 'pickaxe' });
         // a selling account carries its first round trip's fares over: mine.ts banks them in Ardougne with the ore
         out.push({ do: 'coins', n: SHIP_COINS + (plan.sell.enabled && SALE_ROUTE[a.method] === 'ship' ? ROUND_TRIP_FARES : 0) });

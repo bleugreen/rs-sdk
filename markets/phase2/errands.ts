@@ -19,10 +19,10 @@ import { waitTicks, waitUntil } from '../../speedrun/lib/wait';
 import { BANKS } from '../../speedrun/helpers/buyer';
 import { regionOf, type Region, type Tile } from '../../speedrun/lib/ships';
 import type { MarketQuote } from '../lib/market.ts';
-import { faresOf, hereOf, routeBetween, runRoute, walk } from '../lib/sea-route.ts';
+import { faresOf, hereOf, routeBetween, runRoute } from '../lib/sea-route.ts';
 import { buyDecision, saleDecision, SHARK_ID } from './exchange.ts';
 import { heldAfter, needsReread, type SharksAfter } from './sharks.ts';
-import { carriedCoins, type StageCtx } from './stages.ts';
+import { carriedCoins, openBankAt, type StageCtx } from './stages.ts';
 
 /** Stand inside the Varrock west bank; the Exchange table and teller are on its west side (sdk/MARKET.md). */
 export const VARROCK_WEST_BANK = { x: 3185, z: 3436 };
@@ -348,11 +348,7 @@ export const FARE_BANKS: Readonly<Partial<Record<Region, Tile>>> = { kandarin: B
 async function fareCoins(x: ErrandCtx, need: number): Promise<void> {
     const bank = FARE_BANKS[regionOf(hereOf(state(x)))];
     if (!bank) return;
-    await walk(x, bank, 3);
-    const opened = await x.bot.openBank();
-    if (!opened.success) throw new Error(`openBank: ${opened.message}`);
-    await waitUntil(x.sdk, s => s.bank?.isOpen === true, { maxTicks: 5 });
-    const stack = x.sdk.getBankItems().find(i => /^coins$/i.test(i.name));
+    const stack = (await openBankAt(x, bank)).find(i => /^coins$/i.test(i.name));
     const before = carriedCoins(state(x));
     const take = Math.min(stack?.count ?? 0, need - before);
     if (stack && take > 0) {
@@ -370,6 +366,14 @@ async function fareCoins(x: ErrandCtx, need: number): Promise<void> {
  * gets `trip`: both ways' ticks by leg, and the whole errand's ticks. Refused without moving when the fares are short.
  */
 export async function sellByShip(x: ErrandCtx, cfg: SaleConfig, book: BookReader): Promise<Record<string, unknown>> {
+    // The sale fell due as the method reported its bank, so the method stopped inside that visit. Counting the pack
+    // before its deposit had landed once found 162 coins that were already banked, and the first ship refused the
+    // account (lab, rs/732): close the visit and let the state settle first.
+    if (x.sdk.getState()?.bank?.isOpen) {
+        await x.bot.closeBank();
+        await waitUntil(x.sdk, s => !s.bank?.isOpen, { maxTicks: 5 });
+    }
+    await waitTicks(x.sdk, 2);
     const s0 = state(x);
     const home = hereOf(s0);
     const out = routeBetween(home, VARROCK_WEST_BANK);
