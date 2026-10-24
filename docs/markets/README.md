@@ -115,13 +115,15 @@ markets' 2026-10-22 23:43Z read, and the GE book.
 | `probes.md` | rs/508 and rs/557: the live probe runners and their totals. |
 | `shelf-reader.md` | rs/506: the read-only shop shelf reader. |
 | `supplies.md` | rs/503: speedrun supplies priced in gold. |
+| `supply-sites.md` | rs/686: who holds the Shilo gem rocks and the five runite rocks (a 13-hour headcount), each site's ceiling against GE volume, banker as the owner of the gem wall and the runite-bar bid, the other gem sources, and Wilderness PvP at the runite rocks. |
 | `data/` | Dated public reads: `poll-*.json` (bank top 50, positions and zone rosters every 5 minutes), `census-*.json`, `ge-history-*.json`, `players-*.json`, `bank-searches-*.json`, `jump-*.json`, GE book snapshots, and the live shelf and probe samples with our account names removed. Formats are in `markets/lib/snapshots.ts` and each tool's header. |
 
 ## Rules
 
 - **No login to the demo** from this mission or any child (tenet 28). Live probes run only through markets on its
   own VM: send the method, account count, duration and what it measures to the coordinator, who forwards it.
-- Public HTTP reads only, and gently: a request every few seconds at most, polls no more than every 5 minutes.
+- Public HTTP reads only, and gently: a request every few seconds at most, polls no more than every 5 minutes unless
+  markets sets a rate (rs/686's site headcount read `/playerpositions` once a minute at markets' request).
 - A generator or dupe is confirmed in the local lab only, and reported to markets first
   (cairn://p/rs/markets/messages).
 - No SUPPLIES.md trades, no GE volume and no load before main announces the run has ended.

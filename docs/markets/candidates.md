@@ -152,6 +152,9 @@ Agreed at 22:4xZ, carried out by markets' own live readers. The doc ships withou
 
 ## Shilo gem rocks: who is there
 
+Superseded by the 13-hour headcount in `supply-sites.md` (rs/686, 2026-10-24), which also covers the runite rocks.
+The one-hour read below stays as the 10-22 baseline.
+
 Thirteen reads of the public `/playerpositions` list, five minutes apart, 22:47Z to 23:47Z
 2026-10-22, with 1,258 to 1,424 players online (`data/headcount-2026-10-22T2247Z.json`,
 `markets/scan/headcount.ts`). Each box is a few tiles round the site's rocks; standing in it is
