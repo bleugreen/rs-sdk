@@ -34,8 +34,9 @@ H12O=${H12O:-cairn_d45}
 CLIENT=${CLIENT:-browser}
 BOUND=${BOUND:-6h}
 
-# Its own port block, clear of lab.sh's default and the other labs on the host (each launcher takes AGENT_PORT+5..+15).
-export WEB_PORT=${WEB_PORT:-9640} WEB_MANAGEMENT_PORT=${WEB_MANAGEMENT_PORT:-9641} HISCORES_WEB_PORT=${HISCORES_WEB_PORT:-9642} NODE_PORT=${NODE_PORT:-44640} AGENT_PORT=${AGENT_PORT:-8640}
+# Its own port block, clear of lab.sh's default. The gateway stays in the lab block 8300-8399 (stand-ins.ts
+# labRefusal), with room for every family launcher above it (AGENT_PORT+5..+15).
+export WEB_PORT=${WEB_PORT:-9640} WEB_MANAGEMENT_PORT=${WEB_MANAGEMENT_PORT:-9641} HISCORES_WEB_PORT=${HISCORES_WEB_PORT:-9642} NODE_PORT=${NODE_PORT:-44640} AGENT_PORT=${AGENT_PORT:-8340}
 export NODE_TICKRATE=${NODE_TICKRATE:-400} LOCAL_STAFF_LEVEL=4
 export LAB_LOG=${LAB_LOG:-${TMPDIR:-/tmp}/dress-fleet-$SCORED}
 # SCORED's client is dress-rehearsal.ts's own (it launches it); lab.sh runs only the LAB_HELPERS runners.
