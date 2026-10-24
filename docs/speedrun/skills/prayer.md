@@ -286,8 +286,17 @@ section 6) and a deposit of about 2 ticks (inferred, not measured; the lab used
 ## 9. Module: the booth fallback (`speedrun/skills/prayer.ts`, S25b)
 
 Prayer's primary path buries inside other modules: S07's knife loop (`woodcutting.ts`), the Mining
-`stay2` lap and S18's stuns (STEP-MANIFEST.md entry 15). `prayer.ts` is **booth-only**. It runs
-when bones are left over and buries them at the Varrock west booth (3186,3436), from (3185,3436).
+`stay2` lap and S18's stuns (STEP-MANIFEST.md entry 15). The step `prayer.ts` adds is
+**booth-only**. It runs when bones are left over and buries them at the Varrock west booth
+(3186,3436), from (3185,3436).
+
+`prayer.ts` also exports `buryHeld`, the one primitive for burying the bones in the pack where the
+account stands, with no booth: S07's pure-bury tail after Woodcutting 99 runs it (`woodcutting.md`),
+and any other step that must bury a held pack should call it rather than add a loop. It sends
+each Bury on the frame that shows the last bone gone, the first frame after the bury's delay has
+cleared (section 4), so no click is dropped, and stops on `untilLevel`, a `keepOn` predicate, an
+empty pack, `BURY_STALL` unanswered Burys in a row, or its tick bound. With a round trip inside a
+tick that is one bone per two ticks, the booth loop's in-inventory rate.
 
 - **Loop** (overlay-driven, one decision per observed tick). With bones in the pack, it clicks Bury
   on the lowest bone slot every tick. The server drops the click in each bury's delayed tick, so
