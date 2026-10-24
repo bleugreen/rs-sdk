@@ -47,7 +47,12 @@ export interface UpkeepAct {
 export interface UpkeepOptions {
     /** The eat rule's options (default: travel's, FOOD under EAT_BELOW). */
     eat?: EatOptions;
-    cure?: Cure;
+    /**
+     * The cure the upkeep drinks through (default SEGMENT_CURE), or null for none on frames: a caller that
+     * clicks between frames cures where it can wait out the drink's delay (segments.ts curePoison), as a
+     * leg does before each hop, since a click inside the delay is dropped.
+     */
+    cure?: Cure | null;
     /** Also send nothing while a dialogue is open (the resume stretch: a page a walk or step may need). */
     holdInDialog?: boolean;
     /**
@@ -92,8 +97,8 @@ export class WaitUpkeep {
             this.held++;
             return;
         }
-        const cure = this.o.cure ?? SEGMENT_CURE;
-        if (!this.cureDue(s) || !cure.poisoned(s)) return;
+        const cure = this.o.cure === null ? null : (this.o.cure ?? SEGMENT_CURE);
+        if (!cure || !this.cureDue(s) || !cure.poisoned(s)) return;
         const dose = cure.cureDose(s);
         if (!dose) return;
         if (!this.drink || this.drink.slot !== dose.slot || this.drink.id !== dose.id) this.cures++;
@@ -106,8 +111,8 @@ export class WaitUpkeep {
     wants(s: BotWorldState): boolean {
         if (!s.inGame || !s.player) return false;
         if (eatDue(s, this.o.eat ?? {}, this.lastEat)) return true;
-        const cure = this.o.cure ?? SEGMENT_CURE;
-        return this.cureDue(s) && cure.poisoned(s) && cure.cureDose(s) !== null;
+        const cure = this.o.cure === null ? null : (this.o.cure ?? SEGMENT_CURE);
+        return !!cure && this.cureDue(s) && cure.poisoned(s) && cure.cureDose(s) !== null;
     }
 
     /** No drink in CURE_SPACING ticks, or the last one still held as clicked after CURE_RESEND (it did not land). */
