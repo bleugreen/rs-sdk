@@ -1130,6 +1130,15 @@ async function ironBand(ctx: StepContext<any>, name: string, end: number, failur
         watch = watchRespawn();
         contest = watchContest();
     };
+    /** Why the bone lap cannot bury from here, or null. */
+    const buryBlocked = (s: BotWorldState): string | null => {
+        if (!bury) return null;
+        if (prayerLevel(s) >= bury.prayerTo) return `Prayer ${prayerLevel(s)} at ${bury.prayerTo}`;
+        if (D > BURY_MAX_RESPAWN) return `respawn ${D} > ${BURY_MAX_RESPAWN}: the lap's stays take no bone`;
+        if (site !== 'zoo') return `at ${site}: the bone lap is the zoo's`;
+        if (switching && contest.tripped(currentTick(sdk))) return `contested (${contest.recent(currentTick(sdk))} events in ${CONTEST_WINDOW} ticks): no walk with bones held`;
+        return null;
+    };
     // the last bone gone: stop the lap now, so the next load's trade follows at once
     const unBones = bury
         ? sdk.onStateUpdate(st => {
@@ -1159,16 +1168,10 @@ async function ironBand(ctx: StepContext<any>, name: string, end: number, failur
         for (;;) {
             const s = sdk.getState()!;
             if (miningLevel(s) >= end) break;
+            if (bury && bonesHeld(s, bury.re) === 0) break;
             if (bury) {
-                buryEnd =
-                    bonesHeld(s, bury.re) === 0 ? null
-                    : prayerLevel(s) >= bury.prayerTo ? `Prayer ${prayerLevel(s)} at ${bury.prayerTo}`
-                    : D > BURY_MAX_RESPAWN ? `respawn ${D} > ${BURY_MAX_RESPAWN}: the lap's stays take no bone`
-                    : site !== 'zoo' ? `at ${site}: the bone lap is the zoo's`
-                    : switching && contest.tripped(currentTick(sdk)) ? `contested (${contest.recent(currentTick(sdk))} events in ${CONTEST_WINDOW} ticks): no walk with bones held`
-                    : '';
-                if (buryEnd !== '') break;
-                buryEnd = null;
+                buryEnd = buryBlocked(s);
+                if (buryEnd) break;
             }
             rotation = lap(D);
             if (switching && contest.tripped(currentTick(sdk))) {
@@ -1264,7 +1267,7 @@ async function ironBand(ctx: StepContext<any>, name: string, end: number, failur
             players, respawn: D, rotation, restarts, restartWaits, oreDrops, faults, observedRespawn, gate: shared.gate?.summary() ?? null,
             segments: segments.map(sg => ({
                 technique: sg.technique, reason: sg.reason, ticks: (sg.status.endedTick ?? sg.status.tick) - sg.status.startedTick, ores: sg.status.counters.ores ?? 0, slips: sg.status.counters.slips ?? 0, failed: sg.status.counters.failed ?? 0,
-                ...(bury ? { buried: sg.status.counters.burySent !== undefined ? ((sg.status.result as { buried?: number } | undefined)?.buried ?? null) : 0 } : {}),
+                ...(bury ? { buried: (sg.status.result as { buried?: number } | undefined)?.buried ?? 0 } : {}),
                 result: sg.status.result,
             })),
             site,
