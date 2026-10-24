@@ -1135,6 +1135,43 @@ describe('a placed hand-off stays done once the band after it consumes what it b
             expect([row, s.done!(spent, {})]).toEqual([row, true]);
         }
     });
+
+    // H13 gives SCORED's ranged and S15 kit at the mage-arena landing; S18 then fletches rune arrows and
+    // pickpockets coins, and H23 brings a magic shortbow and a superantipoison(4). H13's next milestone is
+    // S16's pool, done only in the chamber, so the record carries H13 past S16 (rs/577); the shortbow and
+    // superantipoison count as a rollback only until H23, which brings them, is recorded.
+    const h13 = handOffFrom(MANIFEST_TEXT, 'H13');
+    const h13Step = (record: HandOffRecord) => buildChain(CONFIG, { cues: recorder().cues, handOffs: record }).find(s => s.name === 'H13 hand-off')!;
+    const given = (name: string, n: number): Held => [name, n, h13.give.find(g => g.name === name)!.ids?.[0]];
+
+    test('H13 stays done once S18 and H23 bring back items it gave (rune arrows worn, coins, a magic shortbow, a superantipoison)', () => {
+        const h23 = handOffFrom(MANIFEST_TEXT, 'H23');
+        const fromH23 = (re: RegExp): Held => {
+            const r = h23.receive.find(x => re.test(x.name))!;
+            return [r.name, 1, r.ids?.[0]];
+        };
+        const afterS18 = at(KNIGHTS.x, KNIGHTS.z, { held: [given('coins', 22450), ['shark', 2]], worn: [given('rune arrow', 570)], skills: [level('Thieving', 99)] });
+        const afterH23 = at(3105, 3935, { held: [fromH23(/^magic shortbow$/), fromH23(/^superantipoison/), ['shark', 12]], worn: [given('rune arrow', 570)] });
+        const record = marked('H13');
+        const s = h13Step(record);
+        expect(s.done!(new Observation(afterS18), {})).toBe(true);
+        expect(s.done!(new Observation(afterH23), {})).toBe(false);
+        record.mark('H23', 2000);
+        expect(s.done!(new Observation(afterH23), {})).toBe(true);
+    });
+
+    test('H13 is not done in a fresh attempt with its gives held, nor after a rollback hands back the gives no later row returns', () => {
+        // T15-16's pack at the landing, H13 not traded: everything it gives still held, the rune arrows and Khazard set worn.
+        const wornGives = /^(rune arrow|khazard)/;
+        const beforeH13 = at(3105, 3935, {
+            held: h13.give.filter(g => !wornGives.test(g.name)).map(g => given(g.name, typeof g.count === 'number' ? g.count : 1)),
+            worn: h13.give.filter(g => wornGives.test(g.name)).map(g => given(g.name, typeof g.count === 'number' ? g.count : 1)),
+        });
+        expect(h13Step(unmarked()).done!(new Observation(beforeH13), {})).toBe(false);
+        expect(h13Step(marked('H13')).done!(new Observation(beforeH13), {})).toBe(false);
+        const rolledBack = at(3105, 3935, { held: [given('amulet of magic', 1), given('diamond', 3)] });
+        expect(h13Step(marked('H13')).done!(new Observation(rolledBack), {})).toBe(false);
+    });
 });
 
 describe("H12o: h45's login trigger", () => {

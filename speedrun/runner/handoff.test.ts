@@ -9,9 +9,10 @@ import { TickLog } from '../lib/ticks';
 import { MANIFEST, parseLedger } from '../tools/slot-ledger';
 import { ASK_FILE, readTopUpAsk } from '../helpers/altar-cue';
 import {
-    askFor, giveSpecs, handOffFrom, handOffMissing, handOffPre, handOffRoom, handOffStep, HandOffRecord, HANDOFFS_FILE, itemPattern, loadHandOff, planHandOff, resolvePlan, runHandOff, runHandOffOnCue, slotPlan, toUnequip, tradeKind, tradeLanded,
+    askFor, giveSpecs, handOffFrom, handOffMissing, handOffPre, handOffRoom, handOffStep, HandOffRecord, HANDOFFS_FILE, itemPattern, loadHandOff, planHandOff, resolvePlan, rollbackWitnesses, runHandOff, runHandOffOnCue, slotPlan, toUnequip, tradeKind, tradeLanded,
     type Given, type HandOffPlan, type HandOffReport,
 } from './handoff';
+import { PLACEMENT } from './chain';
 import { Observation, resolveResume } from './resume';
 import type { Step, StepContext } from './step';
 
@@ -937,5 +938,42 @@ describe('a cue-served hand-off (the cannon holder): the cue, the partner in sig
         const step = handOffStep<Record<string, never>>(h11, { partner: PARTNER, cue: { scope: { step: 'S27', family: 'cannon' }, open: async () => {}, waitTicks: 8 } });
         await expect(drive(sdk, step.run(ctxOf(sdk)), 100)).rejects.toThrow('did not come into sight within 8 ticks of the S27/cannon cue');
         expect(sdk.tradeClicks).toEqual([]);
+    });
+});
+
+describe('rollbackWitnesses: what the record clause reads as a rollback (rs/577)', () => {
+    const text = readFileSync(MANIFEST, 'utf8');
+    const rows = parseLedger(text).rows;
+    const later = (id: string) => rows.slice(rows.findIndex(r => r.row === id) + 1);
+    const placed = (row: string) => PLACEMENT[row] !== undefined;
+    const witnesses = (id: string) => rollbackWitnesses(handOffFrom(text, id), later(id), placed).map(w => [w.give.name, w.until]);
+
+    test("H13: S18's rune arrows and coins are no evidence; H23's shortbow and superantipoison wait for H23; the rest always", () => {
+        expect(witnesses('H13')).toEqual([
+            ['magic shortbow', ['H23']], ['amulet of magic', []], ['diamond', []], ['superantipoison', ['H23']], ['fire rune', []], ['khazard helmet', []], ['khazard armour', []],
+        ]);
+    });
+
+    test("H14's knife waits for H18 and H23 (rs/562 A's rollback case); H11r's cannon for H23; with nothing after it, every give and drop", () => {
+        expect(witnesses('H14')).toEqual([['knife', ['H18', 'H23']]]);
+        expect(witnesses('H11r').every(([, until]) => (until as string[]).join() === 'H23')).toBe(true);
+        const h13 = handOffFrom(text, 'H13');
+        expect(rollbackWitnesses(h13, [], placed).map(w => w.give.name)).toEqual([...h13.give, ...h13.drop].map(g => g.name));
+    });
+
+    test('a recorded hand-off with a returned item held: done only with the witnesses, and H14 only once H18 is recorded', () => {
+        const record = new HandOffRecord(mkdtempSync(join(tmpdir(), 'handoff-witness-')), 'attempt-1');
+        const step = (id: string, w: boolean) => handOffStep(handOffFrom(text, id), { partner: 'p', record, ...(w ? { witnesses: rollbackWitnesses(handOffFrom(text, id), later(id), placed) } : {}) });
+        const holding = (id: string, name: string, count: number) => {
+            const g = handOffFrom(text, id).give.find(x => x.name === name)!;
+            return new Observation(baseState({ inventory: [{ slot: 0, id: g.ids?.[0] ?? 995, name: name[0]!.toUpperCase() + name.slice(1), count, optionsWithIndex: [] }] }));
+        };
+        record.mark('H13', 1);
+        expect(step('H13', false).done!(holding('H13', 'coins', 22450), {})).toBe(false);
+        expect(step('H13', true).done!(holding('H13', 'coins', 22450), {})).toBe(true);
+        record.mark('H14', 2);
+        expect(step('H14', true).done!(holding('H14', 'knife', 1), {})).toBe(false);
+        record.mark('H18', 3);
+        expect(step('H14', true).done!(holding('H14', 'knife', 1), {})).toBe(true);
     });
 });
