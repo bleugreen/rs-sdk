@@ -152,7 +152,7 @@ interaction (`NpcOps.ts` `NPC_SETMODE`), which no other player's op reads.
 arrival and then whenever it carries `bankAt` (50,000) coins, at ~18 gp a tick about every 21 minutes. The bank
 visit deposited everything and withdrew sharks with `'fill'`, so the pack went back with 28 sharks and no coins
 stack, and a success into a full pack drops its coins under the player (`inv_add`'s overflow,
-`server/engine/src/engine/entity/../script/handlers/InvOps.ts` `INV_ADD`). The knight kept pickpocketing (the
+`server/engine/src/engine/script/handlers/InvOps.ts` `INV_ADD`). The knight kept pickpocketing (the
 experience still came) and dropped every 50 until its next eat freed a slot: in a success window it eats only at
 HP 20 or under (`shouldEat`, a 20-heal shark at HP 40), ~7 failures away. The walk itself is short (the knights
 spend 98.4% of their ticks at the knights, bank trips and walks the rest); the dropped coins were not.
@@ -173,7 +173,7 @@ income.
 
 **The fix** (`pickpocket.ts` `foodToWithdraw`): the bank visit counts the slots still taken after the deposit and
 withdraws food into all but `reserve` of the free ones: 1 at the knights (coins), 2 at the paladins (coins, chaos
-runs), 3 at the heroes (coins, blood and death runes; the rare unstackable loot takes the slots the eats free).
+runes), 3 at the heroes (coins, blood and death runes; the rare unstackable loot takes the slots the eats free).
 
 **The ramp measures each login at the knights, past a warm-up** (`ramp.ts` `holdRates`, `workRate`): a login
 counts as working only `warmupMinutes` (5) after it reached the method, its rate is measured from then, and the
