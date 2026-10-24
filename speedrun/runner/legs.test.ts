@@ -1114,7 +1114,7 @@ describe("the hostile legs' start floor (main 19:1xZ; rs/764's run 1: T14-15b fr
     const landing = SPELLS.ardougne.landing;
     const T14_15B = () => splitLeg(legById('T14-15'), 1, { firstTicks: 70 })[1];
     const at = (hp: number, inventory: InventoryItem[], more: Partial<BotWorldState> = {}) =>
-        state(landing.x, landing.z, { player: { ...player(landing.x, landing.z), hp, maxHp: MAX_HP }, inventory, nearbyLocs: [YOUNG], ...more });
+        state(landing.x, landing.z, { player: { ...player(landing.x, landing.z), hp, maxHp: MAX_HP }, prayers: { activePrayers: [], prayerPoints: 99, prayerLevel: 99 } as never, inventory, nearbyLocs: [YOUNG], ...more });
     const travelRow = (ctx: StepContext<unknown>) => ctx.log.rows.find(r => r.kind === 'travel')?.meta as { ate: number; hpMin: number; start?: LegStart } | undefined;
 
     test('the hostile legs are the table\'s food legs, both parts of a split one, and no other', () => {
