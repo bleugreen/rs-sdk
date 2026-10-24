@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { byMinute, holdRows, loads, placements, rateByLoad, samplesOf, stretches, warmupCurve, windowRate } from './crowding.ts';
+import { bankStalls, byMinute, holdRows, loads, placements, rateByLoad, samplesOf, stretches, warmupCurve, windowRate } from './crowding.ts';
 
 const T0 = Date.parse('2026-10-24T06:00:00Z');
 const MIN = 60_000;
@@ -89,6 +89,15 @@ describe('crowding', () => {
         const p = placements(by, 2 * MIN);
         expect(p.find(x => x.account === 'a01')).toMatchObject({ none: 0, meanLoad: 2, medianDistance: 1, knights: { '1': 25 } });
         expect(p.find(x => x.account === 'a04')).toMatchObject({ none: 1, meanLoad: null });
+    });
+
+    test('a bank stall runs from the deposit to the next coins carried', () => {
+        const ls = lines('a01', { from: 0, to: 10, gpTick: 10 }).map((l, i) => ({ ...l, coins: { ...(l.coins as object), carried: i >= 6 && i < 12 ? 0 : 100 } }));
+        const s = bankStalls(samplesOf(ls));
+        expect(s.map(x => x.minutes)).toEqual([2]);
+        // a stall the stretch ends in is not measured
+        const open = lines('a02', { from: 0, to: 2, gpTick: 10 }).map((l, i) => ({ ...l, coins: { ...(l.coins as object), carried: i >= 3 ? 0 : 100 } }));
+        expect(bankStalls(samplesOf(open))).toEqual([]);
     });
 
     test('a target older than 30 s does not count towards another login\'s load', () => {

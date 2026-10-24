@@ -25,6 +25,8 @@ export interface Sample {
     tick: number;
     stage: string;
     coins: number;
+    /** Coins in the inventory: 0 right after a bank visit's deposit. */
+    carried: number;
     pos: [number, number] | null;
     target: NpcAt | null;
     /** Ticks of the session spent in the thieve errand (ledger `workTicks`), when recorded. */
@@ -45,6 +47,7 @@ export function samplesOf(lines: readonly Line[]): Map<string, Sample[]> {
             tick: Number(l.tick),
             stage: String(l.stage),
             coins: Number((l.coins as { total?: number } | undefined)?.total ?? 0),
+            carried: Number((l.coins as { carried?: number } | undefined)?.carried ?? 0),
             pos: (l.pos as [number, number] | null | undefined) ?? null,
             target: (l.target as NpcAt | null | undefined) ?? null,
             work: typeof l.workTicks === 'number' ? l.workTicks : null
@@ -211,6 +214,24 @@ export function rateByLoad(by: Map<string, Sample[]>, warmupMs: number, from = -
     return [...acc.entries()].sort((a, b) => a[0] - b[0]).map(([k, e]) => ({ load: k, rate: e.ticks > 0 ? e.coins / e.ticks : 0, intervals: e.n, accounts: e.who.size }));
 }
 
+/**
+ * Every bank visit on the method (carried coins falling to 0) and the minutes until the login carries coins again: the
+ * walk back plus any time its successes paid nothing. A stall still open when its stretch ends is left out.
+ */
+export function bankStalls(by: Map<string, Sample[]>): { account: string; at: number; minutes: number }[] {
+    const out: { account: string; at: number; minutes: number }[] = [];
+    for (const [account, samples] of by) {
+        for (const s of stretches(samples)) {
+            for (let i = 1; i < s.length; i++) {
+                if (s[i]!.carried !== 0 || s[i - 1]!.carried === 0) continue;
+                const back = s.slice(i + 1).find(x => x.carried > 0);
+                if (back) out.push({ account, at: s[i]!.at, minutes: (back.at - s[i]!.at) / 60_000 });
+            }
+        }
+    }
+    return out.sort((a, b) => a.at - b.at);
+}
+
 export interface Placement {
     account: string;
     samples: number;
@@ -312,6 +333,9 @@ if (import.meta.main) {
     }
     console.log('LOAD whole run past the warm-up (load 0 = no knight in view)');
     for (const r of rateByLoad(by, warmupMs)) console.log(`  ${r.load} bots  ${perHour(r.rate)}  intervals ${r.intervals}  accounts ${r.accounts}`);
+    const stalls = bankStalls(by).map(x => x.minutes).sort((a, b) => a - b);
+    if (stalls.length)
+        console.log(`BANK STALLS minutes from a deposit to coins carried again: median ${median(stalls).toFixed(2)}, p90 ${stalls[Math.floor(stalls.length * 0.9)]!.toFixed(2)}, max ${stalls.at(-1)!.toFixed(2)} (${stalls.length} visits)`);
     const whole = placements(by, warmupMs).filter(x => x.workShare !== null);
     if (whole.length) console.log(`AT KNIGHTS whole run past the warm-up: median share of ticks ${(median(whole.map(x => x.workShare!)) * 100).toFixed(1)}% (${whole.length} logins); the rest is bank trips and walks`);
 }
