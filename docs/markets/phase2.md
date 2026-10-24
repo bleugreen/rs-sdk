@@ -334,6 +334,9 @@ first, `names.ts`), every string is scrubbed of the plan's names before it is wr
 start without the names file (`lib/accounts.ts`) or, on real accounts, with any account missing from it.
 `--placeholder-data` is for lab accounts. `DIR/events.jsonl` has every stage change and role log line.
 
+**The food fallback can park instead** (`foodFallback: 'park'`): the account logs out where it stands (section
+'Shark resupply').
+
 **Sales into the bids** (`sell`, off by default): `errands.ts` reads the book, refuses below the item's floor,
 withdraws at most the cap (500, never above 5,000) as notes, reads again, offers at the floor (each unit fills at
 its bid's own price, best first), waits `fillMinutes`, cancels the rest and banks the proceeds. An offer whose
@@ -361,8 +364,8 @@ recorded once per account whatever its outcome, and the food redirect lived only
   when the coin withdrawal itself timed out, the demo's 'Timeout waiting for Coins to be withdrawn'), a bank or
   Exchange that would not open, a closed or stale Exchange interface, a failed walk to the bank. Never transient: no
   asks, the best ask above the ceiling, coins that really are short, full offer slots, and a placement whose outcome
-  is unknown (a second offer could double the trade). Every attempt is a `buy` ledger line with its `status` and
-  `tries`.
+  is unknown (a second offer could double the trade). Sharks bought but still on the Exchange make the result
+  `uncollected`, also transient. Every attempt is a `buy` ledger line with its `status` and `tries`.
 - **A short purchase is named.** A settled purchase that leaves fewer than `minimum` banked gets `short`:
   `insufficient coins` (none covered, or fewer than wanted), `the book`, or `short`. Then the food fallback.
 - **No voyage below the minimum.** Before `to-ardougne`, a shark eater on a buying plan with fewer than `minimum`
@@ -381,6 +384,34 @@ recorded once per account whatever its outcome, and the food redirect lived only
   threshold. The runner warns at startup when a buying plan's `foodFallbackMix` includes them (`planWarnings`: use
   `foodFallbackMix: { guards: 1 }`), and such a food redirect carries `rebuy: 'no rebuy: the fallback earns no
   coins'` in the ledger. The default mix (iron 12, guards 23) is unchanged.
+- **Or park.** `foodFallback: 'park'` (default `'mix'`) logs a food-redirected account out where it stands instead:
+  a `parked` ledger line with the reason, no further login this run, not given up, no rebuy (it earns nothing).
+  For the scored run's attempt windows, when a knight must not walk Ardougne -> Taverley -> Varrock past the
+  speedrun's sites. Every food fallback but the voyage check comes straight after a bank visit, so what it earned is
+  banked; it walks nowhere to bank. The startup warning stays silent for it.
+
+**Three faults found live** (markets' runs, names scrubbed), each fixed here:
+
+- **A withdraw timeout read as an empty bank** (run3 a03, 09:17:04Z). pickpocket logged 'out of food in the bank'
+  with reason `timeout` and was sent to the fallback with 125 sharks banked (its 09:44Z rebuy saw them).
+  `withdrawMany` says `missing` only when the bank as published has none of the food, and `timeout` when the gain
+  did not show within its wait. `pickpocket.ts` `withdrawFood` now retries a timeout, a closed bank or a bank list not
+  yet loaded (3 attempts). It reports an absence only when the plan found no food and the loaded bank shows none,
+  twice, two ticks apart. Only that logs 'out of food in the bank', the runner's fallback trigger; anything else is
+  an errand error (`food withdraw failed: <reason>`) that the role's loop retries.
+- **A full fill counted as 0 banked** (run-b3 a07, 09:44:18Z): quantity 46, filled 46, `collect: {success: true,
+  coins: 46, items: 0, message: 'Collected 0 items and 46 gp. Any overflow remains in the exchange.'}`, `banked: 0`,
+  then the food redirect. The 46 gp is the 1 gp-a-shark refund (limit 701, filled at 700); the items were never
+  collected. The lab reproduced the signature with a full pack: a note still takes a slot, and the Exchange reports
+  success while collecting nothing (run 3 below). The purchase now banks everything but coins and a pickaxe first. It
+  treats a collect that took fewer items than the offer held as failed: make room, reopen the Exchange, collect again.
+  It starts by collecting what earlier attempts left. It counts the bank (re-read while bank, pack and Exchange fall
+  short of held plus bought, or while the pack still holds sharks), the pack, and what is still on the Exchange
+  (`after`). Only bank and pack count toward the minimum: a knight in Ardougne cannot eat what is on the Exchange, so
+  a remainder makes the result `uncollected` and the runner's retry collects it.
+- **No supported way to stay put**: markets faked parking with `foodFallbackMix: { iron: 1 }` and no pickaxe, which
+  gives up and logs out (an account that still has the tutorial's pickaxe mines instead: run-b3 a07). Now
+  `foodFallback: 'park'`.
 
 Not done: a top-up for an account already at Varrock for another reason; the re-promotion covers the only shark
 eaters that stand there. A re-promoted knight counts as admitted to the knights ramp again, so during a ramp it can
@@ -423,8 +454,30 @@ after 5 minutes on the same role-state (`--restart=5`):
 09:05:06 a01 logout {"outcome":"out"}; end {"clean":true}
 ```
 
-The transient retry was not provoked in the lab (the lab's bank does not time out on demand); its classification
-is tested against the SDK's own messages in `sharks.test.ts`.
+Run 3 was the Exchange check with a full pack: a third account filled its 28 slots, bought 5 sharks and collected
+them raw, then ran the purchase errand (`perAccount` 20):
+
+```
+09:54:37 full pack {"slots":28}
+09:54:45 CHECK raw collect with a full pack {"success":true,"items":0,"coins":505,"message":"Collected 0 items and 505 gp. Any overflow remains in the exchange.","offerItemsAfter":5}
+09:55:07 CHECK shark purchase after a full-pack collect {"result":"filled","leftovers":[{"offerId":15,"items":5,"collect":{"success":true,"items":5}}],"quantity":15,"filled":15,"after":{"bank":20,"pack":0,"uncollected":0,"reads":1},"banked":20}
+```
+
+Run 3's knight (3 sharks against a minimum of 5) and run 4's (3 against a minimum of 2), with `foodFallback: 'park'`:
+
+```
+09:56:11 a01 parked: 3 sharks recorded after the last purchase, below the minimum of 5 (short): not sailing
+09:56:12 a01 logout {"outcome":"out"}                (run 3: never logged in again; end {"logouts":{"a01":"out"},"clean":true})
+10:01:47 a01 stage {"to":"method"}                   (run 4: on the knights)
+10:10:06 pickpocket: out of food in the bank {"reason":"none in the bank"}
+10:10:06 a01 parked: the bank has no sharks left
+10:10:06 a01 logout {"outcome":"out"}                (in East Ardougne, where it stood)
+```
+
+Not provoked in the lab, since its bank does not time out on demand: the purchase's transient retry and the food
+withdraw's timeout retry. Both are unit-tested against the SDK's own messages (`sharks.test.ts`,
+`pickpocket.test.ts`). a07's full pack is inferred from its signature, which the lab reproduces exactly; its pack at
+the time was not read.
 
 ```sh
 # block M22 on fedora, from a copy of the checkout in /tmp, in a tmux server
@@ -432,6 +485,10 @@ is tested against the SDK's own messages in `sharks.test.ts`.
   'markets/phase2/lab.ts:--prefix=p2r:--knights=1:--hungry=0:--guards=0:--sharks=3:--trained=1:--legacy-sharks=1:--buy=1:--ramp=0:--sigint=55:--out=/tmp/rs743-r1'
 . markets/methods/lab/block.sh M22 && LAB_RUNNERS=0 LAB_TIMEOUT=4200 speedrun/lab/lab.sh p2s00 \
   'markets/phase2/lab.ts:--prefix=p2s:--knights=1:--hungry=0:--guards=0:--sharks=0:--coins=500:--trained=1:--buy=1:--rebuy-min=8:--ramp=0:--restart=5:--sigint=40:--out=/tmp/rs743-r2'
+. markets/methods/lab/block.sh M22 && LAB_RUNNERS=0 LAB_TIMEOUT=3000 speedrun/lab/lab.sh p2t00 \
+  'markets/phase2/lab.ts:--prefix=p2t:--knights=1:--hungry=0:--guards=0:--sharks=3:--trained=1:--legacy-sharks=1:--buy=1:--park=1:--ramp=0:--sigint=16:--out=/tmp/rs743-r3'
+. markets/methods/lab/block.sh M22 && LAB_RUNNERS=0 LAB_TIMEOUT=2400 speedrun/lab/lab.sh p2u00 \
+  'markets/phase2/lab.ts:--prefix=p2u:--exchange=0:--knights=1:--hungry=0:--guards=0:--sharks=3:--trained=1:--legacy-sharks=1:--buy=1:--minimum=2:--park=1:--ramp=0:--sigint=14:--out=/tmp/rs743-r4'
 ```
 
 ### The lab run
