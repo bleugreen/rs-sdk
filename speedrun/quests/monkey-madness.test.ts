@@ -14,7 +14,7 @@ import { compactJournal } from '../lib/quests';
 import { Observation, resolveResume } from '../runner/resume';
 import type { Observed, RunnerSession } from '../runner/step';
 import {
-    BANANA_TREE_IDS, bananaRoomDrops, gtSwap, h12Plan, h12Wants, kitMissing, DEFAULT_OPTIONS, roomFor, doneAt, EXIT_DROPS, exitState, h12Kit, H12_POTIONS, H12_SHARKS, waydarIntroWatch, itemMilestone, setStepNote, talkableNpc, JOURNAL_MARKS, JOURNAL_PROBE, journalMilestone, MM_OBJ, mmMilestone, PUZZLE_TILE_IDS,
+    BANANA_TREE_IDS, bananaRoomDrops, gtSwap, h12Plan, h12Wants, kitMissing, LOST_SEAL, narnodeTalk, DEFAULT_OPTIONS, roomFor, doneAt, EXIT_DROPS, exitState, h12Kit, H12_POTIONS, H12_SHARKS, waydarIntroWatch, itemMilestone, setStepNote, talkableNpc, JOURNAL_MARKS, JOURNAL_PROBE, journalMilestone, MM_OBJ, mmMilestone, PUZZLE_TILE_IDS,
     BELOW_30_EATING, cureWanted, eatBelowFor, sharksToDrop, GARKOR_WEST, isMonkeyChatter, CAGE, CAGE_NORTH_STRIP, CAGE_TILES, inCage, letOut, letOutPick, LET_OUT_ATTEMPTS, MINDER_REACH, nearestFire, sceneBuilt, tileIn, underTemple, scorpionsNear, SCORPION_CLOSE, SCORPION_REACH, sigilRoom, h12oLeg, legCue, pFinalStop, closeLeftTrade, DECLINE_TICKS, H12O_M_ROW, mTopUpCap, ASK_SHARK, ASK_SUPER_ANTIPOISON, H12O_SCOPE, onTradeOpen, P_TOPUP_MAX_SHARKS, pTopUpAsk, immunityWanted,
     AREAS, inArea, inCell, zooknockWay, type ZooknockLegs, CHAT_DRINK_FLOOR, DRINK_BELOW, packClickAllowed, upkeep, X_PRAYER,
     ARCHER_REACH, AUNT_BOX, crateRoute, crateSteps, entersSleepingZone, SLEEPING_DETOURS, sleepingDetour, GUARD_REACH, legPrayerFor, M_TOPUP_TILE, mLegSize, mTopUpSharks, NO_DWELL, pathTiles, pLegSize, POSTED_ARCHERS, prayerRuns, receiveLeg, RELIGIOUS_GUARDS, SLEEPING_ZONE, tilePrayer, TOPUP_TRIES, TOPUP_WAIT, tradeIdle, type Receive, nextBananaTree, SUPER_IMMUNE_TICKS, offAtoll, patrolLeavesLane, SEGMENT_EATING, topUpWanted, resolveOptions, REWARD_ITEMS, seg, segmentName, SEGMENTS, stepId, steps, templeLeft, treeRouteRefusal, yRoom, type MmContext,
@@ -1500,6 +1500,45 @@ describe("the Grand Tree swap leaves the kit complete, however low SCORED arrive
         const short = new FakeSdk(atDoor(H12_SHARKS, 42, ['Gold bar']));
         await expect(drive(short, gtSwap({ sdk: short } as never, { bow: BOW, kitFrom: 'Helper', kitServed: () => true }), 20)).rejects.toThrow(/H12 was served this attempt and the kit lacks 1 \^Gold bar\$/);
         expect(short.sent.map(a => a.method)).not.toContain('sendTradeRequest');
+    });
+
+    describe("A after a lost royal seal: Narnode's menu re-issues it (mm_narnode.rs2:152-168)", () => {
+        const started = (s: BotWorldState): BotWorldState => ({ ...s, quests: { ...s.quests, mm: 'started' } });
+        const a = () => steps({ kitServed: () => true })[seg('A')]!;
+        const narnode = readFileSync(join(import.meta.dir, '..', '..', 'server', 'content', 'scripts', 'quests', 'quest_mm', 'scripts', 'mm_narnode.rs2'), 'utf8');
+        const menu = (fn: string) => [...narnode.split('\n').find(l => l.includes(`~${fn}("What am I meant to do?"`))!.matchAll(/"([^"]+)"/g)].map(m => m[1]!);
+
+        test("the talk's options are the script's own: the lost-seal option on the 4-option menu, then out by 'I'll be back later.' on the 3-option one", () => {
+            const talk = narnodeTalk(started(atDoor(13))) as { choices: RegExp[] };
+            expect(menu('p_choice4').filter(t => talk.choices[0]!.test(t))).toEqual(['I\'ve lost my copy of the Royal Seal...']);
+            expect(menu('p_choice3').filter(t => talk.choices[0]!.test(t))).toEqual([]);
+            expect(menu('p_choice3').filter(t => talk.choices[1]!.test(t))).toEqual(['I\'ll be back later.']);
+            expect(talk.choices[0]).toBe(LOST_SEAL);
+        });
+
+        test('started, no seal, 1 free slot: A is admitted and picks the lost-seal option', () => {
+            const s = started(atDoor(13));
+            expect(28 - s.inventory.length).toBe(1);
+            expect(narnodeTalk(s)).toEqual({ choices: [LOST_SEAL, expect.any(RegExp)], start: false });
+            expect(a().preconditions(s, {} as MmContext)).toBe(true);
+        });
+
+        test("started, no seal, 0 free: the named refusal, from A's precondition and from narnodeTalk (run's check after the swap)", () => {
+            const s = started(atDoor(14));
+            expect(narnodeTalk(s)).toBe("S15:A needs 1 free slot for Narnode's spare seal (0 free)");
+            expect(a().preconditions(s, {} as MmContext)).toBe("S15:A needs 1 free slot for Narnode's spare seal (0 free)");
+        });
+
+        test('not started: the start talk, unchanged; started with the seal held: no talk; past B (the orders held): refused', () => {
+            expect(narnodeTalk(atDoor(13))).toEqual({ choices: [/^Yes$/], start: true });
+            expect(a().preconditions(atDoor(13), {} as MmContext)).toBe(true);
+            const sealed = started(atDoor(12));
+            const withSeal = { ...sealed, inventory: [...sealed.inventory, { slot: 27, id: MM_OBJ.royalSeal, name: 'Royal seal', count: 1, optionsWithIndex: [] }] };
+            expect(narnodeTalk(withSeal)).toBeNull();
+            expect(a().preconditions(withSeal, {} as MmContext)).toBe(true);
+            const pastB = { ...sealed, inventory: [...sealed.inventory, { slot: 27, id: MM_OBJ.orders, name: 'Orders', count: 1, optionsWithIndex: [] }] };
+            expect(a().preconditions(pastB, {} as MmContext)).toBe('S15 is past B: Narnode no longer re-issues the royal seal');
+        });
     });
 
     test("14 held: the runner's ask and gtSwap's want are both 1 shark, the swap brings 1, and the kit is complete at 15", async () => {
