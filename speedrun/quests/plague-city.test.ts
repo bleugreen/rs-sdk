@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { BotWorldState, InventoryItem, PlayerState, QuestJournalState } from '../../sdk/types';
 import { QUESTS } from '../data/quest-stages';
-import { baseState, drive, FakeSdk } from '../lib/fake-sdk';
+import { baseState, drive, FakeSdk, simulateWalking } from '../lib/fake-sdk';
 import { journalProbeName } from '../lib/quests';
 import { TickLog } from '../lib/ticks';
 import { Observation, resolveResume } from '../runner/resume';
@@ -9,7 +9,7 @@ import type { Observed, RunnerSession, StepContext } from '../runner/step';
 import { loadHandOff } from '../runner/handoff';
 import { DEFAULT_DIALOGUE, kitWant, slotNeed } from './segments';
 import {
-    ARRIVAL, bravekInReach, CLERK_STAND, DEAD_AT_EXIT, inBasement, inBravekRoom, inCell, inEast, inPlagueHouse, inRehnison, inSewer, inWest, inWestStreets,
+    ARRIVAL, bravekInReach, CLERK_STAND, DEAD_AT_EXIT, doorsBetween, inBasement, inBravekRoom, inCell, inEast, inPlagueHouse, inRehnison, inSewer, inWest, inWestStreets,
     ITEM, judgeScrollRead, KIT, LETTERS, observed, QUEST_ITEMS, quest, stepId, steps,
 } from './plague-city';
 
@@ -223,6 +223,77 @@ describe("A: H6 as the ledger's row delivers it", () => {
         // Before the fix: 'kit: missing 2 x /^water rune$/i and no kitFrom to receive it from'.
         await byLetter('A').run(ctx);
         expect(sdk.sent).toEqual([]);
+    });
+});
+
+describe("Edmond's live tile: the house doors between him and SCORED, then within 1 (B, E, Y)", () => {
+    test('doorsBetween: a door only when the walk crosses its east-edge wall', () => {
+        expect(doorsBetween(2568, 2572)).toEqual([{ x: 2570, z: 3333 }]); // the garden to Alrena's room
+        expect(doorsBetween(2570, 2572)).toEqual([{ x: 2570, z: 3333 }]); // from the door tile, inward
+        expect(doorsBetween(2570, 2566)).toEqual([]); // the door tile is the garden side
+        expect(doorsBetween(2568, 2566)).toEqual([]);
+        expect(doorsBetween(2576, 2566)).toEqual([{ x: 2574, z: 3333 }, { x: 2570, z: 3333 }]); // the picture room out, inner door first
+    });
+
+    const edmond = (x: number, z: number) => ({ index: 7, name: 'Edmond', x, z, distance: 0, options: ['Talk-to'], optionsWithIndex: [{ text: 'Talk-to', opIndex: 1 }] });
+    const WEST_DOOR = { x: 2570, z: 3333, id: 1530, name: 'Door', distance: 0, options: ['Open'], optionsWithIndex: [{ text: 'Open', opIndex: 1 }] };
+    const doorShut = (s: BotWorldState) => s.nearbyLocs.some(l => l.x === WEST_DOOR.x && l.z === WEST_DOOR.z);
+    /**
+     * B up to its Talk-to clicks. The west door opens a tick after a click on it; the house's west wall
+     * (the east edge of x 2570) stops a walk except through the open door; nothing answers the talk, so
+     * B ends 'no dialogue opened'. Returns what B sent, in order.
+     */
+    async function bSends(at: [number, number], ed: [number, number]): Promise<{ sent: string[]; error: string | null }> {
+        const s = arrival({
+            player: player(at[0], at[1]),
+            nearbyNpcs: [edmond(...ed)] as unknown as BotWorldState['nearbyNpcs'],
+            nearbyLocs: [WEST_DOOR] as unknown as BotWorldState['nearbyLocs'],
+        });
+        const sdk = new FakeSdk(s);
+        sdk.onSend = (a, f) => {
+            if (a.method === 'sendInteractLoc') setTimeout(() => f.tick(st => ({ nearbyLocs: st.nearbyLocs.filter(l => !(l.x === WEST_DOOR.x && l.z === WEST_DOOR.z)) })), 1);
+        };
+        simulateWalking(sdk, {
+            speed: 1,
+            blocked: (nx, nz) => {
+                const p = sdk.state!.player!;
+                const crosses = (p.worldX <= 2570) !== (nx <= 2570);
+                return crosses && (doorShut(sdk.state!) || p.worldZ !== 3333 || nz !== 3333);
+            },
+        });
+        const session = { sdk, bot: {}, name: 'lab', sessionId: 0 } as unknown as RunnerSession;
+        const ctx = { session, sdk, bot: session.bot, c: {}, log: TickLog.memory('t') } as unknown as StepContext<unknown>;
+        const error = await drive(sdk, (byLetter('B').run(ctx) as Promise<unknown>).then(() => null, e => String(e)), 400);
+        const sent = sdk.sent.map(a => (a.method === 'sendInteractLoc' ? `door ${a.args[0]},${a.args[1]}` : /npc/i.test(a.method) ? 'talk' : a.method === 'sendWalk' ? 'walk' : a.method));
+        return { sent, error };
+    }
+    const first = (sent: string[], what: string) => sent.indexOf(what);
+
+    test('Edmond shut in Alrena\'s room, SCORED on the door tile: the door opens before the first Talk-to click', async () => {
+        const { sent, error } = await bSends([2570, 3333], [2571, 3333]);
+        expect(first(sent, 'door 2570,3333')).toBeGreaterThanOrEqual(0);
+        expect(first(sent, 'door 2570,3333')).toBeLessThan(first(sent, 'talk'));
+        expect(error).toMatch(/no dialogue opened/); // nothing in the fake answers the talk
+    });
+
+    test("Edmond shut in Alrena's room, SCORED on its live start tile (2568,3335): the door, the walk in beside him, then the talk", async () => {
+        const { sent } = await bSends([2568, 3335], [2572, 3333]);
+        expect(first(sent, 'door 2570,3333')).toBeGreaterThanOrEqual(0);
+        expect(first(sent, 'door 2570,3333')).toBeLessThan(first(sent, 'walk'));
+        expect(first(sent, 'walk')).toBeLessThan(first(sent, 'talk'));
+    });
+
+    test('Edmond at a far garden point (2566,3337): no door, a walk to within 1 of him, then the talk', async () => {
+        const { sent } = await bSends([2568, 3334], [2566, 3337]);
+        expect(sent.some(x => x.startsWith('door'))).toBe(false);
+        expect(first(sent, 'walk')).toBeGreaterThanOrEqual(0);
+        expect(first(sent, 'walk')).toBeLessThan(first(sent, 'talk'));
+    });
+
+    test('the normal arrival, Edmond beside SCORED: no door and no walk, the talk is the first thing sent', async () => {
+        const { sent } = await bSends([ARRIVAL.x, ARRIVAL.z], [2568, 3335]);
+        expect(sent.some(x => x.startsWith('door') || x === 'walk')).toBe(false);
+        expect(sent[0]).toBe('talk');
     });
 });
 
