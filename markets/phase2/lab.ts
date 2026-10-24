@@ -192,7 +192,7 @@ const plan = {
     ramp: rampOn ? { steps, holdMinutes: hold, dropPct: 10, admitTimeoutMinutes: 30 } : null,
     ledger: { everyTicks: 50, bookMinutes: 5 },
     ...(buy
-        ? { sharks: { source: 'buy', perAccount: count('per-account', 20), minimum: count('minimum', 5), rebuyMinSharks: count('rebuy-min', 5), ceiling: count('ceiling', 650), fillMinutes: 1 } }
+        ? { sharks: { source: 'buy', perAccount: count('per-account', 20), minimum: count('minimum', 5), rebuyMinSharks: count('rebuy-min', 5), ceiling: count('ceiling', 650), fillMinutes: 1 }, foodFallbackMix: { guards: 1 } }
         : {})
 };
 const planPath = join(out, 'plan.json');
