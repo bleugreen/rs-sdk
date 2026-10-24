@@ -10,6 +10,16 @@ import { stageRows } from './stub-giver';
 const manifest = readFileSync(MANIFEST, 'utf8');
 
 describe('stub-giver staging', () => {
+    test("H4m's loads, which share one fallback row H4m.1-H4m.N, each stage that row's bones", () => {
+        const { rows: staged, unresolved } = stageRows(manifest, { rows: [{ row: 'H4m.1', tile: { x: 0, z: 0 } }, { row: 'H4m.5', tile: { x: 0, z: 0 } }] });
+        expect(unresolved).toEqual([]);
+        for (const r of staged) {
+            expect(r.stage).toEqual([{ obj: 'babydragon_bones', n: 20 }]);
+            expect(r.want).toEqual([]);
+        }
+        expect(() => stageRows(manifest, { rows: [{ row: 'H4m.6', tile: { x: 0, z: 0 } }] })).toThrow('no ledger row H4m.6');
+    });
+
     test("every placed row but the cannon rows (cannon.ts's lab mode serves those) stages with a ::give name for each item", () => {
         const rows = Object.keys(PLACEMENT).filter(r => !CANNON_ROWS[r] && manifest.includes(`| ${r} |`)).map(row => ({ row, tile: { x: 0, z: 0 } }));
         const { rows: staged, unresolved } = stageRows(manifest, { rows });
