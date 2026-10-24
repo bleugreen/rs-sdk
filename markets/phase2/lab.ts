@@ -15,6 +15,10 @@
  * 4. Writes the plan and runs `markets/phase2/run.ts --placeholder-data` on it, stopped by SIGINT after `--sigint`
  *    minutes (the clean-stop path), then prints `markets/phase2/report.ts`.
  *
+ * `--thieving=N` and `--hp-level=N` set the staged knights' levels by `::setstat` (the knights-crowding lab: the
+ * runner's own stages then go straight to admission, the ship and the knights). `--warmup=N` sets the ramp's
+ * `warmupMinutes` (0 measures each hold the way the runner did before it had one).
+ *
  * `--fresh=1` stages nobody: every account starts on Tutorial Island and the runner's own stages do everything (the
  * Hitpoints-site lab). `--min-free-mb=N` (default 1200) stops the run with SIGINT when the host's available memory
  * falls below N MB, so a shared lab host keeps room for its other tenants; the memory is logged every 30 s.
@@ -25,7 +29,7 @@ import { executionContext } from '../../sdk/execution-context';
 import type { BotSDK } from '../../sdk/index';
 import { pointMarketAtServer } from '../../speedrun/helpers/mule';
 import { memoryRoleState } from '../../speedrun/helpers/role';
-import { cheat, leaveTutorial, mustTele } from '../../speedrun/lab/setup';
+import { cheat, leaveTutorial, mustTele, setStats } from '../../speedrun/lab/setup';
 import { depositMatching } from '../../speedrun/lib/bank';
 import { openDirectSession, type DirectSession } from '../../speedrun/lib/direct';
 import { loadBotEnv, ROOT } from '../../speedrun/lib/session';
@@ -55,6 +59,9 @@ const out = arg('out', join(process.env.TMPDIR ?? '/tmp', 'phase2-lab'));
 const exchange = arg('exchange', '1') === '1';
 const fresh = arg('fresh', '0') === '1';
 const minFreeMb = count('min-free-mb', 1200);
+const thieving = count('thieving', 0);
+const hpLevel = count('hp-level', 0);
+const warmup = arg('warmup', '');
 
 const server = loadBotEnv(labBot).SERVER ?? '';
 if (!/^(localhost|127\.)/.test(server)) {
@@ -101,6 +108,8 @@ async function bankGive(sdk: BotSDK, obj: string, n: number, matches: RegExp): P
 
 async function stageKnight(name: string): Promise<void> {
     await withSession(name, async (sdk, bot) => {
+        const stats = { ...(thieving > 0 ? { thieving } : {}), ...(hpLevel > 0 ? { hitpoints: hpLevel } : {}) };
+        if (Object.keys(stats).length) await setStats(sdk, stats);
         await mustTele(sdk, DRAYNOR_BANK.x, DRAYNOR_BANK.z);
         const opened = await bot.openBank();
         if (!opened.success) throw new Error(`openBank: ${opened.message}`);
@@ -165,7 +174,7 @@ log('staging done', { knights: staged.length, fresh: accounts.length - staged.le
 const plan = {
     accounts,
     loginSpacingMs: 2000,
-    ramp: { steps, holdMinutes: hold, dropPct: 10, admitTimeoutMinutes: 30 },
+    ramp: { steps, holdMinutes: hold, dropPct: 10, admitTimeoutMinutes: 30, ...(warmup !== '' ? { warmupMinutes: Number(warmup) } : {}) },
     ledger: { everyTicks: 50, bookMinutes: 5 }
 };
 const planPath = join(out, 'plan.json');
