@@ -481,6 +481,19 @@ research-script boundary and retained quest-specific code.
   group (a terminal Ctrl-C reaches only this process), and it never outlives
   this process: a crash, SIGTERM or SIGHUP logs every launched runner out
   (`abandonClient`), and any other exit kills it.
+- The runner is given only the login name, and on its own reads
+  `LITE_BOT_ENV`, else `bots/<login>/bot.env`. So a session opened with an
+  explicit environment, an `env` passed to `openSession` or another bot dir
+  (an alias such as `bots/host-oneoff`, the scored login on an isolated
+  gateway), launches its runner with that environment (`runnerEnvFor`,
+  `liteRunnerEnv`): `LITE_BOT_ENV` names the alias's own bot.env, or a private
+  600 copy of an `env` passed in (removed when that runner exits), and
+  `GATEWAY_URL` is the session's gateway, over anything inherited. Without
+  it the SDK and the runner could sit on different gateways: a stale first
+  state, "tick did not advance", and a connectionless body in the world for
+  500 ticks (attempt 4's one-offs, 24 Oct). A session opened from
+  `bots/<login>/bot.env` itself launches its runner with the process
+  environment as it is.
 - `logoutClean` waits out the 16-tick post-combat window (none when
   `lastDamageTick` is -1, never hit; a fresh account's first ticks don't wait), clicks logout
   (IF_BUTTON 2458), retries once if refused, and verifies: no tick after the

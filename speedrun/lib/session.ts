@@ -18,7 +18,7 @@
 // cannot help. The SDK reconnects to the gateway but never relaunches a client,
 // which is the watchdog's job here.
 
-import { appendFileSync, existsSync, mkdirSync, openSync, readFileSync } from 'fs';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import type { Subprocess } from 'bun';
 import { BotSDK, deriveGatewayUrl } from '../../sdk/index';
@@ -145,6 +145,90 @@ export function sessionGateway(env: BotEnv, world: string, opts: { allowRelay?: 
     return url;
 }
 
+/**
+ * The environment a session's lite runner must read when it is not the runner's own default. The
+ * runner (server/webclient/src/lite/runner.ts) is given only the login name: it reads LITE_BOT_ENV,
+ * else bots/<login>/bot.env, and its gateway is that file's GATEWAY_URL, else the process's. A session
+ * opened with an `env`, or from another bot dir (an alias such as bots/host-oneoff: the scored login on
+ * an isolated gateway), would otherwise launch a runner on the default file's gateway while its SDK
+ * waits on another: a stale first state, "tick did not advance", and a connectionless body left in the
+ * world for 500 ticks (attempt 4's one-offs at 02:47Z and 12:54Z, 24 Oct).
+ */
+export interface RunnerEnv {
+    /** The bot.env the session was loaded from; absent for an env passed in, which each launch writes out. */
+    file?: string;
+    env: BotEnv;
+    /** The gateway the session's SDK uses (sessionGateway). */
+    gatewayUrl: string;
+}
+
+/**
+ * The RunnerEnv of a session opened as `botName`, with `explicit` the env passed to openSession (if
+ * any) and `env` what it resolved to. Undefined when the session came from bots/<login>/bot.env itself:
+ * its runner resolves its environment exactly as it always has, an inherited LITE_BOT_ENV included.
+ */
+export function runnerEnvFor(botName: string, explicit: BotEnv | undefined, env: BotEnv, gatewayUrl: string, botsDir: string = join(ROOT, 'bots')): RunnerEnv | undefined {
+    if (explicit) return { env: explicit, gatewayUrl };
+    if (botName === env.BOT_USERNAME) return undefined;
+    return { file: join(botsDir, botName, 'bot.env'), env, gatewayUrl };
+}
+
+/** Directories of env files written for launched runners: each goes when its runner exits, all of them when this process does. */
+const runnerEnvDirs = new Set<string>();
+let runnerEnvExitHook = false;
+
+/** `env` as a bot.env, in the form parseBotEnv (and the lite runner) reads back. */
+export function formatBotEnv(env: BotEnv): string {
+    let out = '';
+    for (const [k, v] of Object.entries(env)) {
+        if (v === undefined) continue;
+        if (/[\r\n]/.test(k + v)) throw new Error(`${env.BOT_USERNAME}: ${k} holds a line break, which a bot.env cannot carry`);
+        out += `${k}=${v}\n`;
+    }
+    return out;
+}
+
+/** Write `env` to a private bot.env (its own 700 directory, the file 600) for one runner to read; `remove` deletes it. */
+export function writeRunnerEnvFile(env: BotEnv, dir: string = join(process.env.TMPDIR ?? '/tmp', 'speedrun')): { path: string; remove: () => void } {
+    const text = formatBotEnv(env);
+    mkdirSync(dir, { recursive: true });
+    const own = mkdtempSync(join(dir, 'runner-env-'));
+    const path = join(own, 'bot.env');
+    runnerEnvDirs.add(own);
+    if (!runnerEnvExitHook) {
+        runnerEnvExitHook = true;
+        process.on('exit', () => {
+            for (const d of runnerEnvDirs) rmSync(d, { recursive: true, force: true });
+        });
+    }
+    writeFileSync(path, text, { mode: 0o600 });
+    return {
+        path,
+        remove: () => {
+            runnerEnvDirs.delete(own);
+            rmSync(own, { recursive: true, force: true });
+        },
+    };
+}
+
+/**
+ * The lite runner's process env for one launch of `session`: `base` (the process's) with the login
+ * jitter off unless set. A session with a RunnerEnv also sets LITE_BOT_ENV to its environment's file
+ * (written out for an env passed in) and GATEWAY_URL to the session's gateway, over anything
+ * inherited, so the runner publishes where the SDK listens. `remove` deletes a file written for it.
+ */
+export function liteRunnerEnv(
+    session: Pick<Session, 'runnerEnv'>,
+    base: Record<string, string | undefined> = process.env
+): { env: Record<string, string | undefined>; remove: () => void } {
+    const env = { ...base, LITE_LOGIN_JITTER_MS: base.LITE_LOGIN_JITTER_MS ?? '0' };
+    const r = session.runnerEnv;
+    if (!r) return { env, remove: () => {} };
+    if (r.file) return { env: { ...env, LITE_BOT_ENV: r.file, GATEWAY_URL: r.gatewayUrl }, remove: () => {} };
+    const written = writeRunnerEnvFile(r.env);
+    return { env: { ...env, LITE_BOT_ENV: written.path, GATEWAY_URL: r.gatewayUrl }, remove: written.remove };
+}
+
 /** The world the page logs in to: CLIENT_URL's ?server= when it names one, else SERVER. */
 export function pageWorld(env: BotEnv): string {
     if (env.CLIENT_URL) {
@@ -229,6 +313,8 @@ export interface Session {
     readonly name: string;
     readonly client: ClientKind;
     readonly env: BotEnv;
+    /** The environment its lite runner reads, when not the runner's default (runnerEnvFor); absent: as the runner resolves it. */
+    readonly runnerEnv?: RunnerEnv;
     /** Browser launches put the password in the URL (local lab only; see browserUrl). */
     readonly insecureQueryLogin: boolean;
     readonly sdk: BotSDK;
@@ -308,7 +394,7 @@ export interface OpenOptions {
      * Only for a probe that measures the relay itself: it warns, and its timings are not the run's.
      */
     allowRelay?: boolean;
-    /** The bot's env, instead of reading bots/<name>/bot.env. */
+    /** The bot's env, instead of reading bots/<name>/bot.env. A launched lite runner reads this env too (liteRunnerEnv). */
     env?: BotEnv;
     /** Asked before a failed launch's abandon logs a socketless body in to take it over (abandonTab). */
     takeover?: TakeoverGate;
@@ -331,6 +417,7 @@ export async function openSession(botName: string, opts: OpenOptions = {}): Prom
     const env = opts.env ?? loadBotEnv(botName);
     const client = opts.client ?? 'lite';
     const gatewayUrl = sessionGateway(env, client === 'browser' ? pageWorld(env) : env.SERVER || 'localhost', { allowRelay: opts.allowRelay });
+    const runnerEnv = runnerEnvFor(botName, opts.env, env, gatewayUrl);
     const { BotActions } = await import('../../sdk/actions');
     if (opts.pathfinding !== false) (await import('../../sdk/pathfinding')).initPathfinding();
     const sdk = new BotSDK({
@@ -355,6 +442,7 @@ export async function openSession(botName: string, opts: OpenOptions = {}): Prom
         name: env.BOT_USERNAME,
         client,
         env,
+        ...(runnerEnv ? { runnerEnv } : {}),
         insecureQueryLogin: opts.insecureQueryLogin ?? process.argv.includes('--insecure-query-login'),
         sdk,
         bot: new BotActions(sdk),
@@ -566,21 +654,30 @@ export async function launchClient(session: Session): Promise<void> {
         // whose SIGINT handler would just close the socket and leave the player
         // in the world for 500 ticks.
         // `detached` (setpgid) works in Bun 1.3 but is missing from bun-types.
+        // The runner sleeps a random 0-5 s before logging in to a secured world
+        // (lite/session.ts) to spread fleet starts. One account gains nothing
+        // from it, and on a takeover the dropped player is in the world meanwhile;
+        // liteRunnerEnv turns it off, and points the runner at the session's own environment.
+        const runner = liteRunnerEnv(session);
         const spawnOpts = {
             cwd: join(ROOT, 'server', 'webclient'),
             stdout: openSync(session.logPath, 'a'),
             stderr: 'inherit',
-            // The runner sleeps a random 0-5 s before logging in to a secured world
-            // (lite/session.ts) to spread fleet starts. One account gains nothing
-            // from it, and on a takeover the dropped player is in the world meanwhile.
-            env: { ...process.env, LITE_LOGIN_JITTER_MS: process.env.LITE_LOGIN_JITTER_MS ?? '0' },
+            env: runner.env,
             detached: true,
         } as { cwd: string; stdout: number; stderr: 'inherit'; env: Record<string, string | undefined> };
-        const child = Bun.spawn(['bun', 'src/lite/runner.ts', session.name], spawnOpts);
+        let child: Subprocess;
+        try {
+            child = Bun.spawn(['bun', 'src/lite/runner.ts', session.name], spawnOpts);
+        } catch (e) {
+            runner.remove();
+            throw e;
+        }
         session.child = child;
         guardLaunched(session);
         // A signal-killed child can report a null code; count it as 128+SIGKILL.
         void child.exited.then(code => {
+            runner.remove();
             if (session.child === child) session.childExit = code ?? 137;
         });
         return;
