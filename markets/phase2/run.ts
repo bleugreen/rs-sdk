@@ -13,7 +13,9 @@
  * - The knights come online in the ramp's steps (ramp.ts); a step whose median rate per login falls more than
  *   `dropPct` below the first's stops the ramp and sends the knights not yet admitted to `ramp.fallbackMix`.
  * - An account with no sharks to eat (none left in its bank, or a purchase that came up short) goes to
- *   `foodFallbackMix`: plan B's low-food methods, guards and iron.
+ *   `foodFallbackMix`: plan B's low-food methods, guards and iron. With bought sharks it goes back (a `rebuy`
+ *   redirect) at the first bank visit where its coins cover `sharks.rebuyMinSharks` at the ceiling: buy-sharks
+ *   again, the ship, its method (sharks.ts). A purchase refused for a transient reason is retried with backoff.
  * - The ledger (ledger.ts) gets a line per account every `ledger.everyTicks` of its ticks and a totals line on the
  *   same cadence, plus the ramp's decisions, redirects, purchases and sales. Accounts appear as aliases
  *   (names.ts); the names file guard (lib/accounts.ts) refuses to start without it, and a run on real accounts
@@ -57,7 +59,8 @@ import { accountLine, COINS_ID, totalsLine, type AccountSnapshot, type Stack, ty
 import { aliasOf, nameScrubber, scrubRecord, unlistedAccounts } from './names.ts';
 import { NEEDS, nextFallback, parsePlan, PlanError, roleOptions, SALE_ROUTE, sequenceFor, type AccountPlan, type MethodId, type Plan } from './plan.ts';
 import { KnightsRamp, rateBetween } from './ramp.ts';
-import { runRoleUntil, runStage, stageDone, type StageCtx, type StageHooks } from './stages.ts';
+import { afterAttempt, loadSharks, rebuyDecision, requestRebuy, retryDelayMs, SHARKS_KEY, type SharkAttempt } from './sharks.ts';
+import { carriedCoins, runRoleUntil, runStage, stageDone, type StageCtx, type StageHooks } from './stages.ts';
 import { DEFAULT_STALL, StallWatch, type StallPolicy } from './stall.ts';
 
 const USAGE = 'usage: bun markets/phase2/run.ts <plan.json> [--out DIR] [--minutes N] [--stall-minutes N] [--stall-retries N] [--run-ended] [--placeholder-data]';
@@ -88,6 +91,23 @@ interface Reading {
 
 class GiveUp extends Error {}
 
+/** Resolve after `ms`, or reject with the signal's reason when it aborts first. */
+const pause = (ms: number, signal: AbortSignal): Promise<void> =>
+    new Promise((resolve, reject) => {
+        if (signal.aborted) return reject(signal.reason);
+        const onAbort = () => {
+            clearTimeout(t);
+            reject(signal.reason);
+        };
+        const t = setTimeout(() => {
+            signal.removeEventListener('abort', onAbort);
+            resolve();
+        }, ms);
+        signal.addEventListener('abort', onAbort, { once: true });
+    });
+
+const countOf = (items: readonly Stack[] | null, re: RegExp): number => (items ?? []).filter(i => re.test(i.name)).reduce((n, i) => n + i.count, 0);
+
 class Worker {
     method: MethodId;
     stage = 'waiting';
@@ -104,6 +124,8 @@ class Worker {
     arrivedAdmission: number | null = null;
     admittedAt: number | null = null;
     redirect: { method: MethodId; reason: string } | null = null;
+    /** The shark-eating method the food fallback took this account from, until a rebuy sends it back. */
+    foodFrom: MethodId | null = null;
     saleDue: { item: { id: number; name: string }; floor: number } | null = null;
     lastSaleAt = Date.now();
     shortSessions = 0;
@@ -368,14 +390,64 @@ export class Runner {
         return {
             admitted: () => !this.rampOn || w.method !== 'knights' || w.admittedAt !== null,
             foodOut: reason => this.foodOut(w, reason),
-            buySharks: async () => {
-                const s = this.plan.sharks;
-                const r = await buySharks(x(), { perAccount: s.perAccount, ceiling: s.ceiling, runEnded: this.o.runEnded, fillMinutes: s.fillMinutes }, this.book);
-                this.ledger({ account: w.alias, ...r.record });
-                if (r.record.result === 'refused' && !this.o.runEnded) throw new Error(String(r.record.reason));
-                if (r.banked < s.minimum) this.foodOut(w, `${r.banked} sharks banked after the purchase, below the minimum of ${s.minimum}`);
-            }
+            buySharks: () => this.buySharks(w, x()),
+            banked: () => this.rebuyCheck(w, x())
         };
+    }
+
+    /**
+     * The shark purchase, its outcome recorded in RoleState (sharks.ts): a transient refusal is tried again after a
+     * backoff, at most SHARK_RETRY.tries times in a row; anything else settles it, and fewer than `minimum` sharks
+     * banked then sends the account to the food fallback.
+     */
+    private async buySharks(w: Worker, x: StageCtx): Promise<void> {
+        const s = this.plan.sharks;
+        if (!this.o.runEnded) throw new Error("main has not announced the scored run's end: no shark is bought");
+        for (;;) {
+            let attempt: SharkAttempt;
+            let banked: number | null = null;
+            try {
+                const r = await buySharks(x, { perAccount: s.perAccount, ceiling: s.ceiling, runEnded: true, fillMinutes: s.fillMinutes }, this.book);
+                attempt = { record: r.record };
+                banked = r.banked;
+            } catch (e) {
+                if (x.signal.aborted) throw e;
+                attempt = { error: e instanceof Error ? e.message : String(e) };
+            }
+            const next = afterAttempt(loadSharks(w.roleState.get(SHARKS_KEY)), attempt, new Date());
+            await w.roleState.set(SHARKS_KEY, next);
+            this.ledger({ account: w.alias, ...next.last, status: next.status, tries: next.tries, ...(next.note ? { note: next.note } : {}) });
+            if (next.status === 'retry') {
+                const ms = retryDelayMs(next.tries);
+                this.event(w, 'shark purchase refused for a transient reason: retrying', { reason: next.last?.withdraw ?? next.last?.reason, tries: next.tries, inSeconds: ms / 1000 }, true);
+                await pause(ms, x.signal);
+                continue;
+            }
+            banked ??= countOf(w.bank, /^shark$/i);
+            if (banked < s.minimum) this.foodOut(w, `${banked} sharks banked after the purchase, below the minimum of ${s.minimum}`);
+            return;
+        }
+    }
+
+    /**
+     * At a bank visit (the bank just closed): an account the food fallback moved goes back to buy sharks and its
+     * method once its coins cover `rebuyMinSharks` at the ceiling (sharks.ts rebuyDecision), as a `rebuy` redirect.
+     */
+    private rebuyCheck(w: Worker, x: StageCtx): void {
+        if (w.redirect || w.foodFrom === null) return;
+        const s = this.plan.sharks;
+        const st = x.sdk.getState();
+        const coins = countOf(w.bank, /^coins$/i) + (st?.player ? carriedCoins(st) : 0);
+        const sharks = loadSharks(w.roleState.get(SHARKS_KEY));
+        const d = rebuyDecision({ foodFrom: w.foodFrom, method: w.method, source: s.source, runEnded: this.o.runEnded, coins, ceiling: s.ceiling, minSharks: s.rebuyMinSharks, sharks, nowMs: Date.now() });
+        this.event(w, 'rebuy check', { rebuy: d.rebuy, reason: d.reason });
+        if (!d.rebuy) return;
+        const back = w.foodFrom;
+        w.foodFrom = null;
+        this.foodFallback.set(w.method, Math.max(0, (this.foodFallback.get(w.method) ?? 0) - 1));
+        // the in-memory state changes at once, so the stage loop sees buy-sharks due; the file write follows
+        void w.roleState.set(SHARKS_KEY, requestRebuy(sharks, new Date(), d.reason)).catch(e => this.event(w, 'role-state write failed', { error: String(e) }, true));
+        this.redirectTo(w, back, d.reason, 'rebuy');
     }
 
     private async stages(w: Worker, sdk: BotSDK, bot: BotActions, signal: AbortSignal): Promise<void> {
@@ -487,6 +559,7 @@ export class Runner {
         const m = nextFallback(this.foodFallback, this.plan.foodFallbackMix);
         if (!m) return;
         this.foodFallback.set(m, (this.foodFallback.get(m) ?? 0) + 1);
+        w.foodFrom = w.method;
         this.redirectTo(w, m, reason, 'food');
     }
 
