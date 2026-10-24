@@ -43,7 +43,7 @@ import { FOOD, inArea, missingRunes, runTo, spellUse, SPELLS as TELEPORTS, sumUs
 import { currentTick, waitUntil, type Pred, type StateSource } from '../lib/wait';
 import { configId, findLoc, findNpc, invCount, opIndex, pos, worn, type NamePattern } from '../lib/world';
 import type { Check, Observed, StepContext } from '../runner/step';
-import { allOf, baseLevels, drinkPrayerTo, inBox, prayerCovers, questSteps, slotsCover, talkShape, within, type Box, type QuestItem, type QuestOptions, type Segment } from './segments';
+import { allOf, baseLevels, drinkPrayerTo, entryCured, inBox, prayerCovers, questSteps, slotsCover, talkShape, within, type Box, type QuestItem, type QuestOptions, type Segment } from './segments';
 
 export const quest = 'arena' as const;
 export const stepId = 'S12';
@@ -794,7 +794,8 @@ export function steps(opts?: Options) {
             done: o => complete(o) && !stateOf(o).inventory.some(isDead),
         },
     ];
-    return questSteps(stepId, segs);
+    // The arena fights cure a carried poison from H7's Antipoison first; nothing in the arena poisons (no poison_severity).
+    return questSteps(stepId, entryCured(stepId, ['G', 'H', 'I', 'J'], segs));
 }
 
 /** The entry's postconditions: the quest complete, Thieving 57 from the reward, out by Lady Servil, nothing open, the keys gone. */

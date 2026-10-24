@@ -46,7 +46,7 @@ import { runTo, sumUse, type RuneName, type RuneUse, type RuneUseTable } from '.
 import { currentTick, waitTicks, waitUntil } from '../lib/wait';
 import { findLoc, findNpc, invCount, invItem, messagesSince, npcByIndex, opIndex, pos, skillLevel, skillXp, worn } from '../lib/world';
 import type { Check, Observed } from '../runner/step';
-import { allOf, drinkPrayerTo, inBox, kitSegment, prayerLevelOf, prayerReserve, questSteps, slotsCover, talkShape, within, type Box, type KitItem, type QuestItem, type QuestOptions, type Segment } from './segments';
+import { allOf, drinkPrayerTo, entryCured, inBox, kitSegment, prayerLevelOf, prayerReserve, questSteps, slotsCover, talkShape, within, type Box, type KitItem, type QuestItem, type QuestOptions, type Segment } from './segments';
 
 export const quest = 'magearena' as const;
 export const stepId = 'S16';
@@ -862,7 +862,9 @@ export function steps(opts?: Options) {
             recorded: true,
         },
     ];
-    return questSteps(stepId, segs);
+    // B is the last safe point before Kolodion's teleport and C the arena on a resume: a poison picked up in the Wilderness
+    // is cured from H12's Superantipoison, kept through S16 (the ledger's H13 and H14 rows), or named.
+    return questSteps(stepId, entryCured(stepId, ['B', 'C'], segs));
 }
 
 /** The exit's Magic: base level and xp, for the run's record (S18 wants boosted 80; a sip covers 79). */
