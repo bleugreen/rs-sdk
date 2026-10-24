@@ -40,8 +40,6 @@ const pre = A.preconditions(s0, {} as MmContext);
 result('seal_pre', { mode, pre });
 
 let error: string | undefined;
-const sent: string[] = [];
-const unsent = sdk.onStateUpdate(() => undefined);
 if (pre === true) {
     const log = TickLog.memory();
     try {
@@ -52,7 +50,5 @@ if (pre === true) {
     const s1 = sdk.getState()!;
     result('seal_run', { mode, ok: !error, ...(error ? { error } : {}), seal: sealed(), dialogOpen: s1.dialog.isOpen, ticks: log.rows.map(r => [r.step, r.ticks, r.ok]), free: 28 - s1.inventory.length, at: pos(s1) });
 }
-unsent();
-void sent;
 await closeSession(session);
 process.exit(0);
