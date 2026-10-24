@@ -104,7 +104,7 @@ import { RelogBudget } from './runner/relog-budget';
 import { AttemptRecord } from './runner/attempt-record';
 import { SCORED_LOGIN, SCORED_RELOG } from './runner/scored-relog';
 import { ackRow, deathGate, deathRow, diedResult, operatorLine } from './runner/death';
-import { enteringEnds, watchStretch, type Stretch } from './runner/wait-guard';
+import { enteringEnds, watchStretch, type Cure, type Stretch } from './runner/wait-guard';
 
 /**
  * Ticks past the link's stale bound before the watchdog acts, with the drop recovery on; while the page
@@ -453,15 +453,36 @@ export async function liveRuneCheck(
 export const LOGIN_STRETCH = 'between login and the first step';
 
 /**
+ * The segments a session entering at one of them drinks one dose for an unknown poison from login (main's ruling,
+ * 10-24): a carried poison shows only at its first hit, and these two lead to the irreversible H12 swap and the
+ * Kolodion fight. Entered anywhere else, a relog spends no dose on a poison it has not seen.
+ */
+export const POISON_UNKNOWN_ENTRIES: readonly string[] = ['S15:A', 'S16:B'];
+
+/** Whether a session entering at step `name` takes the poison-unknown dose (POISON_UNKNOWN_ENTRIES). */
+export function poisonUnknownEntry(name: string | undefined): boolean {
+    return !!name && POISON_UNKNOWN_ENTRIES.some(e => name.startsWith(`${e}-`));
+}
+
+/**
  * The wait upkeep (runner/wait-guard.ts) from SCORED in game after login until the first step's entry
  * (enteringEnds): through the live census, the gates and the resume walk no step looks after SCORED
  * (attempt 4: ~175 ticks, arrived poisoned at ~1 HP). It eats by the legs' rule and cures a poison,
  * sends nothing while a trade or dialogue is open, and logs each eat or dose as a note row. A death
  * it sees goes on `session.died`, and the first step's entry fails with it before sending anything.
+ * Entering at S15:A or S16:B (`o.entry`, poisonUnknownEntry), it also drinks one dose for a poison it
+ * cannot yet see (Cure.poisonUnknown); the shared dose record means the step's own entry cure then skips.
  */
-export function loginUpkeep(session: Pick<Session, 'name' | 'sdk' | 'sessionId'> & { died?: Session['died'] }, log: TickLog, say: (line: string) => void = l => console.log(l)): Stretch {
+export function loginUpkeep(
+    session: Pick<Session, 'name' | 'sdk' | 'sessionId'> & { died?: Session['died'] },
+    log: TickLog,
+    say: (line: string) => void = l => console.log(l),
+    o: { entry?: string; cure?: Cure } = {},
+): Stretch {
     return watchStretch({ sdk: session.sdk, session }, LOGIN_STRETCH, {
         holdInDialog: true,
+        unknownPoisonDose: poisonUnknownEntry(o.entry),
+        ...(o.cure ? { cure: o.cure } : {}),
         onAct: a => {
             log.append(annotation(log, session.name, 'note', `(run) upkeep ${LOGIN_STRETCH}: ${a.kind}`, { sessionId: session.sessionId, startTick: a.tick, meta: { ...a } }));
             say(`[run] upkeep ${LOGIN_STRETCH}: ${a.kind === 'eat' ? 'ate' : 'drank'} ${a.item} at hp ${a.hp ?? '?'} (tick ${a.tick})`);
@@ -1094,7 +1115,7 @@ async function main(argv: string[]): Promise<number> {
     try {
         code = await withScoredSession(session, { relogs, log }, async () => {
             unalias = aliasAccount(log, session.name);
-            const upkeep = loginUpkeep(session, log);
+            const upkeep = loginUpkeep(session, log, undefined, { entry: chain[censusStart(chain, from, earlier)]?.name });
             try {
                 // The census on the live pack, before any step: a shortfall logs SCORED out here.
                 const refused = await liveRuneCheck(session, { plan, ...(planError ? { planError } : {}), from: censusStart(chain, from, earlier), served, log }, {
