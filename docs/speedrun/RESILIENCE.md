@@ -415,15 +415,30 @@ then refuse. Two shapes keep `done` monotonic where the state alone moves on:
   hand-back, S14's cannon pick-up) is owed only at the place it runs: off that
   site the step is done at its level whatever the pack holds. A throw before the
   exit work, still on the site, leaves the step undone and re-entered.
-- **Hand-offs: the attempt's completion record.** The band after a hand-off
-  consumes what it brought (S18's stuns and food after H14, S22's feathers after
-  H18), and the band's own `inProgress` already holds on arrival, before the
-  trade, so the state cannot tell "traded, then used" from "not yet traded". A
-  hand-off step marks `<run dir>/handoffs.json` (`runner/handoff.ts`
-  `HandOffRecord`, keyed by the attempt id run.ts shares across processes) once
-  its post-hand-off state shows, and reads as done from then on unless what it
-  gave is held again (a demo rollback across the swap). It also stays done once
-  the next milestone is (`supersededBy`).
+- **The attempt record.** Some completions leave no lasting game fact, so the
+  attempt keeps one record of them: `<run dir>/attempt-record.json`
+  (`runner/attempt-record.ts` `AttemptRecord`, keyed by the attempt id run.ts
+  shares across processes, so a fresh attempt sees none and a resumed process
+  sees what an earlier one marked). A missing or empty file is nothing recorded;
+  a file that does not parse refuses the run. It holds two kinds of mark, kept
+  apart:
+  - **Hand-off rows.** The band after a hand-off consumes what it brought
+    (S18's stuns and food after H14, S22's feathers after H18), and the band's
+    own `inProgress` already holds on arrival, before the trade, so the state
+    cannot tell "traded, then used" from "not yet traded". A hand-off step marks
+    its row once its post-hand-off state shows, and reads as done from then on
+    unless what it gave is held again (a demo rollback across the swap). It also
+    stays done once the next milestone is (`supersededBy`). The rune census
+    reads the same rows as supplies already served.
+  - **Step names.** `runSteps` marks every step's `name` once its
+    postconditions pass, entered through `run` or `resume`. The walk hands the
+    marks to every `done` and `inProgress` it evaluates as `Observed.record`, and
+    a milestone with no game fact to read uses it: the Mage Arena's pool,
+    statue and guardian segments, whose cape and staff S16's exit drops, and
+    Doric's hand-in. While the observed state is out of the world (S21's relog
+    split, a walk before a login lands), a milestone the record has counts as
+    done without reading the game, since every quest stage and the player read
+    empty there; in the world each `done` decides.
 
 Every walk first waits, bounded in observed ticks (`PLAYER_MAX_TICKS`), for a
 state that carries the player: a relaunched or reloaded client can publish

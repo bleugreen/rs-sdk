@@ -98,7 +98,8 @@ import type { BotWorldState } from '../../sdk/types';
 import { h4PlanOf } from '../quests/dorics-quest';
 import { buildChain, CANNON_ROWS, KIT_PARTNER_ROWS, KIT_SEGMENTS, muleCueDir, noteRow, PLACEMENT, sliceUntil, resolveFrom, STAND_IN_ROWS, type ChainStep, type RunConfig } from '../runner/chain';
 import { prepareCueDir, RunCues } from '../runner/cue-keeper';
-import { applyEquip, handOffFrom, HandOffRecord, unequipGives, type HandOffPlan, type HandOffSdk } from '../runner/handoff';
+import { AttemptRecord } from '../runner/attempt-record';
+import { applyEquip, handOffFrom, unequipGives, type HandOffPlan, type HandOffSdk } from '../runner/handoff';
 import type { LegStep } from '../runner/legs';
 import { TILES } from '../runner/legs';
 import { formatRunReport, runReport, STAFF_SUPPLY_STEP, STAND_IN_STEP } from '../runner/run-report';
@@ -397,7 +398,7 @@ async function main(argv: string[]): Promise<number> {
     // As run.ts: a re-run into the same --log is the same attempt, so S07's bone cue keeps its session.
     const runId = `dress-${newRunId()}`;
     const attempt = attemptOf(a.log && existsSync(a.log) ? parseLog(readFileSync(a.log, 'utf8')) : [], runId);
-    const full = buildChain(cfg, { cues: keeper, manifest, attempt, handOffs: new HandOffRecord(RUN_DIR, attempt) });
+    const full = buildChain(cfg, { cues: keeper, manifest, attempt, record: new AttemptRecord(RUN_DIR, attempt) });
     const sliced = sliceUntil(full, a.until);
     const kitServed = Object.keys(KIT_SEGMENTS).filter(r => raw.partners[r] && raw.partners[r] !== STAFF);
     const lab = labChain(sliced, { manifest, stub: stubEnv?.BOT_USERNAME ?? null, world, cannonServed, kitServed });

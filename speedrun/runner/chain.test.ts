@@ -7,7 +7,8 @@ import { ASK_FILE, CUE_FILE, CueWatcher, CueWriter, type Cue, type CueScope, typ
 import * as monkeyMadness from '../quests/monkey-madness';
 import { PLAN_FILE } from '../helpers/anvil';
 import { GO_FILE } from '../helpers/fm-row';
-import { handOffFrom, HandOffRecord } from './handoff';
+import { AttemptRecord } from './attempt-record';
+import { handOffFrom } from './handoff';
 import { runAttempt } from '../lib/attempt';
 import { baseState, FakeSdk } from '../lib/fake-sdk';
 import { ReservationWatch } from '../lib/host-reservation';
@@ -30,7 +31,7 @@ import { ScopeSessions } from '../helpers/standalone';
 import { FencedError } from './fence';
 import { leg, legsFor, netTotal, type LegStep } from './legs';
 import { Observation, resolveResume, type Link } from './resume';
-import type { RunnerSession, Step, StepContext } from './step';
+import { runSteps, type RunnerSession, type Step, type StepContext } from './step';
 
 const prevTick = process.env.SPEEDRUN_TICK_MS;
 beforeAll(() => { process.env.SPEEDRUN_TICK_MS = '5'; });
@@ -1044,8 +1045,8 @@ describe('a placed hand-off stays done once the band after it consumes what it b
             nearbyPlayers: o.partner ? ([{ index: 9, name: o.partner, x, z, level: 3 }] as unknown as BotWorldState['nearbyPlayers']) : [],
         });
     /** The real chain with this attempt's record, sliced from leg `from` up to (not including) `to`. */
-    const sliceWith = (record: HandOffRecord | undefined, from: string, to: string) => {
-        const full = buildChain(CONFIG, { cues: recorder().cues, ...(record ? { handOffs: record } : {}) });
+    const sliceWith = (record: AttemptRecord | undefined, from: string, to: string) => {
+        const full = buildChain(CONFIG, { cues: recorder().cues, ...(record ? { record } : {}) });
         return full.slice(full.findIndex(s => s.id === from), full.findIndex(s => s.id === to));
     };
     const where = async (steps: readonly ChainStep[], s: BotWorldState): Promise<[string | null, string]> => {
@@ -1057,11 +1058,11 @@ describe('a placed hand-off stays done once the band after it consumes what it b
         }
     };
     const marked = (row: string) => {
-        const r = new HandOffRecord(mkdtempSync(join(tmpdir(), 'chain-handoffs-')), 'attempt-1');
-        r.mark(row, 1000);
+        const r = new AttemptRecord(mkdtempSync(join(tmpdir(), 'chain-handoffs-')), 'attempt-1');
+        r.handOffs.mark(row, 1000);
         return r;
     };
-    const unmarked = () => new HandOffRecord(mkdtempSync(join(tmpdir(), 'chain-handoffs-')), 'attempt-1');
+    const unmarked = () => new AttemptRecord(mkdtempSync(join(tmpdir(), 'chain-handoffs-')), 'attempt-1');
 
     // S18 at the knights' anchor (thieving.ts BANDS), Thieving inside the band, as on arrival from T16-18.
     const KNIGHTS = { x: 2670, z: 3305 };
@@ -1122,16 +1123,16 @@ describe('a placed hand-off stays done once the band after it consumes what it b
 
     test('every placed hand-off: recorded in this attempt and nothing it gave held, done with its package spent; another attempt\'s record is not this one', () => {
         const record = marked('none');
-        const other = new HandOffRecord(record.dir, 'attempt-0');
-        const full = buildChain(CONFIG, { cues: recorder().cues, handOffs: record });
+        const other = new AttemptRecord(record.dir, 'attempt-0');
+        const full = buildChain(CONFIG, { cues: recorder().cues, record });
         const handOffs = full.filter(s => s.kind === 'handoff');
         expect(handOffs.length).toBeGreaterThan(15);
         const spent = new Observation(at(0, 0, { held: [] }));
         for (const s of handOffs) {
             const row = s.name.replace(/ hand-off$/, '');
-            other.mark(row, 1);
+            other.handOffs.mark(row, 1);
             expect([row, s.done!(spent, {})]).toEqual([row, false]);
-            record.mark(row, 1);
+            record.handOffs.mark(row, 1);
             expect([row, s.done!(spent, {})]).toEqual([row, true]);
         }
     });
@@ -1141,7 +1142,7 @@ describe('a placed hand-off stays done once the band after it consumes what it b
     // S16's pool, done only in the chamber, so the record carries H13 past S16 (rs/577); the shortbow and
     // superantipoison count as a rollback only until H23, which brings them, is recorded.
     const h13 = handOffFrom(MANIFEST_TEXT, 'H13');
-    const h13Step = (record: HandOffRecord) => buildChain(CONFIG, { cues: recorder().cues, handOffs: record }).find(s => s.name === 'H13 hand-off')!;
+    const h13Step = (record: AttemptRecord) => buildChain(CONFIG, { cues: recorder().cues, record }).find(s => s.name === 'H13 hand-off')!;
     const given = (name: string, n: number): Held => [name, n, h13.give.find(g => g.name === name)!.ids?.[0]];
 
     test('H13 stays done once S18 and H23 bring back items it gave (rune arrows worn, coins, a magic shortbow, a superantipoison)', () => {
@@ -1156,7 +1157,7 @@ describe('a placed hand-off stays done once the band after it consumes what it b
         const s = h13Step(record);
         expect(s.done!(new Observation(afterS18), {})).toBe(true);
         expect(s.done!(new Observation(afterH23), {})).toBe(false);
-        record.mark('H23', 2000);
+        record.handOffs.mark('H23', 2000);
         expect(s.done!(new Observation(afterH23), {})).toBe(true);
     });
 
@@ -1335,5 +1336,53 @@ describe('S11a: the gnome course to Agility 25', () => {
         const at = (level: number) => baseState({ tick: 1, inGame: true, skills: [{ name: 'Agility', level, baseLevel: level, experience: 0 }] } as never);
         expect(s11a[0]!.postconditions(at(24), {})).not.toBe(true);
         expect(s11a[0]!.postconditions(at(25), {})).toBe(true);
+    });
+});
+
+describe('the attempt record through the real chain (rs/724)', () => {
+    /** rs/723's record-read milestones: the names the quest modules give them. */
+    const RECORDED = ['S16:D-pool', 'S16:E-statue', 'S16:F-guardian', 'S05:C-doric-hand-in'];
+    const recordAt = () => new AttemptRecord(mkdtempSync(join(tmpdir(), 'chain-attempt-record-')), 'attempt-1');
+    /** An observation where every declared probe reads unanswered, so the walk runs no probe. */
+    const observe = (s: BotWorldState, steps: readonly ChainStep[], record?: AttemptRecord) => {
+        const o = new Observation(s, {}, undefined, record?.steps);
+        for (const st of steps) for (const p of st.probes ?? []) o.probed[p] = null;
+        return o;
+    };
+
+    test('runSteps marks the chain step under the module\'s own name: S16:D-pool, S16:E-statue, S16:F-guardian, S05:C-doric-hand-in', async () => {
+        const record = recordAt();
+        const full = buildChain(CONFIG, { cues: recorder().cues, record });
+        for (const n of RECORDED) expect([n, full.filter(s => s.name === n).length]).toEqual([n, 1]);
+        // Each chain step as the chain built it (tag, its wrappers), its game work stubbed out.
+        const stubbed = RECORDED.map(n => ({ ...full.find(s => s.name === n)!, preconditions: () => true as const, postconditions: () => true as const, run: async () => {}, offline: true as const }));
+        const sdk = new FakeSdk(baseState({ tick: 1 }));
+        const session = { sdk, bot: {}, name: 'lab', sessionId: 0 } as unknown as RunnerSession;
+        await runSteps(session, stubbed, { log: TickLog.memory('t'), c: {}, shouldStop: () => false, tickMonitor: false, record: record.steps });
+        expect(RECORDED.map(n => [n, new AttemptRecord(record.dir, 'attempt-1').steps.has(n)])).toEqual(RECORDED.map(n => [n, true]));
+    });
+
+    test('S21 logged out between its halves, every step before it recorded: the walk resolves to the login half, not S00; H12o\'s trigger and the quests count as done', async () => {
+        const record = recordAt();
+        const relogs = new RelogBudget(join(record.dir, 'relog'));
+        relogs.beginPlanned(SCORED_RELOG, 100);
+        const full = buildChain(COMPLETE, { cues: recorder().cues, record, relogs, attempt: 'attempt-1' });
+        const logout = full.findIndex(s => s.name === SCORED_LOGOUT);
+        const login = full.findIndex(s => s.name === SCORED_LOGIN);
+        expect(logout).toBeGreaterThan(0);
+        const h12o = full.findIndex(s => s.id === 'H12o login');
+        expect(h12o).toBeGreaterThan(0);
+        expect(h12o).toBeLessThan(logout);
+        // The real run marks every step it completes; up to here that is every step before the logout half's end.
+        full.slice(0, logout + 1).forEach((s, i) => record.steps.mark(s.name, 1000 + i));
+        const out = baseState({ tick: 5000, inGame: false, player: null });
+        const p = await resolveResume(full, observe(out, full, record), {});
+        expect([p.step, p.mode]).toEqual([SCORED_LOGIN, 'run']);
+        expect(p.firstUndone).toBe(login);
+        // Every milestone before it read done, H12o's journal-read trigger and the quest segments with them.
+        expect(p.lastDone).toBeGreaterThan(h12o);
+        // Without the record the walk stops far before S21, at the first milestone (S00 reads the player).
+        const bare = await resolveResume(full, observe(out, full), {}).catch(e => e as { firstUndone: number });
+        expect(bare.firstUndone).toBeLessThan(h12o);
     });
 });
