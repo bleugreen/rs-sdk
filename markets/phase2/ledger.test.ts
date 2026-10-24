@@ -61,9 +61,17 @@ describe('ledger lines', () => {
             coins: { carried: 1_234, banked: 50_000, total: 51_234 },
             bank: { seenTick: 450, store: 50_000 + 30_000 + 170, book: { low: 50_000 + netOfFee(800), high: 50_000 + netOfFee(1_100) }, unpriced: ['Shark'], unknownCost: [] },
             carriedStore: 1_234 + 1_500,
-            msPerTick: null
+            msPerTick: null,
+            pos: null,
+            target: null
         });
         expect(JSON.parse(JSON.stringify(l))).toEqual(l);
+    });
+
+    test('an account line carries its tile and the npc its method works', () => {
+        const l = accountLine(snap({ pos: [2660, 3305], target: { index: 41, x: 2661, z: 3305 } }), valuer, now);
+        expect(l.pos).toEqual([2660, 3305]);
+        expect(l.target).toEqual({ index: 41, x: 2661, z: 3305 });
     });
 
     test('before the first bank visit the banked values are null, not zero', () => {

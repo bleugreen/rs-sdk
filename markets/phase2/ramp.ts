@@ -26,7 +26,15 @@ export interface RampDecision {
     logins: number;
     /** gp a tick of each login measured over the hold. */
     rates: number[];
+    /** The same rates by alias. */
+    perLogin: Record<string, number>;
     median: number;
+    /**
+     * Logins measured in both the first step and this one: how many, and the median of each one's rate now over its
+     * rate then. Unaffected by who joined, so it separates crowding (the incumbents slow down) from newcomers that
+     * earn less. Null at the first step or with no login in both.
+     */
+    incumbents: { logins: number; ratio: number } | null;
     /** The first step's median; null until the first step is measured. */
     firstMedian: number | null;
     /** median / firstMedian. */
@@ -43,6 +51,7 @@ export class KnightsRamp {
     private openedAt: number;
     holdStart: number | null = null;
     private first: number | null = null;
+    private firstPerLogin: Record<string, number> | null = null;
     readonly decisions: RampDecision[] = [];
 
     constructor(
@@ -76,11 +85,14 @@ export class KnightsRamp {
         return this.phase === 'holding' && this.holdStart !== null && now >= this.holdStart + this.cfg.holdMinutes * 60_000;
     }
 
-    /** Evaluate the hold that has just ended with each measured login's gp a tick. */
-    evaluate(rates: readonly number[], now: number): RampDecision {
+    /** Evaluate the hold that has just ended with each measured login's gp a tick, by alias (`holdRates`). */
+    evaluate(perLogin: Readonly<Record<string, number>>, now: number): RampDecision {
         if (this.phase !== 'holding' || this.holdStart === null) throw new Error(`the ramp is ${this.phase}, not holding`);
+        const rates = Object.values(perLogin);
         const m = median([...rates]);
-        const base = { kind: 'ramp' as const, step: this.stepNumber, logins: this.admitted(), rates: [...rates], median: m, holdStart: this.holdStart, holdEnd: now };
+        if (rates.length > 0 && this.firstPerLogin === null) this.firstPerLogin = { ...perLogin };
+        const incumbents = this.decisions.some(d => d.rates.length > 0) && this.firstPerLogin ? incumbentRatio(this.firstPerLogin, perLogin) : null;
+        const base = { kind: 'ramp' as const, step: this.stepNumber, logins: this.admitted(), rates, perLogin: { ...perLogin }, median: m, incumbents, holdStart: this.holdStart, holdEnd: now };
         let d: RampDecision;
         if (rates.length === 0) {
             d = { ...base, firstMedian: this.first, ratio: null, action: 'repeat', reason: 'no login was measured over the whole hold; waiting for the step again' };
@@ -108,6 +120,50 @@ export class KnightsRamp {
         this.decisions.push(d);
         return d;
     }
+}
+
+/** Each login's own rate now over its rate in `first`, for the logins in both: how many, and the median ratio. */
+export function incumbentRatio(first: Readonly<Record<string, number>>, now: Readonly<Record<string, number>>): { logins: number; ratio: number } | null {
+    const r = Object.keys(now).flatMap(a => (first[a] !== undefined && first[a]! > 0 ? [now[a]! / first[a]!] : []));
+    return r.length ? { logins: r.length, ratio: median(r) } : null;
+}
+
+export interface RampReading {
+    at: number;
+    session: number;
+    tick: number;
+    coins: number;
+}
+
+export interface HoldLogin {
+    alias: string;
+    /** When the login last reached its method (ms); null when it is off it now. */
+    methodAt: number | null;
+    /** Its coin readings on the method, oldest first. */
+    readings: readonly RampReading[];
+}
+
+/**
+ * Each login's gp a tick over a hold that began at `start`: from its first reading at or after the later of `start`
+ * and the end of its warm-up (`warmupMs` after it reached the method) to its last reading. A login measured over
+ * less than `minSpanMs` is left out, as is one with no two readings in one session.
+ *
+ * The warm-up keeps a login's arrival out of its rate: a knight reaches the method at the Ardougne docks with no food
+ * carried, so its first minutes are the walk to the bank, the withdrawal and the walk to the knights. Live, a hold
+ * that began 22 s after the last newcomer arrived read the newcomers at 12.5 gp a tick against the incumbents' 15.6
+ * and stopped the ramp on a loss that was not crowding (docs/markets/phase2.md 'Knights crowding').
+ */
+export function holdRates(logins: readonly HoldLogin[], start: number, warmupMs: number, minSpanMs: number): Record<string, number> {
+    const out: Record<string, number> = {};
+    for (const l of logins) {
+        const from = l.methodAt === null ? start : Math.max(start, l.methodAt + warmupMs);
+        const a = l.readings.find(x => x.at >= from);
+        const b = l.readings.at(-1);
+        if (!a || !b || b.at - a.at < minSpanMs) continue;
+        const v = rateBetween(a, b);
+        if (v !== null) out[l.alias] = v;
+    }
+    return out;
 }
 
 /** gp a tick of a login between two coin readings in the same session; null when it cannot be measured. */
