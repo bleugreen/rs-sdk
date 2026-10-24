@@ -920,7 +920,7 @@ describe('host reservation: in flight (runAttempt)', () => {
         });
         client.stop();
         expect(ran).toEqual(['one', 'two']);
-        expect(r).toEqual({ outcome: 'stopped before "three"; logged out', code: 4, paused: null, resumeAt: 2 });
+        expect(r).toEqual({ outcome: 'stopped before "three"; logged out', code: 4, paused: null });
         expect(client.logoutClicks()).toBe(1);
     });
 });
