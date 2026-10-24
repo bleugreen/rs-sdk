@@ -187,7 +187,8 @@ export function loads(by: Map<string, Sample[]>): Map<string, number> {
 
 /**
  * gp a tick pooled over every ledger interval past the warm-up (and inside [from, to]), by the load at its start:
- * the bots on that knight, 0 for none in view.
+ * the bots on that knight, 0 for none in view. With work counts the ticks are those at the knights, so a bank trip
+ * (its knight still in view from the bank, its coins flat) does not read as a loss at its load.
  */
 export function rateByLoad(by: Map<string, Sample[]>, warmupMs: number, from = -Infinity, to = Infinity): { load: number; rate: number; intervals: number; accounts: number }[] {
     const load = loads(by);
@@ -200,7 +201,7 @@ export function rateByLoad(by: Map<string, Sample[]>, warmupMs: number, from = -
                 const k = load.get(`${a.account}@${a.at}`) ?? 0;
                 const e = acc.get(k) ?? { coins: 0, ticks: 0, n: 0, who: new Set<string>() };
                 e.coins += b.coins - a.coins;
-                e.ticks += b.tick - a.tick;
+                e.ticks += a.work !== null && b.work !== null ? b.work - a.work : b.tick - a.tick;
                 e.n++;
                 e.who.add(a.account);
                 acc.set(k, e);
