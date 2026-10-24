@@ -305,6 +305,8 @@ export interface OpenOptions {
     allowRelay?: boolean;
     /** The bot's env, instead of reading bots/<name>/bot.env. */
     env?: BotEnv;
+    /** Asked before a failed launch's abandon logs a socketless body in to take it over (abandonTab). */
+    takeover?: TakeoverGate;
 }
 
 /**
@@ -391,7 +393,7 @@ export async function openSession(botName: string, opts: OpenOptions = {}): Prom
         // saw it advance; left running it would hold the player there indefinitely.
         let out = err;
         if (opts.launch) {
-            const a = await abandonClient(session).catch((e: unknown) => abandonFailed(e));
+            const a = await abandonClient(session, undefined, { ...(opts.takeover ? { takeover: opts.takeover } : {}) }).catch((e: unknown) => abandonFailed(e));
             if (a) {
                 const line = describeAbandon(a);
                 appendFileSync(session.logPath, `[speedrun] session ${session.sessionId}: start failed, ${line}\n`);
@@ -613,7 +615,21 @@ export function describeAbandon(a: AbandonResult): string {
     return a.ok ? `logged out, confirmed (${how})` : `NOT confirmed logged out: ${a.reason ?? 'unknown'} (${how})`;
 }
 
-function abandonFailed(e: unknown): AbandonResult {
+/**
+ * Asked before abandonTab logs a socketless body in to take it over, a login the per-address order
+ * and the playtime both see: a function to call once that login has started or failed (a lock's
+ * release) to go ahead, or the reason not to. Without one the takeover goes ahead.
+ */
+export type TakeoverGate = () => Promise<(() => void) | string>;
+
+export interface AbandonOptions {
+    takeover?: TakeoverGate;
+    /** abandonTab's wall bound (default ABANDON_TIMEOUT_MS). */
+    timeoutMs?: number;
+}
+
+/** An AbandonResult for an abandon that threw. */
+export function abandonFailed(e: unknown): AbandonResult {
     return { ok: false, sends: 0, takeovers: 0, wallMs: 0, reason: `the abandon threw: ${e instanceof Error ? e.message : String(e)}` };
 }
 
@@ -627,8 +643,8 @@ function abandonFailed(e: unknown): AbandonResult {
  *
  * Browser: abandonTab, a logout through the page itself, confirmed by the page and the world.
  */
-export async function abandonClient(session: Session, waitMs: number = Math.max(2_000, 10 * tickMs())): Promise<AbandonResult | null> {
-    if (session.client === 'browser') return abandonTab(session);
+export async function abandonClient(session: Session, waitMs: number = Math.max(2_000, 10 * tickMs()), opts: AbandonOptions = {}): Promise<AbandonResult | null> {
+    if (session.client === 'browser') return abandonTab(session, opts);
     const child = session.child;
     if (!child || session.childExit !== null) return null;
     const t0 = Date.now();
@@ -658,14 +674,14 @@ export async function abandonClient(session: Session, waitMs: number = Math.max(
  * Once the page has been out, with the world still listing the account, for longer than a removal
  * takes to show, the page logs in again in place (a fresh token, login's in-page path), which the
  * engine lets take the body over (World.ts "kick the existing session"); then the click logs it out.
- * At most ABANDON_TAKEOVERS such logins.
+ * At most ABANDON_TAKEOVERS such logins, each one asked of `opts.takeover` first.
  *
  * A session that launched its tab acts only on that launch's page: a tab showing another launch is
  * left alone. Each click carries the session generation it was issued under, as sendLogoutClick's
  * do: once a newer session begins elsewhere (an adopt) nothing more is sent. Without DevTools only
  * the gateway is left: one click through it, reported unconfirmed.
  */
-export async function abandonTab(session: Session, opts: { timeoutMs?: number } = {}): Promise<AbandonResult> {
+export async function abandonTab(session: Session, opts: AbandonOptions = {}): Promise<AbandonResult> {
     const t0 = Date.now();
     session.expectInWorld = false;
     session.watchdog?.pause();
@@ -728,11 +744,17 @@ export async function abandonTab(session: Session, opts: { timeoutMs?: number } 
                 if (now - outListedSince >= takeoverAfterMs()) {
                     if (takeovers >= ABANDON_TAKEOVERS) why = `${why}, after ${takeovers} takeover login(s)`;
                     else if (page.hasClient && page.loadingComplete) {
+                        const gate = opts.takeover ? await opts.takeover().catch((e: unknown) => `the takeover gate threw: ${e instanceof Error ? e.message : String(e)}`) : () => {};
+                        if (typeof gate === 'string') return done(false, `${why}; no takeover login: ${gate}`);
                         takeovers++;
                         appendFileSync(session.logPath, `[speedrun] session ${session.sessionId}: abandon: the page is out and the world lists the account; logging in in page to take that body over, then out\n`);
-                        const start = await loginInPage(session, cdp, {});
-                        if (start.started) gen = session.sessionId;
-                        else why = `the takeover login did not start (${start.reason})`;
+                        try {
+                            const start = await loginInPage(session, cdp, {});
+                            if (start.started) gen = session.sessionId;
+                            else why = `the takeover login did not start (${start.reason})`;
+                        } finally {
+                            gate();
+                        }
                         outListedSince = null;
                     }
                 }
