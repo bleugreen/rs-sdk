@@ -875,8 +875,10 @@ export function hostTabReset(session: Session): TabResetDeps {
             return listedInWorld(demoOrigin(pageWorld(session.env)), session.env.BOT_USERNAME ?? session.name);
         },
         close: async () => {
+            const cdp = cdpUrl(session.env);
+            if (!cdp) throw new Error("the bot's env names no CDP endpoint");
             const { closeBotTabs } = await import('./lib/tab');
-            return closeBotTabs(cdpUrl(session.env), session.name, 5_000, { blankIfLast: true });
+            return closeBotTabs(cdp, session.name, 5_000, { blankIfLast: true });
         },
         sleep: ms => Bun.sleep(ms),
         now: () => Date.now(),
