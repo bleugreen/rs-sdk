@@ -3,8 +3,13 @@
 // S27's phases measured in fixed windows from the first shot, with the S27 total
 // predicted from the measured rates (the plan of docs/speedrun/scripts/cannon-kit-model.ts).
 //
-//   LAB_RUNNERS=0 speedrun/lab/lab.sh <bot> speedrun/lab/measure-ranged.ts[:--mode=s14|s27|both][:--n=1][:--ticks=400]
-//       [:--windows=melee55,melee85,bow70,bow85,bow99][:--flick=4]
+//   LAB_RUNNERS=0 speedrun/lab/lab.sh <bot> speedrun/lab/measure-ranged.ts[:--mode=s14|s27|both|decay][:--n=1][:--ticks=400]
+//       [:--windows=melee55,melee85,bow70,bow85,bow99][:--flick=4][:--reset-at=N]
+//
+// --mode=decay (rs/794) runs S27's own session options in the melee phase from a fresh set-up
+// until 50 ticks past the first cannon's decay (DECAY_TICKS), so the session must pick the cannon
+// up and set it again (CANNON_RESET_AT) to finish; it reports each re-set and its tick cost.
+// --reset-at=N re-sets at N instead and stops at N + 50 (a short check of the mechanics).
 //
 // A window name is <melee|bow><Ranged level>, with a control suffix that leaves it out
 // of the prediction: `rune` (melee: rs/91's config-5 kit, rune scimitar and glory, to
@@ -25,7 +30,7 @@
 // no glory; melee windows at Ranged 55 (the phase's real level) and 85 (rs/91's).
 
 import type { BotWorldState } from '../../sdk/types';
-import { pickUpCannon, placedCannon } from '../lib/cannon';
+import { DECAY_TICKS, pickUpCannon, placedCannon } from '../lib/cannon';
 import { questDone } from '../lib/quests';
 import { closeSession, openSession, relog } from '../lib/session';
 import { waitTicks, waitUntil } from '../lib/wait';
@@ -42,6 +47,7 @@ const N = Number(arg('n', '1'));
 const TICKS = Number(arg('ticks', '400'));
 const WINDOWS = arg('windows', 'melee55,melee85,bow70,bow85,bow99').split(',').filter(Boolean);
 const FLICK = Number(arg('flick', '4'));
+const RESET_AT = arg('reset-at', '');
 
 const session = await openSession(botArg(), { launch: true });
 const { sdk, bot } = session;
@@ -89,7 +95,7 @@ const summary = (r: SessionResult) => ({
     ticks: r.ticks, setUpTicks: r.setUpTicks, firingTicks: r.endTick - r.fireTick, pickUpTicks: r.pickUpTicks,
     phases: r.phases.map(p => ({ phase: p.phase, ticks: p.ticks, perTick: Object.fromEntries(Object.entries(p.xp).map(([k, v]) => [k, +(v / Math.max(1, p.ticks)).toFixed(2)])) })),
     prayer: r.prayer, damageTaken: r.damageTaken, minHp: r.minHp, consumes: r.consumes, attacks: r.attacks, levelUps: r.levelUps,
-    bursts: r.bursts, restores: r.restores, reloads: r.reloads, refires: r.refires, dryEvents: r.dryEvents, ballsUsed: r.ballsUsed, arrowsUsed: r.arrowsUsed, perTickUsed: { balls: +(r.ballsUsed / Math.max(1, r.endTick - r.fireTick)).toFixed(3), arrows: +(r.arrowsUsed / Math.max(1, r.endTick - r.fireTick)).toFixed(3) }, overBudget: r.overBudget, end: r.end,
+    bursts: r.bursts, restores: r.restores, reloads: r.reloads, refires: r.refires, dryEvents: r.dryEvents, ballsUsed: r.ballsUsed, arrowsUsed: r.arrowsUsed, perTickUsed: { balls: +(r.ballsUsed / Math.max(1, r.endTick - r.fireTick)).toFixed(3), arrows: +(r.arrowsUsed / Math.max(1, r.endTick - r.fireTick)).toFixed(3) }, overBudget: r.overBudget, resets: r.resets, end: r.end,
 });
 
 // ---------------------------------------------------------------- S14
@@ -111,6 +117,31 @@ async function s14(run: number) {
     return out;
 }
 
+/** S27's fixture items: the weapons and arrows, the cannon set and balls, H23's potions and 12 sharks. */
+function s27Kit(control: string, balls = 1200): [obj: string, n: number][] {
+    return [
+        [control === 'rune' ? 'rune_scimitar' : 'mithril_scimitar', 1], ...(control === 'rune' ? [['amulet_of_glory', 1] as [string, number]] : []), ['magic_shortbow', 1], ['rune_arrow', 1000], ['twpart1', 1], ['twpart2', 1], ['twpart3', 1], ['twpart4', 1], ['mcannonball', balls],
+        ...(control === 'bare' ? [] : [['4doserangerspotion', 1], ['4doserangerspotion', 1], ['4doserangerspotion', 1]] as [string, number][]), ['4dose2antipoison', 1], ['4dose2attack', 1], ['4dose2strength', 1], ['4doseantipoison', 1],
+        ['shark', 12],
+    ];
+}
+
+// ---------------------------------------------------------------- S27 past the cannon's decay (rs/794)
+async function decay(run: number) {
+    // Melee at 0.6 balls a tick for ~2,550 ticks.
+    await fixture({ attack: 99, strength: 99, defence: 98, ranged: 55, hitpoints: 90, prayer: 99 }, s27Kit('', 2000), [/^mithril scimitar$/i]);
+    const pre = combatFinishStep(opts).preconditions(sdk.getState()!, {} as never);
+    if (pre !== true) throw new Error(`S27 precondition (decay): ${pre}`);
+    const base = combatFinishOptions(opts);
+    const resetAt = RESET_AT ? Number(RESET_AT) : base.resetAt!;
+    const until = (RESET_AT ? resetAt : DECAY_TICKS) + 50;
+    const r = await runSession(rsdk, { ...base, resetAt, phaseOf: () => 'melee', stop: (s, fire) => s.tick - fire >= until, maxTicks: until + 200 });
+    result('S27 decay', {
+        run, resetAt, until, firstCannonDecayAt: DECAY_TICKS, resets: r.resets, resetTicks: r.resets.map(x => x.ticks),
+        pass: r.end === 'stopped' && r.resets.length === 1 && r.resets[0]!.why === 'age' && r.endTick - r.fireTick >= until, ...summary(r),
+    });
+}
+
 // ---------------------------------------------------------------- S27 windows
 interface WindowRate { window: string; phase: Phase; ranged: number; /** Ranged level at mid-window, where the model places the rate. */ mid: number; control: string; ticks: number; R: number; D: number; H: number; prayer: SessionResult['prayer']; refires: number; dryEvents: number }
 
@@ -125,11 +156,7 @@ async function s27Window(name: string): Promise<WindowRate> {
     const wopts: RangedOptions = control === 'rune' ? { ...opts, scimitar: /^rune scimitar$/i } : opts;
     await fixture(
         { attack: 99, strength: 99, defence: phase === 'melee' ? 98 : 99, ranged, hitpoints: 90, prayer: 99 },
-        [
-            [control === 'rune' ? 'rune_scimitar' : 'mithril_scimitar', 1], ...(control === 'rune' ? [['amulet_of_glory', 1] as [string, number]] : []), ['magic_shortbow', 1], ['rune_arrow', 1000], ['twpart1', 1], ['twpart2', 1], ['twpart3', 1], ['twpart4', 1], ['mcannonball', 1200],
-            ...(control === 'bare' ? [] : [['4doserangerspotion', 1], ['4doserangerspotion', 1], ['4doserangerspotion', 1]] as [string, number][]), ['4dose2antipoison', 1], ['4dose2attack', 1], ['4dose2strength', 1], ['4doseantipoison', 1],
-            ['shark', 12],
-        ],
+        s27Kit(control),
         control === 'rune' ? [/^rune scimitar$/i, /^amulet of glory/i] : [/^mithril scimitar$/i],
     );
     const pre = combatFinishStep(wopts).preconditions(sdk.getState()!, {} as never);
@@ -215,6 +242,9 @@ async function cannonQuestDone() {
 
 try {
     await cannonQuestDone();
+    if (MODE === 'decay') for (let i = 0; i < N; i++) {
+        try { await decay(i); } catch (e) { result('S27 decay error', { run: i, error: String(e) }); }
+    }
     if (MODE === 's14' || MODE === 'both') for (let i = 0; i < N; i++) {
         try { await s14(i); } catch (e) { result('S14 error', { run: i, error: String(e) }); }
     }
