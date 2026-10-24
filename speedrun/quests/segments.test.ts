@@ -332,6 +332,25 @@ describe('poison: the published evidence, the shared dose record and the entry c
         expect(await curePoison(new FakeSdk(poisonedBare()) as never, 'T')).toBe('none-held');
     });
 
+    test("a dose record ahead of the client's tick (a reload restarts it) is no dose: the carried poison still reads as on", () => {
+        noteAntipoison(37);
+        const s = baseState({ tick: 36, combatEvents: [hit(32)] });
+        expect(poisoned(s)).toBe(true);
+        expect(antipoisonDrunkAt(s.tick)).toBe(-Infinity);
+        expect(antipoisonDrunkAt()).toBe(37);
+        expect(poisoned({ ...s, tick: 40 })).toBe(false); // the same record, now behind the clock: that dose cured it
+    });
+
+    test("curePoison returns once the drink's p_delay is over (its doses-left message), not when the slot changes", async () => {
+        const sdk = new FakeSdk(baseState({ tick: 200, inventory: [potion(4, 'Antipoison(2)')], combatEvents: [hit(195)] }));
+        sdk.onSend = (a, f) => {
+            if (a.method === 'sendUseItem') f.state = { ...f.state!, inventory: [potion(4, 'Antipoison(1)')] };
+        };
+        const left = { type: 0, text: 'You have 1 dose of potion left.', tick: 203, sender: '', fromSelf: false } as unknown as BotWorldState['gameMessages'][number];
+        expect(await drive(sdk, curePoison(sdk as never, 'T'), 10, s => (s.tick + 1 === 203 ? { gameMessages: [left] } : {}))).toBe('cured');
+        expect(sdk.state!.tick).toBe(203);
+    });
+
     test('entryCured: the poison check first, naming the shortfall; a held dose passes it, and the run drinks before the body', async () => {
         const order: string[] = [];
         const [k] = questSteps('S10b', entryCured('S10b', ['K'], [seg('K', 'warlord', { preconditions: () => 'other', run: async () => { order.push('body'); } })]));
