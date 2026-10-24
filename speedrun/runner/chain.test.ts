@@ -4,6 +4,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import type { BotWorldState, PlayerState } from '../../sdk/types';
 import { ASK_FILE, CUE_FILE, CueWatcher, CueWriter, type Cue, type CueScope, type TopUpAsk } from '../helpers/altar-cue';
+import * as doricsQuest from '../quests/dorics-quest';
 import * as monkeyMadness from '../quests/monkey-madness';
 import { PLAN_FILE } from '../helpers/anvil';
 import { GO_FILE } from '../helpers/fm-row';
@@ -1724,9 +1725,10 @@ describe("a kit row's cue: no cue and no readiness wait when the row is served t
         let body = 0;
         const s: ChainStep = { id: name.split(':')[0]!, kind: 'step', name, logoutSafe: true, preconditions: () => true, postconditions: () => true, run: async () => void body++ };
         const record = marks(...(o.served ? [row] : []));
-        const [c] = cueMuleRows([s], new Map([[s, row]]), () => 'h55', cues, { record, wants: { [row]: () => o.wants } });
+        const asked: boolean[] = [];
+        const [c] = cueMuleRows([s], new Map([[s, row]]), () => 'h55', cues, { record, wants: { [row]: (_s, w) => (asked.push(w.served), o.wants) } });
         const log = TickLog.memory('kit');
-        return { ran: c!.resume!(ctxFor(new FakeSdk(), log)), r, skipped, body: () => body, log, step: c! };
+        return { ran: c!.resume!(ctxFor(new FakeSdk(), log)), r, skipped, body: () => body, log, step: c!, asked };
     };
 
     for (const [row, name] of Object.entries(KIT_SEGMENTS)) {
@@ -1738,6 +1740,8 @@ describe("a kit row's cue: no cue and no readiness wait when the row is served t
             expect(k.skipped).toEqual([muleScope(row)]);
             expect(k.body()).toBe(1);
             expect(k.log.rows.map(x => [x.step, x.meta?.why])).toEqual([[`(cue) ${row} skipped`, `${row} served this attempt: no cue, no wait`]]);
+            // The want is asked with the record's fact, so consumables count as met at the serve.
+            expect(k.asked).toEqual([true]);
             // Still the row's mule cue as the chain sees it (its stop's finality is unchanged).
             expect(k.step.cue).toEqual(muleScope(row));
         });
@@ -1807,8 +1811,23 @@ describe("a kit row's cue: no cue and no readiness wait when the row is served t
         const bow = monkeyMadness.DEFAULT_OPTIONS.bow;
         const kit = monkeyMadness.h12Kit(bow).map((k, i) => item(i, k.name.source.replace(/[\^$\\]/g, ''), k.n, k.id));
         const held = (inv: typeof kit) => baseState({ inventory: inv as never });
-        expect(KIT_WANTS.H12!(held(kit))).toBe(false);
-        expect(KIT_WANTS.H12!(held(kit.map(i => (i.name === 'Shark' ? { ...i, count: monkeyMadness.H12_SHARKS - 1 } : i))))).toBe(true);
-        expect(KIT_WANTS.H4!(baseState())).toBe(true);
+        const unserved = { served: false };
+        expect(KIT_WANTS.H12!(held(kit), unserved)).toBe(false);
+        expect(KIT_WANTS.H12!(held(kit.map(i => (i.name === 'Shark' ? { ...i, count: monkeyMadness.H12_SHARKS - 1 } : i))), unserved)).toBe(true);
+        expect(KIT_WANTS.H4!(baseState(), unserved)).toBe(true);
+    });
+
+    test('H4 recorded served: a rune cast since the serve does not re-open its want; not served, it does; a non-consumable short always does', () => {
+        const plan = doricsQuest.h4Plan(baseState());
+        const landed = plan.receive.map((r, i) => ({ slot: i, id: r.ids?.[0] ?? 9100 + i, name: r.name, count: r.count, optionsWithIndex: [] }));
+        const held = (inv: typeof landed) => baseState({ inventory: inv as never });
+        expect(doricsQuest.h4Wants(held(landed))).toBe(false);
+        // T05-06's Falador teleport spends a law rune and 3 air: here, one air rune gone after the serve.
+        const cast = landed.map(i => (/^air rune$/i.test(i.name) ? { ...i, count: i.count - 1 } : i));
+        expect(doricsQuest.h4Wants(held(cast), { served: true })).toBe(false);
+        expect(KIT_WANTS.H4!(held(cast), { served: true })).toBe(false);
+        expect(doricsQuest.h4Wants(held(cast))).toBe(true);
+        const noTalisman = landed.filter(i => !/talisman/i.test(i.name));
+        expect(doricsQuest.h4Wants(held(noTalisman), { served: true })).toBe(true);
     });
 });
