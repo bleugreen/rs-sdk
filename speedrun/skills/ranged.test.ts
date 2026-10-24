@@ -566,6 +566,7 @@ describe('runSession on the fake SDK', () => {
         const p = runSession(sdk as unknown as RangedSdk, { ...combatFinishOptions(), phaseOf: () => 'cannon', stop: (s, fire) => s.tick - fire >= run, pickUp: false });
         const res = await drive(sdk, p, run + 40);
         expect(res.end).toBe('stopped');
+        expect(sdk.state!.gameMessages.some(m => /cannon has decayed/i.test(m.text))).toBe(true);
         expect(srv.built).toHaveLength(2);
         expect(srv.pickUps).toHaveLength(1);
         expect(res.resets).toHaveLength(1);
