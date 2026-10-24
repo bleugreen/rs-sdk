@@ -224,7 +224,10 @@ export function s07Woodcutting(cfg: Pick<RunConfig, 'bones' | 's07PrayerTo'>, at
 
 // ------------------------------------------------------------------ H4m: the bones S09 buries
 
-/** The ledger row (STEP-MANIFEST.md's fallback hand-offs, not walked) every H4m load trades. */
+/**
+ * H4m's partner key in the run config (its carrier). Its ledger row, in STEP-MANIFEST.md's fallback
+ * hand-offs (not walked), is `H4m.1-H4m.N`: one load's trade, and N in the id (mule-ledger.ts h4mLoadRows).
+ */
 export const H4M_ROW = 'H4m';
 /** S09's lowest Prayer: its combat 43 needs Prayer 94 (rs/360; mining.ts combatGate), and S09 starts before H4m's bones are in. */
 export const H4M_MIN_PRAYER = 94;
@@ -259,9 +262,8 @@ export function h4mPlan(cfg: Pick<RunConfig, 's07PrayerTo' | 'partners'>, manife
     if (p < H4M_MIN_PRAYER) throw new Error(`run config: s07PrayerTo ${p} < ${H4M_MIN_PRAYER}: S09's combat 43 needs Prayer ${H4M_MIN_PRAYER} (rs/360), and S09 starts before H4m's bones are buried`);
     if (!rows.length) throw new Error(`run config: s07PrayerTo ${p} leaves Prayer ${S09_PRAYER_TO} to S09's H4m loads, and STEP-MANIFEST.md's fallback hand-offs have no ${H4M_ROW} row`);
     if (!cfg.partners[H4M_ROW]) throw new Error(`the run config names no partner for ${H4M_ROW} (its carrier)`);
-    const found = parseFallbacks(manifest).filter(r => r.row === H4M_ROW);
-    if (found.length !== 1) throw new Error(`STEP-MANIFEST.md's fallback hand-offs have ${found.length} rows ${H4M_ROW}; H4m needs exactly one`);
-    const plan = planHandOff(found[0]!);
+    // h4mLoadRows has checked it is the one row H4m.1-H4m.N
+    const plan = planHandOff(parseFallbacks(manifest).find(r => r.row.startsWith(`${H4M_ROW}.`))!);
     const bones = plan.receive[0];
     if (plan.receive.length !== 1 || !bones || !bones.ids?.includes(BIG_BONES_ID) || bones.kind !== 'u' || bones.topUp || plan.give.length || plan.drop.length || plan.wield.length || plan.unwield.length) {
         throw new Error(`${H4M_ROW} (line ${plan.line}) must receive only big bones @${BIG_BONES_ID}, unnoted and a fixed count: S09's bury steps and the Prayer check read nothing else`);
