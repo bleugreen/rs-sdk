@@ -37,6 +37,7 @@ import {
     liteRunnerEnv,
     loadBotEnv,
     openSession,
+    ROOT,
     runnerEnvFor,
     isLoopbackHost,
     loggedOutBy,
@@ -1906,5 +1907,81 @@ describe('the lite runner a session launches reads that session’s environment 
         } finally {
             gw.stop(true);
         }
+    });
+});
+
+describe('an exported LITE_BOT_ENV with no explicit env is refused before any login (rs/783, main’s ruling)', () => {
+    // openSession reads bots/<name>/bot.env under the checkout, so these bot dirs live there for the
+    // test (bots/*/ is gitignored) and are removed after.
+    const login = `rs783${Math.random().toString(36).slice(2, 8)}`;
+    const aliasDir = `${login}-alias`;
+    const own = join(ROOT, 'bots', login, 'bot.env');
+    const alias = join(ROOT, 'bots', aliasDir, 'bot.env');
+    let gw: ReturnType<typeof Bun.serve>;
+    let connections = 0;
+    let saved: string | undefined;
+    beforeAll(() => {
+        gw = Bun.serve({
+            port: 0,
+            hostname: '127.0.0.1',
+            fetch: (req, srv) => (srv.upgrade(req) ? (connections++, undefined) : new Response('Gateway Service')),
+            websocket: {
+                message(ws, m) {
+                    const msg = JSON.parse(String(m)) as { type: string; mode?: string };
+                    if (msg.type === 'sdk_connect') ws.send(JSON.stringify({ type: 'sdk_connected', success: true, mode: msg.mode, otherControllers: 0 }));
+                },
+            },
+        });
+        for (const f of [own, alias]) {
+            mkdirSync(join(f, '..'), { recursive: true });
+            writeFileSync(f, `BOT_USERNAME=${login}\nPASSWORD=pw\nSERVER=localhost:1\nGATEWAY_URL=ws://127.0.0.1:${gw.port}\nSHOW_CHAT=false\n`, { mode: 0o600 });
+        }
+        saved = process.env.LITE_BOT_ENV;
+    });
+    beforeEach(() => {
+        connections = 0;
+    });
+    afterEach(() => {
+        if (saved === undefined) delete process.env.LITE_BOT_ENV;
+        else process.env.LITE_BOT_ENV = saved;
+    });
+    afterAll(() => {
+        gw.stop(true);
+        for (const d of [login, aliasDir]) rmSync(join(ROOT, 'bots', d), { recursive: true, force: true });
+    });
+    const open = async (name: string, opts: Parameters<typeof openSession>[1] = {}) => {
+        const s = await openSession(name, { awaitInWorld: false, pathfinding: false, ...opts });
+        await closeSession(s);
+        return s;
+    };
+
+    test('exported, no env: refused naming both files, before anything reaches the gateway', async () => {
+        process.env.LITE_BOT_ENV = alias;
+        const err = await open(login).then(() => null, (e: Error) => e);
+        expect(err?.message).toContain(`refusing to open ${login}: its SDK reads ${own}, but this process exports LITE_BOT_ENV=${alias}`);
+        expect(err?.message).toContain('Nothing was sent to the account');
+        expect(connections).toBe(0);
+    });
+
+    test('unset: opens as today, with no RunnerEnv', async () => {
+        delete process.env.LITE_BOT_ENV;
+        const s = await open(login);
+        expect(s.runnerEnv).toBeUndefined();
+        expect(connections).toBe(1);
+    });
+
+    test('exported, with an explicit env or from the alias dir: opens, and its runner reads its own file over the export', async () => {
+        process.env.LITE_BOT_ENV = own;
+        const passed = await open(login, { env: loadBotEnv(aliasDir) });
+        const a = liteRunnerEnv(passed);
+        try {
+            expect(a.env.LITE_BOT_ENV).not.toBe(own);
+            expect(parseBotEnv(readFileSync(a.env.LITE_BOT_ENV!, 'utf-8'))).toEqual(loadBotEnv(aliasDir));
+        } finally {
+            a.remove();
+        }
+        const fromDir = await open(aliasDir);
+        expect(liteRunnerEnv(fromDir).env.LITE_BOT_ENV).toBe(alias);
+        expect(connections).toBe(2);
     });
 });
