@@ -1,0 +1,776 @@
+{
+ "source": "/home/dev/.cache/rs-markets/rs686/headcount-2026-10-24T0354Z.jsonl",
+ "window": [
+  "2026-10-24T03:54:48.347Z",
+  "2026-10-24T16:53:48.360Z"
+ ],
+ "reads": 776,
+ "errors": 2,
+ "sites": [
+  {
+   "site": "Shilo gem rocks",
+   "reads": 776,
+   "readsWithRivals": 481,
+   "rivals": {
+    "min": 0,
+    "mean": 0.6224226804123711,
+    "max": 2
+   },
+   "ours": {
+    "min": 0,
+    "mean": 0,
+    "max": 0
+   },
+   "byRival": [
+    {
+     "name": "Croesus",
+     "reads": 481,
+     "coverage": 0.6198453608247423,
+     "first": "2026-10-24T03:54:48.347Z",
+     "last": "2026-10-24T16:52:48.377Z",
+     "sessions": 4,
+     "longestMin": 150.99995
+    },
+    {
+     "name": "Cb5exo",
+     "reads": 2,
+     "coverage": 0.002577319587628866,
+     "first": "2026-10-24T06:43:48.377Z",
+     "last": "2026-10-24T06:44:48.376Z",
+     "sessions": 1,
+     "longestMin": 0.9999833333333333
+    }
+   ],
+   "hourly": [
+    {
+     "hour": "2026-10-24T03Z",
+     "reads": 6,
+     "distinct": 1,
+     "meanRivals": 0.8333333333333334,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T04Z",
+     "reads": 56,
+     "distinct": 1,
+     "meanRivals": 0.9107142857142857,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T05Z",
+     "reads": 60,
+     "distinct": 1,
+     "meanRivals": 0.38333333333333336,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T06Z",
+     "reads": 60,
+     "distinct": 2,
+     "meanRivals": 0.7833333333333333,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T07Z",
+     "reads": 60,
+     "distinct": 1,
+     "meanRivals": 0.8833333333333333,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T08Z",
+     "reads": 60,
+     "distinct": 1,
+     "meanRivals": 0.5666666666666667,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T09Z",
+     "reads": 60,
+     "distinct": 1,
+     "meanRivals": 0.06666666666666667,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T10Z",
+     "reads": 60,
+     "distinct": 1,
+     "meanRivals": 0.9,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T11Z",
+     "reads": 60,
+     "distinct": 1,
+     "meanRivals": 0.8666666666666667,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T12Z",
+     "reads": 60,
+     "distinct": 1,
+     "meanRivals": 0.4166666666666667,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T13Z",
+     "reads": 60,
+     "distinct": 0,
+     "meanRivals": 0,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T14Z",
+     "reads": 60,
+     "distinct": 1,
+     "meanRivals": 0.5166666666666667,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T15Z",
+     "reads": 60,
+     "distinct": 1,
+     "meanRivals": 0.95,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T16Z",
+     "reads": 54,
+     "distinct": 1,
+     "meanRivals": 0.8703703703703703,
+     "meanOurs": 0
+    }
+   ],
+   "coArrivals": []
+  },
+  {
+   "site": "Heroes' Guild runite",
+   "reads": 776,
+   "readsWithRivals": 744,
+   "rivals": {
+    "min": 0,
+    "mean": 1.833762886597938,
+    "max": 4
+   },
+   "ours": {
+    "min": 0,
+    "mean": 0,
+    "max": 0
+   },
+   "byRival": [
+    {
+     "name": "U238",
+     "reads": 698,
+     "coverage": 0.8994845360824743,
+     "first": "2026-10-24T03:54:48.347Z",
+     "last": "2026-10-24T16:53:48.360Z",
+     "sessions": 3,
+     "longestMin": 420.9999666666667
+    },
+    {
+     "name": "Tygem020",
+     "reads": 372,
+     "coverage": 0.4793814432989691,
+     "first": "2026-10-24T03:54:48.347Z",
+     "last": "2026-10-24T16:52:48.377Z",
+     "sessions": 32,
+     "longestMin": 37.99966666666667
+    },
+    {
+     "name": "Tygem050",
+     "reads": 233,
+     "coverage": 0.3002577319587629,
+     "first": "2026-10-24T03:55:48.348Z",
+     "last": "2026-10-24T16:41:48.351Z",
+     "sessions": 30,
+     "longestMin": 51.00005
+    },
+    {
+     "name": "Based",
+     "reads": 119,
+     "coverage": 0.15335051546391754,
+     "first": "2026-10-24T08:28:48.359Z",
+     "last": "2026-10-24T13:22:48.348Z",
+     "sessions": 4,
+     "longestMin": 80.99958333333333
+    },
+    {
+     "name": "Qu3st",
+     "reads": 1,
+     "coverage": 0.001288659793814433,
+     "first": "2026-10-24T14:00:48.376Z",
+     "last": "2026-10-24T14:00:48.376Z",
+     "sessions": 1,
+     "longestMin": 0
+    }
+   ],
+   "hourly": [
+    {
+     "hour": "2026-10-24T03Z",
+     "reads": 6,
+     "distinct": 3,
+     "meanRivals": 2.8333333333333335,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T04Z",
+     "reads": 56,
+     "distinct": 3,
+     "meanRivals": 1.4285714285714286,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T05Z",
+     "reads": 60,
+     "distinct": 3,
+     "meanRivals": 1.8333333333333333,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T06Z",
+     "reads": 60,
+     "distinct": 3,
+     "meanRivals": 1.65,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T07Z",
+     "reads": 60,
+     "distinct": 3,
+     "meanRivals": 1.5666666666666667,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T08Z",
+     "reads": 60,
+     "distinct": 4,
+     "meanRivals": 1.9833333333333334,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T09Z",
+     "reads": 60,
+     "distinct": 4,
+     "meanRivals": 2.4166666666666665,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T10Z",
+     "reads": 60,
+     "distinct": 3,
+     "meanRivals": 1.6166666666666667,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T11Z",
+     "reads": 60,
+     "distinct": 3,
+     "meanRivals": 1.4166666666666667,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T12Z",
+     "reads": 60,
+     "distinct": 4,
+     "meanRivals": 2.75,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T13Z",
+     "reads": 60,
+     "distinct": 4,
+     "meanRivals": 2,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T14Z",
+     "reads": 60,
+     "distinct": 4,
+     "meanRivals": 1.65,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T15Z",
+     "reads": 60,
+     "distinct": 3,
+     "meanRivals": 1.8166666666666667,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T16Z",
+     "reads": 54,
+     "distinct": 3,
+     "meanRivals": 1.5555555555555556,
+     "meanOurs": 0
+    }
+   ],
+   "coArrivals": []
+  },
+  {
+   "site": "Wilderness surface runite",
+   "reads": 776,
+   "readsWithRivals": 774,
+   "rivals": {
+    "min": 0,
+    "mean": 1.9922680412371134,
+    "max": 3
+   },
+   "ours": {
+    "min": 0,
+    "mean": 0,
+    "max": 0
+   },
+   "byRival": [
+    {
+     "name": "Xulvexi",
+     "reads": 734,
+     "coverage": 0.9458762886597938,
+     "first": "2026-10-24T03:54:48.347Z",
+     "last": "2026-10-24T16:53:48.360Z",
+     "sessions": 1,
+     "longestMin": 779.0002166666667
+    },
+    {
+     "name": "Bramble",
+     "reads": 716,
+     "coverage": 0.9226804123711341,
+     "first": "2026-10-24T04:49:48.375Z",
+     "last": "2026-10-24T16:53:48.360Z",
+     "sessions": 1,
+     "longestMin": 723.99975
+    },
+    {
+     "name": "Jenkins13",
+     "reads": 94,
+     "coverage": 0.1211340206185567,
+     "first": "2026-10-24T03:54:48.347Z",
+     "last": "2026-10-24T05:47:48.376Z",
+     "sessions": 2,
+     "longestMin": 97.00035
+    },
+    {
+     "name": "Goondelf",
+     "reads": 2,
+     "coverage": 0.002577319587628866,
+     "first": "2026-10-24T04:24:48.356Z",
+     "last": "2026-10-24T09:07:48.376Z",
+     "sessions": 2,
+     "longestMin": 0
+    }
+   ],
+   "hourly": [
+    {
+     "hour": "2026-10-24T03Z",
+     "reads": 6,
+     "distinct": 2,
+     "meanRivals": 2,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T04Z",
+     "reads": 56,
+     "distinct": 4,
+     "meanRivals": 1.8571428571428572,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T05Z",
+     "reads": 60,
+     "distinct": 3,
+     "meanRivals": 2.5833333333333335,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T06Z",
+     "reads": 60,
+     "distinct": 2,
+     "meanRivals": 1.95,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T07Z",
+     "reads": 60,
+     "distinct": 2,
+     "meanRivals": 1.9333333333333333,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T08Z",
+     "reads": 60,
+     "distinct": 2,
+     "meanRivals": 1.95,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T09Z",
+     "reads": 60,
+     "distinct": 3,
+     "meanRivals": 1.9666666666666666,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T10Z",
+     "reads": 60,
+     "distinct": 2,
+     "meanRivals": 2,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T11Z",
+     "reads": 60,
+     "distinct": 2,
+     "meanRivals": 1.95,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T12Z",
+     "reads": 60,
+     "distinct": 2,
+     "meanRivals": 2,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T13Z",
+     "reads": 60,
+     "distinct": 2,
+     "meanRivals": 1.9166666666666667,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T14Z",
+     "reads": 60,
+     "distinct": 2,
+     "meanRivals": 1.85,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T15Z",
+     "reads": 60,
+     "distinct": 2,
+     "meanRivals": 2,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T16Z",
+     "reads": 54,
+     "distinct": 2,
+     "meanRivals": 1.9259259259259258,
+     "meanOurs": 0
+    }
+   ],
+   "coArrivals": []
+  },
+  {
+   "site": "Lava Maze runite",
+   "reads": 776,
+   "readsWithRivals": 0,
+   "rivals": {
+    "min": 0,
+    "mean": 0,
+    "max": 0
+   },
+   "ours": {
+    "min": 0,
+    "mean": 0,
+    "max": 0
+   },
+   "byRival": [],
+   "hourly": [
+    {
+     "hour": "2026-10-24T03Z",
+     "reads": 6,
+     "distinct": 0,
+     "meanRivals": 0,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T04Z",
+     "reads": 56,
+     "distinct": 0,
+     "meanRivals": 0,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T05Z",
+     "reads": 60,
+     "distinct": 0,
+     "meanRivals": 0,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T06Z",
+     "reads": 60,
+     "distinct": 0,
+     "meanRivals": 0,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T07Z",
+     "reads": 60,
+     "distinct": 0,
+     "meanRivals": 0,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T08Z",
+     "reads": 60,
+     "distinct": 0,
+     "meanRivals": 0,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T09Z",
+     "reads": 60,
+     "distinct": 0,
+     "meanRivals": 0,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T10Z",
+     "reads": 60,
+     "distinct": 0,
+     "meanRivals": 0,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T11Z",
+     "reads": 60,
+     "distinct": 0,
+     "meanRivals": 0,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T12Z",
+     "reads": 60,
+     "distinct": 0,
+     "meanRivals": 0,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T13Z",
+     "reads": 60,
+     "distinct": 0,
+     "meanRivals": 0,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T14Z",
+     "reads": 60,
+     "distinct": 0,
+     "meanRivals": 0,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T15Z",
+     "reads": 60,
+     "distinct": 0,
+     "meanRivals": 0,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T16Z",
+     "reads": 54,
+     "distinct": 0,
+     "meanRivals": 0,
+     "meanOurs": 0
+    }
+   ],
+   "coArrivals": []
+  },
+  {
+   "site": "Wilderness surface runite, 24-tile ring",
+   "reads": 776,
+   "readsWithRivals": 774,
+   "rivals": {
+    "min": 0,
+    "mean": 2,
+    "max": 4
+   },
+   "ours": {
+    "min": 0,
+    "mean": 0,
+    "max": 0
+   },
+   "byRival": [
+    {
+     "name": "Xulvexi",
+     "reads": 735,
+     "coverage": 0.9471649484536082,
+     "first": "2026-10-24T03:54:48.347Z",
+     "last": "2026-10-24T16:53:48.360Z",
+     "sessions": 1,
+     "longestMin": 779.0002166666667
+    },
+    {
+     "name": "Bramble",
+     "reads": 716,
+     "coverage": 0.9226804123711341,
+     "first": "2026-10-24T04:49:48.375Z",
+     "last": "2026-10-24T16:53:48.360Z",
+     "sessions": 1,
+     "longestMin": 723.99975
+    },
+    {
+     "name": "Jenkins13",
+     "reads": 95,
+     "coverage": 0.12242268041237113,
+     "first": "2026-10-24T03:54:48.347Z",
+     "last": "2026-10-24T05:47:48.376Z",
+     "sessions": 2,
+     "longestMin": 97.00035
+    },
+    {
+     "name": "Goondelf",
+     "reads": 3,
+     "coverage": 0.003865979381443299,
+     "first": "2026-10-24T04:24:48.356Z",
+     "last": "2026-10-24T09:07:48.376Z",
+     "sessions": 3,
+     "longestMin": 0
+    },
+    {
+     "name": "Achilles",
+     "reads": 1,
+     "coverage": 0.001288659793814433,
+     "first": "2026-10-24T08:05:48.353Z",
+     "last": "2026-10-24T08:05:48.353Z",
+     "sessions": 1,
+     "longestMin": 0
+    },
+    {
+     "name": "Bf0os4",
+     "reads": 1,
+     "coverage": 0.001288659793814433,
+     "first": "2026-10-24T16:44:48.377Z",
+     "last": "2026-10-24T16:44:48.377Z",
+     "sessions": 1,
+     "longestMin": 0
+    },
+    {
+     "name": "Vertigo",
+     "reads": 1,
+     "coverage": 0.001288659793814433,
+     "first": "2026-10-24T04:58:48.377Z",
+     "last": "2026-10-24T04:58:48.377Z",
+     "sessions": 1,
+     "longestMin": 0
+    }
+   ],
+   "hourly": [
+    {
+     "hour": "2026-10-24T03Z",
+     "reads": 6,
+     "distinct": 2,
+     "meanRivals": 2,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T04Z",
+     "reads": 56,
+     "distinct": 5,
+     "meanRivals": 1.8928571428571428,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T05Z",
+     "reads": 60,
+     "distinct": 3,
+     "meanRivals": 2.6,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T06Z",
+     "reads": 60,
+     "distinct": 2,
+     "meanRivals": 1.95,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T07Z",
+     "reads": 60,
+     "distinct": 2,
+     "meanRivals": 1.9333333333333333,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T08Z",
+     "reads": 60,
+     "distinct": 4,
+     "meanRivals": 1.9833333333333334,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T09Z",
+     "reads": 60,
+     "distinct": 3,
+     "meanRivals": 1.9666666666666666,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T10Z",
+     "reads": 60,
+     "distinct": 2,
+     "meanRivals": 2,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T11Z",
+     "reads": 60,
+     "distinct": 2,
+     "meanRivals": 1.95,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T12Z",
+     "reads": 60,
+     "distinct": 2,
+     "meanRivals": 2,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T13Z",
+     "reads": 60,
+     "distinct": 2,
+     "meanRivals": 1.9166666666666667,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T14Z",
+     "reads": 60,
+     "distinct": 2,
+     "meanRivals": 1.85,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T15Z",
+     "reads": 60,
+     "distinct": 2,
+     "meanRivals": 2,
+     "meanOurs": 0
+    },
+    {
+     "hour": "2026-10-24T16Z",
+     "reads": 54,
+     "distinct": 3,
+     "meanRivals": 1.9444444444444444,
+     "meanOurs": 0
+    }
+   ],
+   "coArrivals": [
+    {
+     "at": "2026-10-24T08:05:48.353Z",
+     "names": [
+      "Achilles",
+      "Goondelf"
+     ]
+    }
+   ]
+  }
+ ],
+ "families": {
+  "tygem": [
+   "Tygem020",
+   "Tygem050"
+  ]
+ }
+}
