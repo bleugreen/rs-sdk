@@ -7,7 +7,8 @@ import type { LoginResult, LogoutResult, Session } from '../lib/session';
 import { TickLog } from '../lib/ticks';
 import { RelogBudget } from './relog-budget';
 import { Observation, resolveResume } from './resume';
-import { loginReplyCode, scoredLoginStep, scoredLogoutStep, SCORED_RELOG, WORLD_FULL, type ScoredRelogDeps } from './scored-relog';
+import { loginReplyCode } from '../lib/session';
+import { scoredLoginStep, scoredLogoutStep, SCORED_RELOG, WORLD_FULL, type ScoredRelogDeps } from './scored-relog';
 import { runSteps, type Step, type StepContext } from './step';
 
 const loginResult = (): LoginResult => ({ wallMs: 900, attempts: 1, via: 'page', tickBase: 0, run: {} as LoginResult['run'], retaliate: {} as LoginResult['retaliate'] });
