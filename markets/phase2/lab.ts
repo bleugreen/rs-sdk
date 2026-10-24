@@ -11,7 +11,8 @@
  *    goes to the food fallback.
  * 3. `--exchange=1` (default) checks both Exchange errands against this engine first: a bidder bids for iron ore, a
  *    seller sells banked ore into it with a floor above the bid (refused) and at the floor below it (capped fill);
- *    then a shark seller offers sharks and the buyer runs the shark purchase.
+ *    then a shark seller offers sharks and the buyer runs the shark purchase; then a third account collects a buy
+ *    with a full pack (nothing comes) and runs the purchase, which must make room and collect it.
  * 4. Writes the plan and runs `markets/phase2/run.ts --placeholder-data` on it, stopped by SIGINT after `--sigint`
  *    minutes (the clean-stop path), then prints `markets/phase2/report.ts`.
  *
@@ -20,7 +21,7 @@
  * --coins=500`, a first purchase short on coins); `--legacy-sharks=1` writes each staged knight's role-state as the runner before
  * SharkState left it (a bare purchase record, `banked` = `--sharks`), so its buy-sharks stage starts done;
  * `--buy=1` makes the plan buy sharks (`--per-account`, `--minimum`, `--rebuy-min`, `--ceiling`) and passes
- * `--run-ended`; `--ramp=0` turns the ramp off; `--restart=M` stops the runner after M minutes and starts it again. The Exchange check's maker leaves its shark ask open for the rebuy.
+ * `--run-ended`; `--ramp=0` turns the ramp off; `--park=1` sets `foodFallback: 'park'`; `--restart=M` stops the runner after M minutes and starts it again. The Exchange check's maker leaves its shark ask open for the rebuy.
  *
  * `--fresh=1` stages nobody: every account starts on Tutorial Island and the runner's own stages do everything (the
  * Hitpoints-site lab). `--min-free-mb=N` (default 1200) stops the run with SIGINT when the host's available memory
@@ -68,6 +69,7 @@ const coins = count('coins', 0);
 const legacySharks = arg('legacy-sharks', '0') === '1';
 const buy = arg('buy', '0') === '1';
 const rampOn = arg('ramp', '1') === '1';
+const park = arg('park', '0') === '1';
 
 const server = loadBotEnv(labBot).SERVER ?? '';
 if (!/^(localhost|127\.)/.test(server)) {
@@ -162,6 +164,37 @@ async function exchangeCheck(): Promise<void> {
         const bought = await buySharks(x, { perAccount: 120, ceiling: 701, runEnded: true, fillMinutes: 1 }, book);
         log('CHECK shark purchase', { result: bought.record.result, filled: bought.record.filled, banked: bought.banked });
     });
+    await fullPackCheck(book);
+}
+
+/**
+ * run-b3 a07 (docs/markets/phase2.md 'Shark resupply'): a collect with no free slot takes nothing and reports success.
+ * A raw buy and collect with a full pack shows it; then the purchase errand on the same account must make room,
+ * collect what was left and buy the rest.
+ */
+async function fullPackCheck(book: DemoMarket): Promise<void> {
+    const name = `${prefix}x3`;
+    ensureBot(name);
+    await withSession(name, async (sdk, bot) => {
+        await mustTele(sdk, VARROCK_WEST_BANK.x, VARROCK_WEST_BANK.z);
+        await cheat(sdk, 'give coins 50000');
+        await waitUntil(sdk, s => s.inventory.some(i => /^coins$/i.test(i.name)), { maxTicks: 10 });
+        await cheat(sdk, `give bronze_dagger ${28 - sdk.getState()!.inventory.length}`);
+        await waitUntil(sdk, s => s.inventory.length >= 28, { maxTicks: 10 });
+        log('full pack', { slots: sdk.getState()!.inventory.length });
+        const g = await bot.openGE();
+        if (!g.success) throw new Error(`openGE: ${g.message}`);
+        const placed = await bot.placeGEOffer({ item: SHARK_ID, side: 'buy', quantity: 5, price: 701 });
+        if (!placed.offer) throw new Error(`place: ${placed.message}`);
+        await waitTicks(sdk, 3);
+        const col = await bot.collectGEOffer(placed.offer.id, true);
+        const left = sdk.getGEState()?.offers.find(o => o.id === placed.offer!.id);
+        log('CHECK raw collect with a full pack', { success: col.success, items: col.items, coins: col.coins, message: col.message, offerItemsAfter: left?.items ?? null });
+        await bot.closeInterface().catch(() => undefined);
+        const x = { sdk, bot, signal: new AbortController().signal, event: (m: string, d?: Record<string, unknown>) => log(`errand: ${m}`, d ?? {}), reportBank: () => undefined };
+        const bought = await buySharks(x, { perAccount: 20, ceiling: 701, runEnded: true, fillMinutes: 1 }, book);
+        log('CHECK shark purchase after a full-pack collect', { result: bought.record.result, leftovers: bought.record.leftovers, quantity: bought.record.quantity, filled: bought.record.filled, collect: bought.record.collect, after: bought.record.after, banked: bought.banked });
+    });
 }
 
 const names = (tag: string, n: number) => Array.from({ length: n }, (_, i) => `${prefix}${tag}${String(i + 1).padStart(2, '0')}`);
@@ -193,7 +226,8 @@ const plan = {
     ledger: { everyTicks: 50, bookMinutes: 5 },
     ...(buy
         ? { sharks: { source: 'buy', perAccount: count('per-account', 20), minimum: count('minimum', 5), rebuyMinSharks: count('rebuy-min', 5), ceiling: count('ceiling', 650), fillMinutes: 1 }, foodFallbackMix: { guards: 1 } }
-        : {})
+        : {}),
+    ...(park ? { foodFallback: 'park' } : {})
 };
 const planPath = join(out, 'plan.json');
 writeFileSync(planPath, JSON.stringify(plan, null, 2));
