@@ -7,10 +7,11 @@
 //
 // What the content does that the module is built around (server/content/scripts; the platform's
 // NPCs under areas/area_fishing_platform, the quest under quests/quest_seaslug):
-// - The fishing platform's two doors sit on bridge-flagged tiles. Each is clicked as a loc by tile
+// - The fishing platform's doors sit on bridge-flagged tiles. Each is clicked as a loc by tile
 //   and id (`openBridgedDoor`), and its state is read from the published locs: opening loc_1533 at
 //   (2765,3277) puts loc_1534 one tile east, and loc_1530 at (2764,3285) becomes loc_1531 one tile
-//   east (m, lab, both clients list them since rs/54's SceneLite.mapLevel). A click on the closed
+//   east (m, lab, both clients list them since rs/54's SceneLite.mapLevel). The store room's door
+//   is the glass room's twin (loc_1533 at 2765,3287, the same shape and angle in the map). A click on the closed
 //   id at the closed tile can never shut an open door: the closed loc is gone from that tile and the
 //   server drops the op (server/engine OpLocHandler: no such loc).
 // - The journal (seaslug_journal.rs2) has no marker at 2 or 6, and 4-5 and 8-9 share their text,
@@ -70,6 +71,12 @@ export const KENT_AT = { x: 2793, z: 3321 } as const;
 /** The ground spawns (maps/m43_51.jm2): the glass inside the room behind loc_1533, the damp sticks by the ladder. */
 export const GLASS_AT = { x: 2765, z: 3278 } as const;
 export const STICKS_AT = { x: 2784, z: 3289 } as const;
+/**
+ * The glass's second spawn (maps/m43_51.jm2 OBJ `0 13 25`), two tiles north of the store room's
+ * door. Unreachable with that door shut (m, lab: 45 ticks of "I can't reach that!"), so it is taken
+ * through the door, and only when the glass room's has been taken.
+ */
+export const GLASS_AT_2 = { x: 2765, z: 3289 } as const;
 /** North of the crane's footprint (z 3286-3289), where its op works (quest_seaslug.rs2:97). */
 export const CRANE_STAND: Area = { x: 2768, z: 3290, level: 1, tol: 0 };
 
@@ -84,11 +91,13 @@ export const PLATFORM: Box = { x0: 2755, z0: 3265, x1: 2800, z1: 3300 };
 export const PLATFORM_UP: Box = { ...PLATFORM, level: 1 };
 export const ISLAND: Box = { x0: 2785, z0: 3310, x1: 2810, z1: 3330 };
 /**
- * The two rooms behind the bridged doors, west of each door's wall: the glass room (Bailey's, the
- * glass at 2765,3278) and the room in front of Kennith's wall (2764,3287). Steps that start inside
- * one leave through its door, which may have shut (500 ticks) since it was opened.
+ * The rooms behind the bridged doors, west of each door's wall: the glass room (Bailey's, the glass
+ * at 2765,3278), the store room under Kennith's (the second glass at 2765,3289; its south wall at
+ * z 3286) and the room in front of Kennith's wall (2764,3287). Steps that start inside one leave
+ * through its door, which may have shut (500 ticks) since it was opened.
  */
 export const GLASS_ROOM: Box = { x0: 2758, z0: 3274, x1: 2765, z1: 3280 };
+export const STORE_ROOM: Box = { x0: 2758, z0: 3286, x1: 2765, z1: 3290 };
 export const KENNITH_ROOM: Box = { x0: 2758, z0: 3285, x1: 2764, z1: 3287, level: 1 };
 
 export const inWitchaven = (s: BotWorldState) => inBox(s, WITCHAVEN);
@@ -147,7 +156,23 @@ export const DOORS = {
         closed: { x: 2764, z: 3285, id: configId('loc', 'loc_1530') },
         open: { x: 2765, z: 3285, id: configId('loc', 'loc_1531') },
     },
+    store: {
+        label: 'the store room door', level: 0,
+        closed: { x: 2765, z: 3287, id: configId('loc', 'loc_1533') },
+        open: { x: 2766, z: 3287, id: configId('loc', 'loc_1534') },
+    },
 } as const satisfies Record<string, BridgedDoor>;
+
+/** A ground spawn, and the bridged door opened to reach it (none in the open). */
+export interface Spawn {
+    at: { x: number; z: number };
+    door?: BridgedDoor;
+}
+
+/** E's spawns in the order taken: the glass room's, then the store room's when another player has taken the first. */
+export const GLASS_SPAWNS: readonly Spawn[] = [{ at: GLASS_AT, door: DOORS.glass }, { at: GLASS_AT_2, door: DOORS.store }];
+/** F's single spawn, by the ladder in the open. */
+export const STICKS_SPAWNS: readonly Spawn[] = [{ at: STICKS_AT }];
 
 /** The segment letters in order, for the free-slot need. */
 export const LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q'] as const;
@@ -241,6 +266,16 @@ export const LANDED = {
 export const RUB_TRIES = 8;
 /** Ticks to wait for a door loc to be published after a jump before clicking it unseen (LAB.md: the browser rebuilt the region in 46 at load). */
 export const DOOR_SCENE_TICKS = 50;
+/**
+ * A picked-up ground spawn returns after its obj's respawnrate. Neither the broken glass nor the
+ * damp sticks sets one (all.obj), so both take the engine's default of 100 ticks (ObjType.ts,
+ * applied on pickup in ObjOps.ts).
+ */
+export const GROUND_RESPAWN_TICKS = 100;
+/** How long a pickup waits for a spawn another player has taken: the whole respawn, plus the 2-tick poll and a late-published state. */
+export const RESPAWN_WAIT_TICKS = GROUND_RESPAWN_TICKS + 20;
+/** Pickups lost to another player under the click (seen, then gone before it landed) before the segment gives up. */
+export const LOST_PICKUPS = 2;
 
 // ------------------------------------------------------------------ resume evidence
 
@@ -456,23 +491,66 @@ export async function openBridgedDoor(ctx: Ctx, seg: Letter, d: BridgedDoor): Pr
 async function leaveRoom(ctx: Ctx, seg: Letter): Promise<void> {
     const s = sdkOf(ctx).getState()!;
     if (inBox(s, GLASS_ROOM)) await openBridgedDoor(ctx, seg, DOORS.glass);
+    else if (inBox(s, STORE_ROOM)) await openBridgedDoor(ctx, seg, DOORS.store);
     else if (inBox(s, KENNITH_ROOM)) await openBridgedDoor(ctx, seg, DOORS.kennith);
 }
 
-/** Pick up the ground item `item` at its spawn tile by tile and id, waiting for a taken one to respawn. */
-async function pickupAt(ctx: Ctx, seg: Letter, what: string, item: number, at: { x: number; z: number }): Promise<void> {
+/** How a pickup got its item: on the first spawn at once, on a later spawn at once, or after waiting for a respawn. */
+export type PickupPath = 'spawn' | 'second spawn' | 'respawn wait';
+
+const holding = (list: BotWorldState['groundItems'], item: number, at: Spawn['at']) => list.some(g => g.id === item && g.x === at.x && g.z === at.z);
+
+/** The index of the first of `spawns` holding `item` (-1: none), from the published ground items and, unless they show the first spawn's, a 25-tile scan. */
+async function spawnHolding(sdk: Sdk, item: number, spawns: readonly Spawn[]): Promise<number> {
+    const lists = [sdk.getState()!.groundItems];
+    if (!holding(lists[0]!, item, spawns[0]!.at)) lists.push(await sdk.scanGroundItems(25));
+    return spawns.findIndex(sp => lists.some(l => holding(l, item, sp.at)));
+}
+
+/**
+ * Pick up `item` by tile and id from the first of `spawns` that holds it, through that spawn's door.
+ * With none holding it (another player took it), wait at the first spawn's door for a respawn, on
+ * whichever spawn it comes, up to RESPAWN_WAIT_TICKS; the respawn is GROUND_RESPAWN_TICKS after the
+ * other player's pickup, so a longer wait means it was taken again. A pickup lost under the click
+ * (the item gone from its tile when the click gave up) goes back to that wait, up to LOST_PICKUPS times.
+ */
+async function pickupAt(ctx: Ctx, seg: Letter, what: string, item: number, spawns: readonly Spawn[]): Promise<void> {
     const sdk = sdkOf(ctx);
     if (holds(sdk.getState()!, item)) return;
-    const here = (list: BotWorldState['groundItems']) => list.some(g => g.id === item && g.x === at.x && g.z === at.z);
+    const where = spawns.map(sp => `(${sp.at.x},${sp.at.z})`).join(' or ');
+    const opened = new Set<BridgedDoor>();
+    const open = async (d: BridgedDoor | undefined) => {
+        if (!d || opened.has(d)) return;
+        await openBridgedDoor(ctx, seg, d);
+        opened.add(d);
+    };
     const t0 = currentTick(sdk);
-    for (let i = 0; !here(sdk.getState()!.groundItems) && !here(await sdk.scanGroundItems(25)); i++) {
-        if (currentTick(sdk) - t0 > 60) fail(seg, `no ${what} on its spawn (${at.x},${at.z}) within 60 ticks`, sdk);
-        await waitTicks(sdk, 2);
+    let waited = 0;
+    for (let lost = 0; ; lost++) {
+        let i = await spawnHolding(sdk, item, spawns);
+        if (i < 0 && spawns[0]!.door && !opened.has(spawns[0]!.door)) {
+            // Look again from the first spawn's door, where a respawn is also waited for: after a jump the scene may not have shown it from afar.
+            await open(spawns[0]!.door);
+            i = await spawnHolding(sdk, item, spawns);
+        }
+        const w0 = currentTick(sdk);
+        while (i < 0) {
+            if (currentTick(sdk) - w0 > RESPAWN_WAIT_TICKS) fail(seg, `no ${what} on its spawn ${where} within ${RESPAWN_WAIT_TICKS} ticks`, sdk);
+            await waitTicks(sdk, 2);
+            i = await spawnHolding(sdk, item, spawns);
+        }
+        waited += currentTick(sdk) - w0;
+        const sp = spawns[i]!;
+        await open(sp.door);
+        const before = invCount(sdk, item);
+        const r = await act(sdk, () => sdk.sendPickup(sp.at.x, sp.at.z, item), s => invCount(s, item) > before, { resendEvery: 3, maxTicks: 40, interrupts: interrupts() });
+        if (r.ok) {
+            const path: PickupPath = waited > 0 ? 'respawn wait' : i === 0 ? 'spawn' : 'second spawn';
+            note(ctx, seg, { pickup: what, path, at: [sp.at.x, sp.at.z], waited, clickToHeld: r.ticks, resends: r.resends, ticks: currentTick(sdk) - t0, ...(lost ? { lost } : {}) });
+            return;
+        }
+        if (lost >= LOST_PICKUPS || (await spawnHolding(sdk, item, [sp])) === 0) fail(seg, `${what} was not picked up (${r.reason})`, sdk);
     }
-    const before = invCount(sdk, item);
-    const r = await act(sdk, () => sdk.sendPickup(at.x, at.z, item), s => invCount(s, item) > before, { resendEvery: 3, maxTicks: 40, interrupts: interrupts() });
-    if (!r.ok) fail(seg, `${what} was not picked up (${r.reason})`, sdk);
-    note(ctx, seg, { pickup: what, waited: currentTick(sdk) - t0 - r.ticks, clickToHeld: r.ticks, resends: r.resends });
 }
 
 /** Climb the platform ladder to `level` (up from the ground floor, down from the upper floor). */
@@ -533,12 +611,12 @@ async function holgartSail(ctx: Ctx, opts: Options | undefined): Promise<void> {
     await talk(ctx, 'D', opts, { who: 'Holgart (the paste, the crossing)', npc: /^holgart$/i, near: HOLGART_SHORE_AT, choices: CHOICES.sail, shape: SHAPES.holgartSail, idle: 3, until: onPlatformGround });
 }
 
-/** E: through the glass room door and take the broken glass. */
+/**
+ * E: through the glass room door and take the broken glass; when another player has taken it,
+ * through the store room door for the second, or else wait at the glass room for the respawn.
+ */
 async function glass(ctx: Ctx): Promise<void> {
-    const sdk = sdkOf(ctx);
-    if (holds(sdk.getState()!, ITEM.glass)) return;
-    await openBridgedDoor(ctx, 'E', DOORS.glass);
-    await pickupAt(ctx, 'E', 'the broken glass', ITEM.glass, GLASS_AT);
+    await pickupAt(ctx, 'E', 'the broken glass', ITEM.glass, GLASS_SPAWNS);
 }
 
 /** F: take the damp sticks and dry them with the glass (quest_seaslug.rs2:35-40, one p_delay). */
@@ -547,7 +625,7 @@ async function sticks(ctx: Ctx): Promise<void> {
     if (holds(sdk.getState()!, ITEM.dry)) return;
     if (!holds(sdk.getState()!, ITEM.damp)) {
         await leaveRoom(ctx, 'F');
-        await pickupAt(ctx, 'F', 'the damp sticks', ITEM.damp, STICKS_AT);
+        await pickupAt(ctx, 'F', 'the damp sticks', ITEM.damp, STICKS_SPAWNS);
     }
     const r = await useOn(sdk, ITEM.glass, { item: ITEM.damp }, s => holds(s, ITEM.dry), { maxTicks: 10 });
     if (!r.ok) fail('F', `the glass did not dry the sticks (${r.reason})`, sdk);

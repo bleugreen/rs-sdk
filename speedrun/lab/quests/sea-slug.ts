@@ -93,7 +93,7 @@ const REWARD_XP = 71750 * 2.5;
 let xp0 = 0;
 
 /** Shut `d` if it stands open (lab staging before a full chain), from beside it, then come back. */
-async function shut(session: Session, d: BridgedDoor, back: QuestFixture['tile']): Promise<void> {
+export async function shut(session: Session, d: BridgedDoor, back: QuestFixture['tile']): Promise<void> {
     const sdk = session.sdk;
     await mustTele(sdk, d.open.x, d.open.z, d.level);
     await waitUntil(sdk, s => doorState(s, d) !== 'unseen', { maxTicks: 60 });
