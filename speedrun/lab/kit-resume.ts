@@ -35,7 +35,7 @@ import { TickLog } from '../lib/ticks';
 import { waitTicks, waitUntil } from '../lib/wait';
 import { opIndex } from '../lib/world';
 import * as monkeyMadness from '../quests/monkey-madness';
-import { buildChain, KIT_PARTNER_ROWS, KIT_SEGMENTS, muleCueDir, PLACEMENT, type RunConfig } from '../runner/chain';
+import { buildChain, H4M_ROW, KIT_PARTNER_ROWS, KIT_SEGMENTS, muleCueDir, PLACEMENT, type RunConfig } from '../runner/chain';
 import { RunCues } from '../runner/cue-keeper';
 import { deliveryOwnerFor, type DeliveryOwner } from '../runner/delivery-owner';
 import { AttemptRecord } from '../runner/attempt-record';
@@ -80,6 +80,7 @@ const launcherPath = join(root, 'launcher-config.json');
 writeFileSync(launcherPath, JSON.stringify({ accounts: [{ account: muleName, role: 'mule', cueDir: options.cueDir, options }] }, null, 2));
 const partners: Record<string, string> = Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS].map(id => [id, `lab_${id.toLowerCase()}`]));
 partners.H12 = muleName;
+partners[H4M_ROW] = 'lab_h4m';
 const h45Dirs = join(root, 'h45');
 const cfg: RunConfig = {
     partners, firemakingTiles: '3240,3296;3239,3296;3238,3296', rings: { giver: 'lab_ring' }, bones: { giver: 'lab_bone' },
