@@ -32,6 +32,9 @@ export interface LoadLine {
     lagP50Ms: number;
     lagP99Ms: number;
     lagMaxMs: number;
+    /** Full collections the runner forced since the last read (`--gc-seconds`), and the longest. */
+    gcs?: number;
+    gcMaxMs?: number;
 }
 
 /** Lag samples kept between reads; a read empties them. Past this the max still counts. */
@@ -45,16 +48,38 @@ export class LoadMeter {
     private cpu: { user: number; system: number };
     private wall: number;
     private readonly timer: ReturnType<typeof setInterval>;
+    private readonly gcTimer: ReturnType<typeof setInterval> | null = null;
+    private gcs = 0;
+    private gcMax = 0;
 
     constructor(
         private readonly everyMs = 100,
         private readonly now: () => number = () => performance.now(),
-        private readonly cpuUsage: () => { user: number; system: number } = () => process.cpuUsage()
+        private readonly cpuUsage: () => { user: number; system: number } = () => process.cpuUsage(),
+        /** Force a full collection this often (0: never), see `collect`. */
+        private readonly gcEveryMs = 0,
+        private readonly gc: () => void = () => Bun.gc(true)
     ) {
         this.last = this.wall = now();
         this.cpu = cpuUsage();
         this.timer = setInterval(() => this.tick(), everyMs);
         this.timer.unref?.();
+        if (gcEveryMs > 0) {
+            this.gcTimer = setInterval(() => this.collect(), gcEveryMs);
+            this.gcTimer.unref?.();
+        }
+    }
+
+    /**
+     * One forced full collection. Each account's published state is serialised and parsed every tick (thousands of
+     * objects with the bank open), and JSC let that garbage reach ~1.5 GB of heap between its own collections in the
+     * lab; a full collection over the ~300k live objects takes ~30 ms (docs/markets/phase2.md 'Memory').
+     */
+    collect(): void {
+        const t = this.now();
+        this.gc();
+        this.gcs++;
+        this.gcMax = Math.max(this.gcMax, this.now() - t);
     }
 
     /** @internal The timer's callback: one drift sample. */
@@ -77,9 +102,11 @@ export class LoadMeter {
         const cpuPct = wallUs > 0 ? Math.round(((c.user - this.cpu.user + c.system - this.cpu.system) / wallUs) * 1000) / 10 : 0;
         const sorted = [...this.lags].sort((a, b) => a - b);
         const at = (q: number) => (sorted.length ? Math.round(sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))]!) : 0);
-        const line = { cpuPct, lagP50Ms: at(0.5), lagP99Ms: at(0.99), lagMaxMs: Math.round(this.lagMax) };
+        const line: LoadLine = { cpuPct, lagP50Ms: at(0.5), lagP99Ms: at(0.99), lagMaxMs: Math.round(this.lagMax), ...(this.gcEveryMs > 0 ? { gcs: this.gcs, gcMaxMs: Math.round(this.gcMax) } : {}) };
         this.lags = [];
         this.lagMax = 0;
+        this.gcs = 0;
+        this.gcMax = 0;
         this.cpu = c;
         this.wall = t;
         return line;
@@ -87,6 +114,7 @@ export class LoadMeter {
 
     stop(): void {
         clearInterval(this.timer);
+        if (this.gcTimer) clearInterval(this.gcTimer);
     }
 }
 

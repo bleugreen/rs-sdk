@@ -41,6 +41,28 @@ describe('LoadMeter', () => {
         expect(m.read()).toEqual({ cpuPct: 0, lagP50Ms: 0, lagP99Ms: 0, lagMaxMs: 0 });
     });
 
+    test('forced collections are counted and timed per window', () => {
+        const clock = { t: 0 };
+        const m = new LoadMeter(
+            100,
+            () => clock.t,
+            () => ({ user: 0, system: 0 }),
+            30_000,
+            () => (clock.t += 25)
+        );
+        m.stop();
+        m.collect();
+        clock.t += 1000;
+        m.collect();
+        expect(m.read()).toMatchObject({ gcs: 2, gcMaxMs: 25 });
+        expect(m.read()).toMatchObject({ gcs: 0, gcMaxMs: 0 });
+    });
+
+    test('no collection fields without forced collections', () => {
+        const { m } = meter();
+        expect(m.read()).not.toHaveProperty('gcs');
+    });
+
     test('samples stay bounded when nothing reads them, and the max still counts', () => {
         const { m, clock } = meter();
         for (let i = 0; i < 20_000; i++) {

@@ -31,6 +31,7 @@
  * memory every minute into memory.jsonl in --out and writes heap snapshots at the minutes in PHASE2_HEAP_SNAPSHOTS.
  * `--bank-at=N` sets the knights' `bankAt` (a bank trip every N coins carried) and `--shark-ask=N` the sharks the
  * Exchange check's maker offers (default 300), so a run can compress hours of banking, buying and sailing.
+ * `--smol=1` runs the runner under `bun --smol`; `--gc-seconds=N` passes the runner's `--gc-seconds`.
  *
  * `--fresh=1` stages nobody: every account starts on Tutorial Island and the runner's own stages do everything (the
  * Hitpoints-site lab). `--min-free-mb=N` (default 1200) stops the run with SIGINT when the host's available memory
@@ -285,13 +286,29 @@ const plan = {
 const planPath = join(out, 'plan.json');
 writeFileSync(planPath, JSON.stringify(plan, null, 2));
 const heap = arg('heap', '0') === '1';
+const smol = arg('smol', '0') === '1';
+const gcSeconds = arg('gc-seconds', '');
 const spawnRunner = () =>
-    Bun.spawn(['bun', ...(heap ? ['--preload', './markets/phase2/heap-probe.ts'] : []), 'markets/phase2/run.ts', planPath, '--out', out, '--placeholder-data', ...(buy ? ['--run-ended'] : [])], {
+    Bun.spawn(
+        [
+            'bun',
+            ...(smol ? ['--smol'] : []),
+            ...(heap ? ['--preload', './markets/phase2/heap-probe.ts'] : []),
+            'markets/phase2/run.ts',
+            planPath,
+            '--out',
+            out,
+            '--placeholder-data',
+            ...(buy ? ['--run-ended'] : []),
+            ...(gcSeconds !== '' ? ['--gc-seconds', gcSeconds] : [])
+        ],
+        {
         cwd: ROOT,
         stdout: 'inherit',
         stderr: 'inherit',
-        env: heap ? { ...process.env, PHASE2_HEAP_DIR: out } : process.env
-    });
+            env: heap ? { ...process.env, PHASE2_HEAP_DIR: out } : process.env
+        }
+    );
 let child = spawnRunner();
 // --restart=M: stop the runner after M minutes and start it again on the same --out (its role-state), as markets does
 const restart = count('restart', 0);

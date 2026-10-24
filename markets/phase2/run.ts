@@ -205,6 +205,8 @@ export interface RunOptions {
     runEnded: boolean;
     placeholder: boolean;
     stall: StallPolicy;
+    /** Force a full collection this often, 0 never (memory.ts LoadMeter.collect). */
+    gcSeconds: number;
 }
 
 export class Runner {
@@ -230,7 +232,7 @@ export class Runner {
     private readonly hpSites: HpSites;
     /** One npc per bot at the Hitpoints sites, across every account of this process. */
     private readonly claims = new TargetClaims();
-    private readonly load = new LoadMeter();
+    private readonly load: LoadMeter;
 
     constructor(
         readonly plan: Plan,
@@ -245,6 +247,7 @@ export class Runner {
         this.valuer = { cost: s => costOf(debugNameOf(s.id)), quote: id => this.quotes.get(id) };
         this.scrub = nameScrubber(workers.map(w => w.plan.account));
         this.hpSites = new HpSites(plan.hpSites);
+        this.load = new LoadMeter(100, undefined, undefined, o.gcSeconds * 1000);
         mkdirSync(o.out, { recursive: true });
     }
 
@@ -844,7 +847,7 @@ async function main(argv: string[]): Promise<number> {
     // writerExclusion exits 2 without the names file, unless --placeholder-data
     const exclusion = writerExclusion(argv);
     const a = parseArgs(argv.filter(x => !BOOLEAN_FLAGS.includes(x)));
-    const unknown = Object.keys(a.flags).filter(k => !['out', 'minutes', 'stall-minutes', 'stall-retries'].includes(k));
+    const unknown = Object.keys(a.flags).filter(k => !['out', 'minutes', 'stall-minutes', 'stall-retries', 'gc-seconds'].includes(k));
     if (unknown.length) fail(`unknown option ${unknown.map(k => `--${k}`).join(' ')}`);
     if (a.positional.length !== 1) fail('one plan file is required');
     let plan: Plan;
@@ -870,12 +873,13 @@ async function main(argv: string[]): Promise<number> {
     if (missing.length) fail(`no bots/<account>/bot.env for ${missing.join(', ')}`);
     const hosts = new Set(envs.map(e => e.SERVER));
     if (hosts.size !== 1 || !envs[0]!.SERVER) fail('every account must have the same SERVER in its bot.env: the plan is for one address on one world');
-    const [minutes, stallMinutes, stallRetries] = (() => {
+    const [minutes, stallMinutes, stallRetries, gcSeconds] = (() => {
         try {
             return [
                 numberFlag(a, 'minutes', 0, { min: 0 }),
                 numberFlag(a, 'stall-minutes', DEFAULT_STALL.ms / 60_000, { min: 0 }),
-                numberFlag(a, 'stall-retries', DEFAULT_STALL.retries, { min: 0, integer: true })
+                numberFlag(a, 'stall-retries', DEFAULT_STALL.retries, { min: 0, integer: true }),
+                numberFlag(a, 'gc-seconds', 0, { min: 0 })
             ];
         } catch (e) {
             fail(e instanceof Error ? e.message : String(e));
@@ -888,7 +892,7 @@ async function main(argv: string[]): Promise<number> {
     await initPathfindingAndRelease();
     await shareLocIndex();
     const workers = await Promise.all(plan.accounts.map(async (p, i) => new Worker(i, aliasOf(i), p, envs[i]!, await openRoleState(join(out, 'role-state', `${aliasOf(i)}.json`)))));
-    const runner = new Runner(plan, workers, { host: envs[0]!.SERVER!, out, minutes, runEnded, placeholder: exclusion.source === null, stall: { ms: stallMinutes * 60_000, retries: stallRetries } });
+    const runner = new Runner(plan, workers, { host: envs[0]!.SERVER!, out, minutes, runEnded, placeholder: exclusion.source === null, stall: { ms: stallMinutes * 60_000, retries: stallRetries }, gcSeconds });
     process.stderr.write(`phase2: ${workers.length} accounts, up to ${plan.maxSessions} sessions; ledger in ${join(out, 'ledger.jsonl')}\n`);
 
     let signals = 0;

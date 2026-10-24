@@ -6,8 +6,9 @@
  *
  * Every minute it appends a line to $PHASE2_HEAP_DIR/memory.jsonl: process.memoryUsage(), bun:jsc's heapStats()
  * (object count, and the PHASE2_HEAP_TYPES most common object types by count) and the allocator's memoryUsage(). Every
- * 5th line is taken after a full collection (`gc: true`), so what is retained reads apart from garbage not yet
- * collected. At each minute in PHASE2_HEAP_SNAPSHOTS (default 5,60) it also writes heap-<minute>.heapsnapshot, a V8-format
+ * PHASE2_HEAP_GC_EVERY-th line (default 5; 0 never) is taken after a full collection (`gc: true`), so what is retained
+ * reads apart from garbage not yet collected. Those collections bound the garbage too, so measure a runner's RSS as
+ * it runs live with 0. At each minute in PHASE2_HEAP_SNAPSHOTS (default 5,60) it also writes heap-<minute>.heapsnapshot, a V8-format
  * snapshot after a full collection, which `heap-diff.ts` compares. Nothing happens without PHASE2_HEAP_DIR.
  *
  * Writing a snapshot is not free: in rs/767's baseline the minute-5 snapshot (86 MB) was followed by a transient climb
@@ -21,12 +22,14 @@ const dir = process.env.PHASE2_HEAP_DIR;
 if (dir) {
     const snapshots = new Set((process.env.PHASE2_HEAP_SNAPSHOTS ?? '5,60').split(',').filter(Boolean).map(Number));
     const types = Number(process.env.PHASE2_HEAP_TYPES ?? 80);
+    /** Every Nth line after a full collection; 0 never, which is how a live runner behaves. */
+    const gcEvery = Number(process.env.PHASE2_HEAP_GC_EVERY ?? 5);
     const mb = (b: number) => Math.round((b / 1_048_576) * 10) / 10;
     let minute = 0;
     const sample = () => {
         minute++;
         const snap = snapshots.has(minute);
-        const gc = snap || minute % 5 === 0;
+        const gc = snap || (gcEvery > 0 && minute % gcEvery === 0);
         let gcMs: number | null = null;
         if (gc) {
             const t = performance.now();
