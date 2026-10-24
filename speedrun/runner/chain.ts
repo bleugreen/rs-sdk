@@ -192,6 +192,8 @@ export interface CueSink {
     stop(scope: CueScope, ctx: StepContext<unknown>, o?: { final?: boolean; failed?: boolean }): void;
     /** Rewrite `scope`'s open delivery cue now, just before its trade; record-only sinks may omit this. */
     refresh?(scope: CueScope): boolean;
+    /** A cued row the chain skips without opening it (CueKeeper.skip); record-only sinks may omit this. */
+    skip?(scope: CueScope, o: { final: boolean }): void;
     /** Runtime ownership of a module's direct writer; record-only sinks may omit this. */
     writer?(scope: CueScope): runecraft.CueSink;
     /**
