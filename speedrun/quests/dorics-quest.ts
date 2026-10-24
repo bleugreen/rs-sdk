@@ -31,7 +31,7 @@ import type { Check, Observed, StepContext } from '../runner/step';
 import { handOffMissing, handOffPre, handOffRoom, loadHandOff, runHandOff, type Given, type HandOffPlan, type HandOffSdk } from '../runner/handoff';
 import { enchantedRingSpecs } from '../skills/magic';
 import { MANIFEST } from '../tools/slot-ledger';
-import { allOf, baseLevels, questSteps, recorded, segmentName, slotsCover, within, type QuestItem, type QuestOptions, type Segment } from './segments';
+import { allOf, baseLevels, consumable, questSteps, recorded, segmentName, slotsCover, within, type QuestItem, type QuestOptions, type Segment } from './segments';
 import { near, questMoves } from './small-quest';
 
 export const quest = 'doric' as const;
@@ -40,6 +40,8 @@ export const stepId = 'S05';
 export interface Options extends QuestOptions {
     /** The markdown holding the inventory ledger H4 is read from (default STEP-MANIFEST.md). */
     ledger?: string;
+    /** Whether H4 is recorded served this attempt (the run's attempt record): its consumable lines are then met at the serve. */
+    kitServed?: () => boolean;
 }
 
 const m = questMoves(stepId);
@@ -113,8 +115,20 @@ export function h4PlanOf(s: BotWorldState, row: HandOffPlan): HandOffPlan {
     return { ...row, give: [...give, ...rings], placeholders: [] };
 }
 
-/** H4 has landed: every item in, no ring left. */
-export const h4Landed = (s: BotWorldState, ledger?: string) => handOffMissing(s, h4Plan(s, ledger)).length === 0;
+/** H4's lines as segment A checks them from `s`: h4Plan, less its consumable lines (segments.ts `consumable`) once H4 is recorded served. */
+function h4Lines(s: BotWorldState, o: { served?: boolean; ledger?: string }): HandOffPlan {
+    const plan = h4Plan(s, o.ledger);
+    return o.served ? { ...plan, receive: plan.receive.filter(r => !consumable(r.name)) } : plan;
+}
+
+/** What H4 still lacks from `s` (h4Lines). */
+export const h4Missing = (s: BotWorldState, o: { served?: boolean; ledger?: string } = {}) => handOffMissing(s, h4Lines(s, o));
+
+/** H4 has landed: every item in, no ring left (consumables as at the serve once it is recorded). */
+export const h4Landed = (s: BotWorldState, ledger?: string, served = false) => h4Missing(s, { served, ...(ledger ? { ledger } : {}) }).length === 0;
+
+/** Whether H4 is recorded served, by the run's `kitServed` (false without one). */
+const servedOf = (opts: Options | undefined) => opts?.kitServed?.() ?? false;
 
 /**
  * Whether segment A's trade still wants anything: H4 has not landed as h4Plan reads it from `s` (h4 trades on
@@ -122,15 +136,13 @@ export const h4Landed = (s: BotWorldState, ledger?: string) => handOffMissing(s,
  * satisfied by their count at the serve, so a rune cast since does not re-open it.
  */
 export function h4Wants(s: BotWorldState, o: { served?: boolean; ledger?: string } = {}): boolean {
-    const plan = h4Plan(s, o.ledger);
-    const lines = o.served ? { ...plan, receive: plan.receive.filter(r => !consumable(r.name)) } : plan;
-    return handOffMissing(s, lines).length > 0;
+    return h4Missing(s, o).length > 0;
 }
 
 /** Segment A's free-slot refusal: H4's items fit, counting the slots the rings free once offered. */
 export function h4Room(opts?: Options): Check<any> {
     return s => {
-        if (h4Landed(s, opts?.ledger)) return true;
+        if (h4Landed(s, opts?.ledger, servedOf(opts))) return true;
         const plan = h4Plan(s, opts?.ledger);
         const r = handOffRoom(s, plan);
         return r === true ? true : `${r} (STEP-MANIFEST.md inventory ledger, row H4 line ${plan.line}); refused before the trade`;
@@ -141,7 +153,7 @@ async function h4(ctx: StepContext<any>, opts: Options | undefined): Promise<voi
     const sdk = m.sdkOf(ctx);
     const s = sdk.getState()!;
     const plan = h4Plan(s, opts?.ledger);
-    const missing = handOffMissing(s, plan);
+    const missing = h4Missing(s, { served: servedOf(opts), ...(opts?.ledger ? { ledger: opts.ledger } : {}) });
     if (!missing.length) return;
     const giver = opts?.kitFrom;
     if (!giver) return m.fail('A', `H4 not delivered (${missing.join('; ')}) and no kitFrom to trade with`);
@@ -212,17 +224,17 @@ export function steps(opts?: Options) {
             preconditions: allOf(atDoric, notComplete, h4Room(opts)),
             run: ctx => h4(ctx, opts),
             postconditions: s => {
-                const missing = handOffMissing(s, h4Plan(s, opts?.ledger));
+                const missing = h4Missing(s, { served: servedOf(opts), ...(opts?.ledger ? { ledger: opts.ledger } : {}) });
                 return missing.length ? `H4 after the trade: ${missing.join('; ')}` : true;
             },
             // Monotone for the resume walk: once started, the ores stay until C and the rings are gone.
-            done: o => atLeast(o, 'started') || h4Landed(stateOf(o), opts?.ledger),
+            done: o => atLeast(o, 'started') || h4Landed(stateOf(o), opts?.ledger, servedOf(opts)),
         },
         {
             letter: 'B', label: 'doric-start', logoutSafe: true,
             // At stage 0 B needs H4: the resume walk takes the latest segment that can start, and must
             // not start B on a fresh arrival before the trade.
-            preconditions: allOf(atDoric, notComplete, s => (atLeast(s, 'started') ? true : h4Landed(s, opts?.ledger) ? true : 'H4 not delivered yet')),
+            preconditions: allOf(atDoric, notComplete, s => (atLeast(s, 'started') ? true : h4Landed(s, opts?.ledger, servedOf(opts)) ? true : 'H4 not delivered yet')),
             run: ctx => start(ctx, opts),
             postconditions: s => requireQuestStage(s, quest, 'started', { atLeast: true }),
             done: o => atLeast(o, 'started'),
