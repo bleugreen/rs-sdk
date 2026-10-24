@@ -33,8 +33,8 @@
 // - Every var is scope=perm, and elena_pipe_used is a 6-tick pipe cooldown: logout-safe throughout.
 //
 // The exit drops (the slot ledger's T08-09 drops, moved into the step): the spade, the four empty
-// buckets and the gas mask (taken off first), and any other quest leftover. The H6 runes (2 law,
-// 2 water) stay for T08-09's Ardougne teleport.
+// buckets and the gas mask (taken off first), and any other quest leftover. H6's 2 law runes stay
+// for T08-09's Ardougne teleport, which takes its water from the worn staff of water.
 
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState, QuestJournalState } from '../../sdk/types';
@@ -154,7 +154,6 @@ export const ITEM = {
     key: configId('obj', 'elenakey'),
     scroll: configId('obj', 'ardougnescroll'),
     law: /^law rune$/i,
-    waterRune: /^water rune$/i,
 } as const;
 
 /** Locs by config id (loc.pack). */
@@ -181,7 +180,9 @@ type Letter = (typeof LETTERS)[number];
 
 /**
  * H6 as this step uses it (SUPPLIES.md H6; the slot ledger's row H6): the quest's items and the
- * Ardougne runes for T08-09 (one cast, 2 law and 2 water), which come in the same trade. The
+ * law runes for T08-09's Ardougne cast (2), which come in the same trade. No water runes: SCORED
+ * wears H1's staff of water until H7, and the cast takes its water from it. The kit check counts
+ * held items only (segments.ts kitWant), so a line here is exactly what the trade delivers. The
  * Camelot runes are no longer in it: T07-08's come in H4e.
  */
 export const KIT: readonly KitItem[] = [
@@ -194,7 +195,6 @@ export const KIT: readonly KitItem[] = [
     { item: /^bucket of milk$/i },
     { item: /^snape grass$/i },
     { item: ITEM.law, n: 2 },
-    { item: ITEM.waterRune, n: 2 },
 ];
 
 /**
@@ -203,7 +203,7 @@ export const KIT: readonly KitItem[] = [
  * the chocolaty milk and then the hangover cure in place, which Bravek takes at S. Edmond's reward
  * (Y) takes the picture, note, warrant and key and adds the scroll, read at Z. The gas mask is worn
  * at K, which frees its slot, and comes off at Z to be dropped. Peak 2 with the kit held (the
- * picture and the gas mask at D); 14 without it.
+ * picture and the gas mask at D); 13 without it.
  */
 export const QUEST_ITEMS: readonly QuestItem[] = [
     // alrena.rs2:24
@@ -218,7 +218,6 @@ export const QUEST_ITEMS: readonly QuestItem[] = [
     { item: ITEM.snape, name: 'Snape grass', from: 'A', until: 'F' },
     { item: /^(bucket of milk|chocolaty milk|hangover cure)$/i, name: 'Bucket of milk (then the hangover cure)', from: 'A', until: 'S' },
     { item: ITEM.law, name: 'Law rune', stackable: true, from: 'A' },
-    { item: ITEM.waterRune, name: 'Water rune', stackable: true, from: 'A' },
     // quest_elena.rs2:6-10 takes these back at the completion (Y).
     { item: ITEM.picture, name: 'Picture', from: 'C', until: 'Y' },
     { item: ITEM.gasmask, name: 'Gas mask', from: 'D', until: 'K' },
@@ -433,17 +432,54 @@ async function locMove(ctx: Ctx, seg: Letter, what: string, loc: LocQuery, arriv
  */
 export const HOUSE_DOORS = [{ x: 2570, z: 3333 }, { x: 2574, z: 3333 }] as const;
 
-/** Open each house door between SCORED and x `toX` (a door's wall is on its tile's east edge). */
+/**
+ * The house doors crossed walking from x `from` to x `to`, in walking order. A door's wall is on its
+ * tile's east edge (loc 1530 rotation 2 at 2570,3333; the west wall is loc 1602 rotation 2 along x
+ * 2570), so the door tile itself is on the garden side.
+ */
+export function doorsBetween(from: number, to: number): Array<{ x: number; z: number }> {
+    const doors = HOUSE_DOORS.filter(d => Math.min(from, to) <= d.x && d.x < Math.max(from, to));
+    return from < to ? doors : [...doors].reverse();
+}
+
+/** Open each house door between SCORED and x `toX`. */
 async function houseDoors(ctx: Ctx, seg: Letter, toX: number): Promise<void> {
     const sdk = sdkOf(ctx);
-    const x = pos(sdk).x;
-    const doors = HOUSE_DOORS.filter(d => Math.min(x, toX) <= d.x && d.x < Math.max(x, toX));
-    for (const d of x < toX ? doors : [...doors].reverse()) {
+    for (const d of doorsBetween(pos(sdk).x, toX)) {
         const t0 = currentTick(sdk);
         const r = await openDoor(sdk, d.x, d.z);
         if (!r.ok) fail(seg, `the house door at ${d.x},${d.z} did not open`, sdk);
         if (r.ticks) note(ctx, seg, { loc: `the house door ${d.x},${d.z}`, clickToOpen: currentTick(sdk) - t0, resends: r.resends });
     }
+}
+
+/** Edmond as a talk picks him: the one nearest his spawn. */
+export const edmondOf = (s: BotWorldState) => findNpc(s, /^edmond$/i, EDMOND_AT);
+
+/** How many more times toEdmond looks for Edmond when he has moved off the tile it walked to. */
+export const EDMOND_REFINDS = 2;
+
+/**
+ * Before a talk to Edmond (B, E, Y): open the house doors between SCORED and his live tile, then run
+ * to within 1 of it. Edmond wanders 5 tiles from his spawn (edmond.npc sets no wanderrange, so
+ * NpcType's default), which takes him into Alrena's room through the west door while it stands open.
+ * The door then shuts on its own, the client finds no route to him and every Talk-to click goes
+ * unrouted: the live B of run-20261024-022859 failed so, 'no dialogue opened' against the door at
+ * (2570,3333) after 48 ticks, and the lab reproduces it with Edmond shut in (2 of 2).
+ */
+async function toEdmond(ctx: Ctx, seg: Letter): Promise<void> {
+    const sdk = sdkOf(ctx);
+    for (let i = 0; i <= EDMOND_REFINDS; i++) {
+        const e = await waitForNpc(sdk, /^edmond$/i, 10, EDMOND_AT);
+        if (!e) fail(seg, 'Edmond is not in sight', sdk);
+        await houseDoors(ctx, seg, e.x);
+        const beside: Area = { x: e.x, z: e.z, tol: 1 };
+        if (inArea(sdk, beside)) return;
+        const r = await runTo(sdk, beside, { bot: ctx.bot });
+        const now = edmondOf(sdk.getState()!);
+        if (r.ok && now && chebyshev(now, pos(sdk)) <= 1) return;
+    }
+    note(ctx, seg, { edmond: `moved off each tile walked to (${EDMOND_REFINDS + 1} finds); talking from here` });
 }
 
 /** C: the picture from its ground spawn in Edmond's house (the run opens the inner door). */
@@ -794,6 +830,7 @@ async function reward(ctx: Ctx, opts: Options | undefined): Promise<void> {
     const sdk = sdkOf(ctx);
     if (!complete(sdk.getState()!)) {
         await go(ctx, 'Y', EDMOND_STAND, 'Edmond');
+        await toEdmond(ctx, 'Y');
         await talk(ctx, 'Y', opts, { who: 'Edmond (the reward)', npc: /^edmond$/i, near: EDMOND_AT, shape: SHAPES.reward });
         await waitOrThrow(sdk, s => complete(s) && holds(s, ITEM.scroll), 10, `${stepId}:Y Plague City complete with the magic scroll`);
     }
@@ -902,7 +939,7 @@ export function steps(opts?: Options) {
             // At stage 0 B needs A's kit: the resume walk takes the latest segment that can start and must not skip A.
             preconditions: allOf(east, notStarted, kitHeld, slots('B')),
             run: async ctx => {
-                await go(ctx, 'B', { ...EDMOND_AT, tol: 3 }, 'Edmond');
+                await toEdmond(ctx, 'B');
                 await talk(ctx, 'B', opts, { who: 'Edmond (the start)', npc: /^edmond$/i, near: EDMOND_AT, choices: CHOICES.edmondStart, shape: SHAPES.edmondStart, until: started });
             },
             postconditions: isStarted,
@@ -932,7 +969,7 @@ export function steps(opts?: Options) {
             letter: 'E', label: 'edmond-mask', logoutSafe: true,
             preconditions: allOf(east, isStarted, maskHeld),
             run: async ctx => {
-                await houseDoors(ctx, 'E', EDMOND_AT.x);
+                await toEdmond(ctx, 'E');
                 await talk(ctx, 'E', opts, { who: 'Edmond (the gas mask)', npc: /^edmond$/i, near: EDMOND_AT, shape: SHAPES.edmondMask });
             },
             done: o => atLeast(o, 'started_mud_patch'),

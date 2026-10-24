@@ -1,11 +1,28 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'fs';
-import { hopNeeds, type Hop } from '../lib/travel';
+import { readdirSync, readFileSync } from 'fs';
+import { join } from 'path';
+import type { BotWorldState, InventoryItem } from '../../sdk/types';
+import { baseState } from '../lib/fake-sdk';
+import { matchesItem, type ItemPattern } from '../lib/items';
+import { objPack } from '../lib/obj-pack';
+import { hopNeeds, type Hop, type RuneName } from '../lib/travel';
+import * as cooksAssistant from '../quests/cooks-assistant';
+import * as doricsQuest from '../quests/dorics-quest';
+import * as dragonSlayer from '../quests/dragon-slayer';
+import * as fishingContest from '../quests/fishing-contest';
+import * as grandTree from '../quests/grand-tree';
+import * as mageArena from '../quests/mage-arena';
+import * as monkeyMadness from '../quests/monkey-madness';
+import * as plagueCity from '../quests/plague-city';
+import * as seaSlug from '../quests/sea-slug';
+import { kitWant, type KitItem } from '../quests/segments';
+import * as treeGnomeVillage from '../quests/tree-gnome-village';
+import { handOffMissing } from '../runner/handoff';
 import {
-    analyze, ledgerLegs, legRow, loadModules, PENDING, runeOf, STAND_INS,
+    analyze, isRune, ledgerLegs, legRow, loadModules, PENDING, runeLabel, runeOf, STAND_INS,
     type Finding, type LegLike, type ModuleDecl, type Pending, type Report,
 } from './rune-pins';
-import { MANIFEST, parseLedger, summary, walk, type LedgerRow } from './slot-ledger';
+import { MANIFEST, parseLedger, summary, walk, type LedgerEntry, type LedgerRow } from './slot-ledger';
 
 const HEAD = '| row | in | out | equip | needAtStart | source |\n|---|---|---|---|---|---|\n';
 const rowsOf = (...lines: string[]): LedgerRow[] => {
@@ -229,4 +246,128 @@ describe("main's ledger (docs/speedrun/STEP-MANIFEST.md)", () => {
     for (const u of REPORT.unclaimed) test.skip(`unpinned: ${u}`, () => {});
     for (const f of REPORT.findings.filter(f => f.kind === 'unknown')) test.skip(`unknown: ${f.text}`, () => {});
     for (const s of REPORT.stale) test.skip(`stale: ${s}`, () => {});
+});
+
+// ------------------------------------------------------------------ quest kits against the rows that feed them
+//
+// The pins hold what a step casts to its rows; a quest kit check holds what the step's segment A wants
+// held before it starts, which is a separate list in the module. A kit check counts held runes only
+// (segments.ts kitWant; the hand-written checks the same), because a kit line is what the trade
+// delivers. So a kit that still lists a rune the ledger stopped delivering stops the run at A:
+// fold-in 25 took H6's 2 water runes off (T08-09 casts on the worn staff of water) and Plague
+// City's KIT kept them ('kit: missing 2 x /^water rune$/i and no kitFrom to receive it from').
+
+const gameName = (name: string) => name.charAt(0).toUpperCase() + name.slice(1);
+const gameItem = (name: string, id: number, count: number, slot: number): InventoryItem =>
+    ({ slot, id, name: gameName(name), count, optionsWithIndex: [] }) as unknown as InventoryItem;
+
+/** Every rune obj (runes.obj) as the game names it, for telling a kit's rune lines from the rest. */
+const RUNE_ITEMS: InventoryItem[] = [...objPack().names]
+    .filter(([, debug]) => isRune(debug))
+    .map(([id, debug], i) => gameItem(runeLabel(debug as RuneName), id, 1, i));
+const isRunePattern = (p: ItemPattern) => RUNE_ITEMS.some(i => matchesItem(i, p));
+const runeId = (r: RuneName) => objPack().ids.get(r) ?? -1;
+
+/**
+ * SCORED as the ledger walk has it once `entry`'s row is done: its rune stacks held and its worn set
+ * (the equip columns, so a worn staff is worn here). Nothing else is held and Agility is 99, so a
+ * check that also judges a potion, a level or free slots (the Grand Tree's) answers on runes alone.
+ */
+function ledgerState(entry: LedgerEntry): BotWorldState {
+    const runes = entry.stacks.inv.filter(h => runeOf(h) !== null);
+    return baseState({
+        skills: [{ name: 'Agility', level: 99, baseLevel: 99, experience: 0 }] as BotWorldState['skills'],
+        inventory: runes.map((h, i) => gameItem(runeLabel(runeOf(h)!), runeId(runeOf(h)!), h.count ?? 0, i)),
+        equipment: entry.stacks.worn.map((h, i) => gameItem(h.name, h.id ?? -1, h.count ?? 1, i)),
+    });
+}
+
+/** A quest module's kit check, and the hand-off row that delivers its kit. */
+interface KitConsumer {
+    file: string;
+    step: string;
+    /** The row the kit comes in, the ledger's row just before the step's. */
+    feed: string;
+    /** The kit check's rune lines still wanted on `s`, one string each; [] when the runes are covered. */
+    short(s: BotWorldState): string[];
+}
+
+const wantedRunes = (want: ReadonlyArray<{ item: ItemPattern; amount?: number }>) =>
+    want.filter(w => isRunePattern(w.item)).map(w => `${w.amount ?? 1} x ${String(w.item)}`);
+const kitRunes = (kit: readonly KitItem[]) => (s: BotWorldState) => wantedRunes(kitWant(s, kit));
+
+const S08_PLAGUE_CITY: KitConsumer = { file: 'quests/plague-city.ts', step: 'S08', feed: 'H6', short: kitRunes(plagueCity.KIT) };
+
+const KIT_CONSUMERS: readonly KitConsumer[] = [
+    // h4Plan is built from the ledger's own H4 row, so this one holds by construction.
+    {
+        file: 'quests/dorics-quest.ts', step: 'S05', feed: 'H4',
+        short: s => {
+            const plan = doricsQuest.h4Plan(s);
+            return handOffMissing(s, { ...plan, receive: plan.receive.filter(r => runeOf({ name: r.name }) !== null), give: [], drop: [], wield: [], unwield: [] });
+        },
+    },
+    S08_PLAGUE_CITY,
+    { file: 'quests/tree-gnome-village.ts', step: 'S10b', feed: 'H7', short: s => wantedRunes(treeGnomeVillage.h7Want(s)) },
+    {
+        file: 'quests/grand-tree.ts', step: 'S11b', feed: 'H8',
+        short: s => {
+            const r = grandTree.kitCheck(s);
+            return r === true ? [] : [r];
+        },
+    },
+    // The bow line is matched by id and is not a rune; any id serves.
+    { file: 'quests/monkey-madness.ts', step: 'S15', feed: 'H12', short: s => wantedRunes(monkeyMadness.kitMissing(s, 861).map(([item, amount]) => ({ item, amount }))) },
+    { file: 'quests/mage-arena.ts', step: 'S16', feed: 'H13', short: kitRunes(mageArena.kit(mageArena.DEFAULT_SPELL)) },
+    { file: 'quests/sea-slug.ts', step: 'S19', feed: 'H15', short: kitRunes(seaSlug.KIT) },
+    { file: 'quests/fishing-contest.ts', step: 'S20', feed: 'H16', short: kitRunes(fishingContest.KIT) },
+    { file: 'quests/cooks-assistant.ts', step: 'S23', feed: 'H19', short: kitRunes(cooksAssistant.KIT) },
+    { file: 'quests/dragon-slayer.ts', step: 'S26', feed: 'H22', short: kitRunes(dragonSlayer.kitItems()) },
+];
+
+/** The exports that make a quest module a kit consumer: a kit list, or a check or want over one. */
+const KIT_EXPORTS = ['KIT', 'kit', 'kitItems', 'kitCheck', 'kitMissing', 'h7Want', 'h4Plan'] as const;
+
+const MAIN_WALK = walk(MAIN_ROWS);
+
+function kitFindings(entries: readonly LedgerEntry[], c: KitConsumer): string[] {
+    const who = `${c.step} ${c.file}`;
+    const i = entries.findIndex(e => e.row.row === c.feed);
+    if (i < 0) return [`${who}: the ledger has no row ${c.feed}`];
+    const next = entries[i + 1]?.row.row;
+    if (next !== c.step) return [`${who}: ${c.step} is not the row after ${c.feed} (${next ?? 'nothing'} is)`];
+    const e = entries[i]!;
+    const runes = e.stacks.inv.filter(h => runeOf(h) !== null);
+    const unknown = runes.filter(h => h.count === null);
+    if (unknown.length) return [`${who}: ${c.feed} leaves ${unknown.map(h => h.name).join(', ')} at an unknown count`];
+    const short = c.short(ledgerState(e));
+    if (!short.length) return [];
+    const held = runes.map(h => `${h.name} ${h.count}`).join(', ') || 'no runes';
+    const worn = e.stacks.worn.map(h => h.name).join(', ') || 'nothing';
+    return [`${who} after ${c.feed}: the kit wants ${short.join('; ')}; the ledger has ${held} held, ${worn} worn`];
+}
+
+describe("quest kits' rune lines against the ledger rows that feed them", () => {
+    for (const c of KIT_CONSUMERS) {
+        test(`${c.step} ${c.file}: covered once ${c.feed} is done`, () => {
+            expect(kitFindings(MAIN_WALK, c)).toEqual([]);
+        });
+    }
+
+    test('every quest module that exports a kit is held here', async () => {
+        const dir = join(import.meta.dir, '../quests');
+        const kitModules: string[] = [];
+        for (const f of readdirSync(dir).filter(f => f.endsWith('.ts') && !f.endsWith('.test.ts')).sort()) {
+            const m = await import(join(dir, f));
+            if (KIT_EXPORTS.some(k => m[k] !== undefined)) kitModules.push(`quests/${f}`);
+        }
+        expect(kitModules.filter(f => !KIT_CONSUMERS.some(c => c.file === f))).toEqual([]);
+    });
+
+    test("the H6 class: a kit rune the row stopped delivering, its element on the worn staff, is caught", () => {
+        const before25 = { ...S08_PLAGUE_CITY, short: kitRunes([...plagueCity.KIT.filter(k => String(k.item) !== String(/^water rune$/i)), { item: /^water rune$/i, n: 2 }]) };
+        expect(kitFindings(MAIN_WALK, before25)).toEqual([
+            'S08 quests/plague-city.ts after H6: the kit wants 2 x /^water rune$/i; the ledger has law rune 2 held, staff of water worn',
+        ]);
+    });
 });
