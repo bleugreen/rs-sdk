@@ -26,8 +26,10 @@ function slowStep(n:number,cl:number,online:number){if(cl>0||n===0)return;if(n<1
 // roster departures: names only as sha256 prefixes (never written in clear). still = seconds since the player last changed tile.
 import { createHash } from "node:crypto";
 const h8=(s:string)=>createHash("sha256").update(s.toLowerCase()).digest("hex").slice(0,8);
+// RS83_TILE: hash prefixes whose roster entry (tile fields after the name) is printed as a TILE line whenever it changes.
+const TILE=new Set((process.env.RS83_TILE??"").split(",").filter(Boolean)),lastTile=new Map<string,string>();
 var prevR:Map<string,{x:number,z:number,moved:number}>|null=null,recentDeps:number[]=[],waveSeq=0,waveOpenUntil=0,lastGapAt=0;
-function rosterStep(d:any){const now=Date.now();const cur=new Map<string,{x:number,z:number,moved:number}>();for(const e of d.p??[]){const nm=String(e[1]);const x=e[2],z=e[3];const p=prevR?.get(nm);cur.set(nm,{x,z,moved:p&&p.x===x&&p.z===z?p.moved:now});}
+function rosterStep(d:any){const now=Date.now();const cur=new Map<string,{x:number,z:number,moved:number}>();for(const e of d.p??[]){const nm=String(e[1]);const x=e[2],z=e[3];const p=prevR?.get(nm);cur.set(nm,{x,z,moved:p&&p.x===x&&p.z===z?p.moved:now});if(TILE.size){const hh=h8(nm);if(TILE.has(hh)){const pos=JSON.stringify(e.slice(2));if(lastTile.get(hh)!==pos){lastTile.set(hh,pos);console.log("TILE",iso(),"k="+d.k,"h="+hh,"pos="+pos);}}}}
 if(prevR){const dep:string[]=[];const still:number[]=[];for(const [nm,v] of prevR){if(!cur.has(nm)){dep.push(nm);still.push(Math.round((now-v.moved)/1000));}}let arr=0;for(const nm of cur.keys())if(!prevR.has(nm))arr++;
 for(let i=0;i<dep.length;i++)recentDeps.push(now);recentDeps=recentDeps.filter(t=>now-t<=60000);
 for(let i=0;i<dep.length;i++){const hh=h8(dep[i]);if(WATCH.has(hh))console.log("WATCH left",iso(),"k="+d.k,"h="+hh,"still_s="+still[i],"burst="+dep.length);}for(const nm of cur.keys())if(!prevR.has(nm)){const hh=h8(nm);if(WATCH.has(hh))console.log("WATCH back",iso(),"k="+d.k,"h="+hh);}
