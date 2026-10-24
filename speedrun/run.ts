@@ -104,6 +104,7 @@ import { RelogBudget } from './runner/relog-budget';
 import { AttemptRecord } from './runner/attempt-record';
 import { SCORED_LOGIN, SCORED_RELOG } from './runner/scored-relog';
 import { ackRow, deathGate, deathRow, diedResult, operatorLine } from './runner/death';
+import { enteringEnds, noteLogins, watchStretch, type Stretch } from './runner/wait-guard';
 
 /**
  * Ticks past the link's stale bound before the watchdog acts, with the drop recovery on; while the page
@@ -446,6 +447,27 @@ export async function liveRuneCheck(
     const out = await deps.logout();
     say(`[run] rune census refused after login: ${out.ok ? 'SCORED logged out' : `logout NOT confirmed (${out.reason})`}; no step ran`);
     return EXIT_REFUSED;
+}
+
+/** The stretch loginUpkeep watches, as its rows and the death reason name it. */
+export const LOGIN_STRETCH = 'between login and the first step';
+
+/**
+ * The wait upkeep (runner/wait-guard.ts) from SCORED in game after login until the first step's entry
+ * (enteringEnds): through the live census, the gates and the resume walk no step looks after SCORED
+ * (attempt 4: ~175 ticks, arrived poisoned at ~1 HP). It eats by the legs' rule and cures a poison,
+ * sends nothing while a trade or dialogue is open, and logs each eat or dose as a note row. A death
+ * it sees goes on `session.died`, and the first step's entry fails with it before sending anything.
+ * It cures only a poison seen, never a blind dose: that is S15:A's and S16:B's own entry cure.
+ */
+export function loginUpkeep(session: Pick<Session, 'name' | 'sdk' | 'sessionId'> & { died?: Session['died'] }, log: TickLog, say: (line: string) => void = l => console.log(l)): Stretch {
+    return watchStretch({ sdk: session.sdk, session }, LOGIN_STRETCH, {
+        holdInDialog: true,
+        onAct: a => {
+            log.append(annotation(log, session.name, 'note', `(run) upkeep ${LOGIN_STRETCH}: ${a.kind}`, { sessionId: session.sessionId, startTick: a.tick, meta: { ...a } }));
+            say(`[run] upkeep ${LOGIN_STRETCH}: ${a.kind === 'eat' ? 'ate' : 'drank'} ${a.item} at hp ${a.hp ?? '?'} (tick ${a.tick})`);
+        },
+    });
 }
 
 /** The helpers the run config itself names, by the scope each serves (the phase gate's fallback where no launcher config names one). */
@@ -1066,6 +1088,8 @@ async function main(argv: string[]): Promise<number> {
         console.log(`[gate] ${t.ok ? 'ok     ' : 'REFUSED'} demo tick rate before login: ${describePreflight(t)}`);
     });
     const session = await openRunSession(a.bot, { client: a.client, chain, relogs, log, beforeLogin });
+    // Each login's first in-world tick is the session a carried poison is unknown in (wait-guard.ts noteLogins).
+    const offLogins = noteLogins(session.sdk);
     // SCORED is logged in from here: withScoredSession abandons it on any way out that leaves it in.
     let unalias = () => {};
     let code = 1;
@@ -1073,41 +1097,50 @@ async function main(argv: string[]): Promise<number> {
     try {
         code = await withScoredSession(session, { relogs, log }, async () => {
             unalias = aliasAccount(log, session.name);
-            // The census on the live pack, before any step: a shortfall logs SCORED out here.
-            const refused = await liveRuneCheck(session, { plan, ...(planError ? { planError } : {}), from: censusStart(chain, from, earlier), served, log }, {
-                logout: () => logoutClean(session),
-            });
-            if (refused !== null) return refused;
-            log.append(annotation(log, session.name, 'gate', '(gate) start', { meta: { gates, fresh, cueDir: cfg.cueDir, removed, until: a.until ?? null, steps: chain.length, s21Relog: a.s21Relog } }));
-            console.log(`[run] ${LOG_ACCOUNT} on ${a.client}; ${chain.length} steps${a.until ? ` to ${a.until}` : ''}; log ${log.path}`);
-            // A signal: SCORED is out, then closeSession still closes the browser before the exit.
-            const ran = await runChainOnSession(session, { log, chain, reservation, cues: keeper, relogs, record: record.steps, wholeRun: a.until === undefined, ...(from !== undefined ? { from } : {}) }).catch(e => {
-                if (!(e instanceof Terminated)) throw e;
-                term = e;
-                return null;
-            });
-            if (!ran) {
-                const t = term as unknown as Terminated;
-                console.log(`[run] ${t.message}`);
-                return t.exitCode;
+            const upkeep = loginUpkeep(session, log);
+            try {
+                // The census on the live pack, before any step: a shortfall logs SCORED out here.
+                const refused = await liveRuneCheck(session, { plan, ...(planError ? { planError } : {}), from: censusStart(chain, from, earlier), served, log }, {
+                    logout: () => {
+                        upkeep.stop();
+                        return logoutClean(session);
+                    },
+                });
+                if (refused !== null) return refused;
+                log.append(annotation(log, session.name, 'gate', '(gate) start', { meta: { gates, fresh, cueDir: cfg.cueDir, removed, until: a.until ?? null, steps: chain.length, s21Relog: a.s21Relog } }));
+                console.log(`[run] ${LOG_ACCOUNT} on ${a.client}; ${chain.length} steps${a.until ? ` to ${a.until}` : ''}; log ${log.path}`);
+                // A signal: SCORED is out, then closeSession still closes the browser before the exit.
+                const ran = await runChainOnSession(session, { log, chain: enteringEnds(chain, upkeep), reservation, cues: keeper, relogs, record: record.steps, wholeRun: a.until === undefined, ...(from !== undefined ? { from } : {}) }).catch(e => {
+                    if (!(e instanceof Terminated)) throw e;
+                    term = e;
+                    return null;
+                });
+                if (!ran) {
+                    const t = term as unknown as Terminated;
+                    console.log(`[run] ${t.message}`);
+                    return t.exitCode;
+                }
+                const { result, lastState } = ran;
+                let rc = result.code;
+                console.log(`[run] ${result.outcome}`);
+                if (rc === 0 && a.until === undefined) {
+                    const total = lastState ? totalLevel(lastState) : null;
+                    const ok = total === TARGET_TOTAL && !session.expectInWorld;
+                    log.append(annotation(log, session.name, 'note', '(run) total', { ok, meta: { total, target: TARGET_TOTAL, loggedOut: !session.expectInWorld } }));
+                    console.log(`[run] total ${total ?? '?'} of ${TARGET_TOTAL}; ${session.expectInWorld ? 'NOT logged out' : 'logged out'}`);
+                    if (!ok) rc = 1;
+                    if (owner && !session.expectInWorld) console.log(`[run] ${await releaseClaim(owner)}`);
+                }
+                const again = resumeLine(chain, result.resumeAt);
+                if (rc === EXIT_HOST_RESERVED) console.log(`[run] resume: once ${reservation.path} is gone or expired, run the same command again${again}`);
+                if (rc === 4) console.log(`[run] resume: run the same command again (the walk starts from game state)${again}`);
+                return rc;
+            } finally {
+                upkeep.stop();
             }
-            const { result, lastState } = ran;
-            let rc = result.code;
-            console.log(`[run] ${result.outcome}`);
-            if (rc === 0 && a.until === undefined) {
-                const total = lastState ? totalLevel(lastState) : null;
-                const ok = total === TARGET_TOTAL && !session.expectInWorld;
-                log.append(annotation(log, session.name, 'note', '(run) total', { ok, meta: { total, target: TARGET_TOTAL, loggedOut: !session.expectInWorld } }));
-                console.log(`[run] total ${total ?? '?'} of ${TARGET_TOTAL}; ${session.expectInWorld ? 'NOT logged out' : 'logged out'}`);
-                if (!ok) rc = 1;
-                if (owner && !session.expectInWorld) console.log(`[run] ${await releaseClaim(owner)}`);
-            }
-            const again = resumeLine(chain, result.resumeAt);
-            if (rc === EXIT_HOST_RESERVED) console.log(`[run] resume: once ${reservation.path} is gone or expired, run the same command again${again}`);
-            if (rc === 4) console.log(`[run] resume: run the same command again (the walk starts from game state)${again}`);
-            return rc;
         });
     } finally {
+        offLogins();
         unalias();
         (term as Terminated | null)?.disarm();
     }
