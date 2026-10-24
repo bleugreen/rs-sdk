@@ -77,6 +77,20 @@ describe('the relog budget', () => {
         expect(() => b.endPlanned('S21 relog', 'page')).toThrow('no open planned relog');
     });
 
+    test('an adopt is recorded but never charged: four adopts leave the budget whole, and a real relog after them is charged', () => {
+        const b = new RelogBudget(dir());
+        b.record(entry('unplanned'));
+        const before = b.check('unplanned');
+        for (let i = 0; i < 4; i++) b.record({ kind: 'adopt', by: 'run', step: 'S07', tick: 100 + i, via: 'adopted' });
+        expect(b.check('unplanned')).toBe(before);
+        expect(b.used()).toEqual({ planned: 0, unplanned: 1 });
+        expect(b.adopts()).toBe(4);
+        expect(b.describe()).toBe('planned 0/1, unplanned 1/3, 4 adopts uncharged');
+        b.record(entry('unplanned'));
+        b.record(entry('manual'));
+        expect(b.check('unplanned')).toContain('relog budget spent: 3/3');
+    });
+
     test('clear forgets an earlier run', () => {
         const b = new RelogBudget(dir());
         b.record(entry('unplanned'));

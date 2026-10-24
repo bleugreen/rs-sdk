@@ -10,6 +10,9 @@ import type { Death, DeathSign } from '../runner/death';
 import { RESPAWN } from './travel';
 import {
     ABANDON_SENDS,
+    ALREADY_LOGGED_IN,
+    alreadyLoggedIn,
+    loginReplyCode,
     describeAbandon,
     PAGE_ENDED_HOLD_MS,
     waitOwnLaunch,
@@ -1276,6 +1279,52 @@ describe('login with inPage: the tab logs back in where it is', () => {
         } finally {
             cdp.stop();
         }
+    });
+
+    /** The page's in-page login ends on the title screen with `mes1`/`mes2`; a navigation gets in. */
+    function refusedInPage(cdp: ReturnType<typeof fakeCdp>, sdk: FakeSdk, mes1: string, mes2 = '') {
+        cdp.hooks.onAutoLogin = () => {
+            setTimeout(() => {
+                cdp.client.loginInProgress = false;
+                cdp.client.loginMes1 = mes1;
+                cdp.client.loginMes2 = mes2;
+            }, 30);
+        };
+        cdp.hooks.onNavigate = () => getsIn(cdp, sdk, 1);
+    }
+
+    test('stopOnReply: an in-page login refused as already logged in throws LoginRefused at once, never navigating', async () => {
+        const cdp = fakeCdp('srtest', PASSWORD);
+        try {
+            const { session, sdk } = pageSession(cdp);
+            refusedInPage(cdp, sdk, 'Your account is already logged in.', 'Try again in 60 secs...');
+            const e = await login(session, { inPage: true, timeoutMs: 5_000, stopOnReply: [ALREADY_LOGGED_IN] }).catch(err => err);
+            expect(alreadyLoggedIn(e)).toBe(true);
+            expect(e).toMatchObject({ name: 'LoginRefused', reply: 5, attempts: 1, pageMessage: 'Your account is already logged in. Try again in 60 secs...' });
+            expect((e as Error).message).toBe('srtest: login refused after 1 attempt(s) (reply 5: Your account is already logged in. Try again in 60 secs...)');
+            expect(cdp.page.autoLogins).toHaveLength(1);
+            expect(cdp.page.navigations).toEqual([]);
+        } finally {
+            cdp.stop();
+        }
+    });
+
+    test('stopOnReply leaves every other reply to the usual retries: a full world is navigated past as before', async () => {
+        const cdp = fakeCdp('srtest', PASSWORD);
+        try {
+            const { session, sdk } = pageSession(cdp);
+            refusedInPage(cdp, sdk, 'This world is full.', 'Please use a different world.');
+            const r = await login(session, { inPage: true, timeoutMs: 5_000, stopOnReply: [ALREADY_LOGGED_IN] });
+            expect(r).toMatchObject({ via: 'launch', attempts: 2 });
+            expect(cdp.page.navigations).toHaveLength(1);
+        } finally {
+            cdp.stop();
+        }
+    });
+
+    test('loginReplyCode reads the title screen: already logged in is reply 5, an unknown message none', () => {
+        expect(loginReplyCode('Your account is already logged in. Try again in 60 secs...')).toBe(ALREADY_LOGGED_IN);
+        expect(loginReplyCode('Invalid username or password.')).toBeNull();
     });
 
     test('a page that cannot log itself in is navigated instead, and the fresh client counts from 0', async () => {
