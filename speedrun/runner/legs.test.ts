@@ -2,13 +2,14 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { findDoorsAlongPath, getDoorAt } from '../../sdk/pathfinding';
-import type { BotWorldState, InventoryItem, PlayerState } from '../../sdk/types';
+import type { BotWorldState, CombatEvent, InventoryItem, NearbyLoc, PlayerState } from '../../sdk/types';
 import { parseLedger, walk, type OutEntry } from '../tools/slot-ledger';
 import { parseTiles, resolveOptions, routeLogs } from '../skills/firemaking';
-import { baseState, drive, FakeSdk, simulateWalking } from '../lib/fake-sdk';
+import { baseState, drive, FakeSdk, simulateWalking, type WalkSim } from '../lib/fake-sdk';
 import { TickLog } from '../lib/ticks';
-import { inArea, SPELLS, type Hop } from '../lib/travel';
-import { arrived, CHURCH_ALTAR, dropDue, DROPS_PER_TICK, dropsDue, entersWilderness, leg, legById, legPreconditions, LEGS, legsAfter, legsFor, neededBy, netTotal, resumeHop, runLeg, splitLeg, TILES, type LegStep, type LegStopRecord } from './legs';
+import { eatAt, eatDue, HP_FLOOR, inArea, SPELLS, SPIRIT_TREES, type Area, type Hop } from '../lib/travel';
+import { arrived, CHURCH_ALTAR, dropDue, DROPS_PER_TICK, dropsDue, entersWilderness, leg, LEG_URGENT_HP, legById, legPreconditions, LEGS, legsAfter, legsFor, legUpkeep, neededBy, netTotal, resumeHop, runLeg, splitLeg, TILES, type LegStep, type LegStopRecord } from './legs';
+import { WaitUpkeep } from './wait-guard';
 import { PLACEMENT } from './chain';
 import { Observation, resolveResume } from './resume';
 import type { RunnerSession, Step, StepContext } from './step';
@@ -248,6 +249,10 @@ describe('splitLeg', () => {
         // A leg out of the Wilderness keeps it on the part that is still in it (T14-15's run to level 20).
         const [a1415, b1415] = splitLeg(legById('T14-15'), 1, { firstTicks: 70 });
         expect([a1415.def.food, b1415.def.food]).toEqual([2, undefined]);
+        // The upkeep goes to both parts: T14-15b holds no food check but eats a poison carried into it (rs/762).
+        expect([legUpkeep(a1415.def), legUpkeep(b1415.def)]).toEqual([true, true]);
+        expect([a.def.upkeep, b.def.upkeep]).toEqual([true, true]);
+        expect(legUpkeep(legById('T12-13').def)).toBe(false);
         expect(entersWilderness([{ kind: 'teleport', spell: 'ardougne' }], SPELLS.ardougne.landing)).toBe(false);
     });
 
@@ -885,5 +890,210 @@ describe("a death on a leg (rs/709 on rs/593's relocation detector)", () => {
         expect(r?.ok).toBe(true);
         expect(inArea(sdk.state!, SPELLS.lumbridge.landing)).toBe(true);
         expect(ctx.session.died).toBeUndefined();
+    });
+});
+
+// ------------------------------------------------------------------ the leg upkeep under poison
+
+describe("the leg upkeep under poison (attempt 4: T14-15b reached hpMin 1 with 3 sharks held and 0 eaten; rs/762)", () => {
+    const MAX_HP = 40;
+    const shark = (slot: number): InventoryItem => ({ slot, id: 385, name: 'Shark', count: 1, optionsWithIndex: [{ text: 'Eat', opIndex: 1 }] }) as unknown as InventoryItem;
+    const superAnti = (slot: number, doses = 4): InventoryItem => ({ slot, id: 2448, name: `Superantipoison(${doses})`, count: 1, optionsWithIndex: [{ text: 'Drink', opIndex: 1 }] }) as unknown as InventoryItem;
+    /** spirit_tree.rs2's locs: 1317 a young tree (village only), 1294 the village's tree (`stronghold_ent`). */
+    const tree = (id: number, x: number, z: number) => ({ id, x, z, level: 0, name: 'Spirit tree', distance: 1, options: ['Talk-to'], optionsWithIndex: [{ text: 'Talk-to', opIndex: 1 }] }) as unknown as NearbyLoc;
+    const YOUNG_TREE = tree(1317, TILES.khazardTree.x + 1, TILES.khazardTree.z + 1);
+    const VILLAGE_TREE = tree(1294, SPIRIT_TREES.village.landing.x, SPIRIT_TREES.village.landing.z + 1);
+    const T14_15B = () => splitLeg(legById('T14-15'), 1, { firstTicks: 70 })[1];
+
+    interface PoisonSim {
+        eats: number[];
+        drinks: number[];
+        /** The lowest hitpoints any published frame showed. */
+        hpMin: number;
+        treeClicks: number[];
+        rides: number[];
+    }
+
+    /**
+     * The poison and the transports, frame by frame. Poison: poison.rs2's [timer,poison], a hit of
+     * (severity + 4) / 5 every `every` ticks from `firstAt`, the severity down by 1 a hit, each one a
+     * damage_taken with hitmark 2. A Shark eaten heals 20 on the next frame; an antipoison drunk ends
+     * the poison and leaves the potion a dose less. A spirit tree interact lands `rideTicks` later on
+     * its landing (the young tree to the village, the village's tree to the stronghold).
+     */
+    function poisonWorld(sdk: FakeSdk, walk: WalkSim, o: { severity: number; firstAt: number; every?: number; rideTicks?: number }): { sim: PoisonSim; each: (s: BotWorldState) => Partial<BotWorldState> } {
+        let severity = o.severity;
+        let nextHit = o.firstAt;
+        let eat: number | null = null;
+        let drink: number | null = null;
+        let ride: { at: number; to: Area; locs: NearbyLoc[] } | null = null;
+        const sim: PoisonSim = { eats: [], drinks: [], hpMin: sdk.state!.player!.hp, treeClicks: [], rides: [] };
+        const prev = sdk.onSend;
+        sdk.onSend = (a, f) => {
+            prev(a, f);
+            const t = f.state!.tick;
+            if (a.method === 'sendUseItem') {
+                const it = f.state!.inventory.find(i => i.slot === a.args[0]);
+                if (it && /^shark$/i.test(it.name)) { sim.eats.push(t); eat = it.slot; }
+                if (it && /antipoison/i.test(it.name)) { sim.drinks.push(t); drink = it.slot; }
+            }
+            if (a.method === 'sendInteractLoc' && (a.args[2] === 1317 || a.args[2] === 1294)) {
+                sim.treeClicks.push(t);
+                const village = a.args[2] === 1317;
+                ride ??= { at: t + (o.rideTicks ?? 4), to: SPIRIT_TREES[village ? 'village' : 'stronghold'].landing, locs: village ? [VILLAGE_TREE] : [] };
+            }
+        };
+        const each = (s: BotWorldState): Partial<BotWorldState> => {
+            const t = s.tick + 1;
+            const p = s.player!;
+            let hp = p.hp;
+            let inventory = s.inventory;
+            let combatEvents = s.combatEvents;
+            if (eat !== null) {
+                const slot = eat;
+                inventory = inventory.filter(i => i.slot !== slot);
+                hp = Math.min(p.maxHp, hp + 20);
+                eat = null;
+            }
+            if (drink !== null) {
+                const slot = drink;
+                inventory = inventory.flatMap(i => {
+                    if (i.slot !== slot) return [i];
+                    const n = Number(/\((\d)\)$/.exec(i.name)![1]);
+                    return n > 1 ? [{ ...i, name: i.name.replace(/\(\d\)$/, `(${n - 1})`) }] : [];
+                });
+                severity = 0;
+                drink = null;
+            }
+            if (severity > 0 && t >= nextHit) {
+                const damage = Math.floor((severity + 4) / 5);
+                hp = Math.max(0, hp - damage);
+                severity--;
+                nextHit = t + (o.every ?? 30);
+                const hit = { tick: t, type: 'damage_taken', damage, sourceType: 'npc', sourceIndex: -1, targetType: 'player', targetIndex: -1, hitmark: 2 };
+                combatEvents = [...combatEvents, hit as unknown as CombatEvent];
+            }
+            let player = { ...p, hp };
+            const more: Partial<BotWorldState> = {};
+            if (ride && t >= ride.at) {
+                player = { ...player, worldX: ride.to.x, worldZ: ride.to.z, x: ride.to.x, z: ride.to.z };
+                more.nearbyLocs = ride.locs;
+                walk.target = null;
+                sim.rides.push(t);
+                ride = null;
+            }
+            sim.hpMin = Math.min(sim.hpMin, hp);
+            return { player, inventory, combatEvents, ...more };
+        };
+        return { sim, each };
+    }
+
+    const at = (x: number, z: number, hp: number, more: Partial<BotWorldState> = {}) =>
+        state(x, z, { player: { ...player(x, z), hp, maxHp: MAX_HP }, prayers: { activePrayers: [], prayerPoints: 99, prayerLevel: 99 } as never, ...more });
+    const travelRow = (ctx: StepContext<unknown>) => ctx.log.rows.find(r => r.kind === 'travel')!.meta as { ate: number; cured?: number; hpMin: number };
+
+    test('the floor rule: eat at or under 25 at SCORED\'s maximum (15 + one poison hit 6 + one hit 4), 10 under a small maximum, never under the old rule', () => {
+        expect(eatAt(40)).toBe(25);
+        expect(eatAt(99)).toBe(25);
+        expect(eatAt(30)).toBe(20);
+        expect(eatAt(20)).toBe(14);
+        expect(LEG_URGENT_HP).toBe(21);
+        const s = (hp: number) => at(3288, 3660, hp, { inventory: [shark(3)] });
+        expect(eatDue(s(25), {}, -99)?.name).toBe('Shark');
+        expect(eatDue(s(26), {}, -99)).toBeNull();
+        expect(eatDue(s(25), {}, s(25).tick - 2)).toBeNull();
+        // An explicit `below` keeps its meaning: under it.
+        expect(eatDue(s(14), { below: 15 }, -99)?.name).toBe('Shark');
+        expect(eatDue(s(15), { below: 15 }, -99)).toBeNull();
+    });
+
+    test('a leg poisoned from 20 HP on its tree rides eats before 15 and never reaches 1, the eat landing inside a ride', async () => {
+        const rides = leg('TX', TILES.khazardTree, { ...SPIRIT_TREES.stronghold.landing }, [{ kind: 'tree', to: 'village' }, { kind: 'tree', to: 'stronghold' }], {
+            after: 'A', before: 'B', method: 'two tree rides', upkeep: true, expected: { ticks: 10, label: 'i', source: 'test', net: 10 },
+        });
+        // 27 HP: above the floor rule, so no eat before the first ride; the poison takes 6 inside it.
+        const sdk = new FakeSdk(at(TILES.khazardTree.x, TILES.khazardTree.z, 27, { inventory: [shark(3), shark(4), shark(5)], nearbyLocs: [YOUNG_TREE] }));
+        const walk = simulateWalking(sdk);
+        const { sim, each } = poisonWorld(sdk, walk, { severity: 27, firstAt: 102, every: 3, rideTicks: 6 });
+        const ctx = ctxFor(sdk);
+        await drive(sdk, rides.run(ctx), 200, each);
+        expect(inArea(sdk.state!, SPIRIT_TREES.stronghold.landing)).toBe(true);
+        expect(sim.rides).toHaveLength(2);
+        expect(sim.eats.length).toBeGreaterThanOrEqual(1);
+        // The first eat goes while the first ride is under way: after its click, before its landing.
+        expect(sim.eats[0]!).toBeGreaterThan(sim.treeClicks[0]!);
+        expect(sim.eats[0]!).toBeLessThan(sim.rides[0]!);
+        expect(sim.hpMin).toBeGreaterThanOrEqual(HP_FLOOR);
+        expect(travelRow(ctx).ate).toBe(sim.eats.length);
+    });
+
+    test("T14-15b as attempt 4 ran it: poisoned at 20 HP from the landing with 3 sharks, the run, both tree rides and the run to the door; it ends above the floor", async () => {
+        const b = T14_15B();
+        expect(b.def.hops.map(h => h.kind)).toEqual(['run', 'tree', 'tree', 'run']);
+        expect(b.def.food).toBeUndefined();
+        const landing = SPELLS.ardougne.landing;
+        const sdk = new FakeSdk(at(landing.x, landing.z, 20, { inventory: [shark(3), shark(4), shark(5)], nearbyLocs: [YOUNG_TREE] }));
+        const walk = simulateWalking(sdk);
+        const { sim, each } = poisonWorld(sdk, walk, { severity: 27, firstAt: 103 });
+        const ctx = ctxFor(sdk);
+        await drive(sdk, b.run(ctx), 400, each);
+        expect(arrived(b.def, sdk.state!)).toBe(true);
+        expect(sim.rides).toHaveLength(2);
+        expect(sim.eats.length).toBeGreaterThanOrEqual(1);
+        expect(sim.hpMin).toBeGreaterThanOrEqual(HP_FLOOR);
+        expect(sdk.state!.player!.hp).toBeGreaterThan(HP_FLOOR);
+        const row = travelRow(ctx);
+        expect(row.hpMin).toBeGreaterThanOrEqual(HP_FLOOR);
+        expect(row.ate).toBe(sim.eats.length);
+    });
+
+    test('no food held: part a refuses as today, part b (no food check) travels and eats nothing', async () => {
+        const [a, b] = splitLeg(legById('T14-15'), 1, { firstTicks: 70 });
+        expect(legPreconditions(a.def, at(3288, 3700, 30, { inventory: ARDOUGNE_RUNES }))).toBe('T14-15a: 0 food held, 2 needed');
+        const landing = SPELLS.ardougne.landing;
+        const sdk = new FakeSdk(at(landing.x, landing.z, 30, { nearbyLocs: [YOUNG_TREE] }));
+        const walk = simulateWalking(sdk);
+        const { sim, each } = poisonWorld(sdk, walk, { severity: 0, firstAt: 9999 });
+        const ctx = ctxFor(sdk);
+        await drive(sdk, b.run(ctx), 400, each);
+        expect(arrived(b.def, sdk.state!)).toBe(true);
+        expect(sim.eats).toEqual([]);
+        expect(travelRow(ctx).ate).toBe(0);
+    });
+
+    test('the upkeep holds an eat while a chat is open above LEG_URGENT_HP and sends it at or under; the antipoison always waits for the chat', () => {
+        const sdk = new FakeSdk(at(2555, 3259, 24, { inventory: [shark(3), superAnti(4)] }));
+        let sick = true;
+        const cure = { poisoned: () => sick, cureDose: (s: BotWorldState) => s.inventory.find(i => /antipoison/i.test(i.name)) ?? null, noteAntipoison: () => { sick = false; } };
+        const u = new WaitUpkeep(sdk, { holdInDialog: true, urgentHp: LEG_URGENT_HP, cure });
+        const chat = (hp: number, tick: number, isOpen: boolean) => ({ ...sdk.state!, tick, player: { ...sdk.state!.player!, hp }, dialog: { ...sdk.state!.dialog, isOpen } });
+        u.see(chat(24, 100, true));
+        u.see(chat(30, 101, true));
+        expect(sdk.sent).toEqual([]);
+        u.see(chat(21, 102, true));
+        expect(sdk.sent).toEqual([{ method: 'sendUseItem', args: [3, 1] }]);
+        u.see(chat(40, 110, true));
+        expect(sdk.sent).toHaveLength(1);
+        u.see(chat(40, 111, false));
+        expect(sdk.sent.at(-1)).toEqual({ method: 'sendUseItem', args: [4, 1] });
+        expect([u.eats, u.cures]).toEqual([1, 1]);
+    });
+
+    test('a poisoned leg drinks one antipoison dose, once, and the poison stops', async () => {
+        const b = T14_15B();
+        const landing = SPELLS.ardougne.landing;
+        // A tick base past every other test's: segments.ts keeps the run's last dose for the process.
+        const base = 300_000;
+        const sdk = new FakeSdk(at(landing.x, landing.z, 35, { tick: base, inventory: [shark(3), shark(4), superAnti(5)], nearbyLocs: [YOUNG_TREE] }));
+        const walk = simulateWalking(sdk);
+        const { sim, each } = poisonWorld(sdk, walk, { severity: 27, firstAt: base + 2 });
+        const ctx = ctxFor(sdk);
+        await drive(sdk, b.run(ctx), 400, each);
+        expect(arrived(b.def, sdk.state!)).toBe(true);
+        expect(sim.drinks).toHaveLength(1);
+        expect(sim.drinks[0]!).toBeGreaterThan(base + 2);
+        expect(sdk.state!.inventory.map(i => i.name)).toContain('Superantipoison(3)');
+        expect(travelRow(ctx).cured).toBe(1);
+        expect(sim.hpMin).toBeGreaterThanOrEqual(HP_FLOOR);
     });
 });
