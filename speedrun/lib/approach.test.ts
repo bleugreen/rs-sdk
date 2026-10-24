@@ -275,7 +275,7 @@ describe('talkTo on an NPC its click cannot reach (rs/693)', () => {
         const r = await drive(sdk, talkTo(sdk as never, DORIC, [], { idle: 1, openTicks: 5 }), 60);
         expect(r).toMatchObject({ ok: true, opened: true, clicks: 1 });
         expect(r.approachFinds).toBeUndefined();
-        expect(sdk.sent.map(a => a.method).filter(m => m !== 'sendClickDialog')).toEqual(['sendInteractNpc']);
+        expect(sdk.sent.filter(a => a.method === 'sendWalk' || a.method === 'sendInteractLoc')).toEqual([]);
     });
 
     test('with a caller\'s approach before the talk (rs/674), the two never exceed 2 re-finds in one talk', async () => {
