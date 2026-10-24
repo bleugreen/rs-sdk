@@ -60,6 +60,18 @@ export type RunnerSession = Pick<Session, 'sdk' | 'bot' | 'name' | 'sessionId'> 
 export interface Observed {
     state: BotWorldState;
     probed: Readonly<Record<string, unknown>>;
+    /** This attempt's step record: a step whose postconditions passed in this attempt, in any process. Absent outside a run (tests, lab stand-ins). */
+    record?: StepMarks;
+}
+
+/** The attempt's step marks as a `done` reads them: keyed by the Step's `name` as runSteps runs it (runner/attempt-record.ts). */
+export interface StepMarks {
+    has(stepName: string): boolean;
+}
+
+/** The attempt's step marks as runSteps writes them. */
+export interface StepRecord extends StepMarks {
+    mark(stepName: string, tick: number): void;
 }
 
 export type ObservedCheck<C> = (o: Observed, c: C) => boolean;
@@ -153,6 +165,12 @@ export interface RunStepsOptions<C> {
      * attempts instead); an object overrides its thresholds.
      */
     tickMonitor?: TickMonitorSetting;
+    /**
+     * This attempt's step record (run.ts's AttemptRecord.steps): each step's name is marked once its
+     * postconditions pass, entered through `run` or `resume` alike. Absent: nothing is marked (unit
+     * tests, lab stand-ins).
+     */
+    record?: StepRecord;
 }
 
 export interface RunStepsResult {
@@ -300,6 +318,7 @@ export async function runSteps<C>(session: RunnerSession, steps: ReadonlyArray<S
                 failRow(opts.log, session, step.name, 'postcondition', post);
                 throw new StepError(step.name, 'postcondition', post);
             }
+            opts.record?.mark(step.name, sdk.getState()?.tick ?? -1);
 
             if (opts.signal?.aborted) return { completed: i + 1 - start, resumeAt: i + 1, aborted: true };
             if (step.logoutSafe && i + 1 < steps.length && shouldStop()) {

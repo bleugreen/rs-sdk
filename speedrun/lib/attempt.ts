@@ -3,7 +3,7 @@
 // speedrun/run.ts.
 
 import { type Link, type Probe, type ResumeEvent, runResumable } from '../runner/resume';
-import type { Step } from '../runner/step';
+import type { Step, StepRecord } from '../runner/step';
 import { EXIT_HOST_RESERVED, type HostReservation, type ReservationWatch, reservationText } from './host-reservation';
 import type { LogoutResult, Session } from './session';
 import type { BotWorldState } from '../../sdk/types';
@@ -38,6 +38,8 @@ export interface AttemptOptions {
     from?: number | string;
     /** The probes the chain's steps read on a resume walk (runner/resume.ts stepProbes). */
     probes?: Readonly<Record<string, Probe>>;
+    /** The attempt's step record (run.ts's AttemptRecord.steps): runSteps marks each step, the resume walk reads it. */
+    record?: StepRecord;
     /** Read at every logout-safe boundary (ReservationWatch.boundary), before the other stops. */
     reservation: ReservationWatch;
     /** Ctrl-C asked for a stop. */
@@ -84,6 +86,7 @@ export async function runAttempt(session: Session, chain: ReadonlyArray<Step<any
             ...(o.from !== undefined ? { from: o.from } : {}),
             ...(o.recover ? { recover: o.recover } : {}),
             ...(o.probes ? { probes: o.probes } : {}),
+            ...(o.record ? { record: o.record } : {}),
             ...(o.onEvent ? { onEvent: o.onEvent } : {}),
         });
         if (r.resumeAt === undefined) return { outcome: r.drops ? `chain done after ${r.drops} drop(s)` : 'chain done', code: 0, paused: null };

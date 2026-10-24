@@ -28,6 +28,17 @@
 // Probes (a bank-open probe, a quest-journal read) cost ticks, so they run only
 // when a step the walk evaluates declares them, once per walk.
 //
+// The observation also carries the attempt's step record (`Observed.record`,
+// runner/attempt-record.ts): the steps whose postconditions passed in this attempt,
+// in this process or an earlier one. A milestone whose effect leaves no lasting game
+// fact (S16's segments, whose cape and staff the exit drops) reads it in `done`;
+// runSteps marks each step there, so a step the walk enters is marked too. While the
+// observed state is out of the world (S21's relog split, a walk before a login lands),
+// a milestone the record has counts as done without reading the game: out of game
+// every quest stage and the player read empty, so nothing there can show or contradict
+// it, and the walk must reach the login half rather than stop at S00 (milestoneDone).
+// In the world each `done` decides, the record only where a module reads it.
+//
 // Each walk starts by turning run on (lib/run-mode.ts), however the session
 // came back: a relaunched client or reloaded page logged in without login().
 // It first waits, bounded in observed ticks, for a state that carries the player (awaitPlayer): a
@@ -65,7 +76,7 @@ import {
 import { Fence } from './fence';
 import { journalProbeNamed } from '../lib/quests';
 import { COMBAT_LOGOUT_TICKS, inCombatWindow } from '../lib/world';
-import { resolveStart, runSteps, type Observed, type RunnerSession, type RunStepsOptions, type RunStepsResult, type Step } from './step';
+import { resolveStart, runSteps, type Observed, type RunnerSession, type RunStepsOptions, type RunStepsResult, type Step, type StepMarks } from './step';
 
 export type Probe = (session: RunnerSession) => Promise<unknown>;
 
@@ -139,7 +150,12 @@ export function stepProbes(steps: ReadonlyArray<Pick<Step<never>, 'name' | 'prob
 /** Lazily probed view of the game, shared by one walk. */
 export class Observation implements Observed {
     readonly probed: Record<string, unknown> = {};
-    constructor(readonly state: BotWorldState, private readonly probes: Readonly<Record<string, Probe>> = {}, private readonly session?: RunnerSession) {}
+    constructor(
+        readonly state: BotWorldState,
+        private readonly probes: Readonly<Record<string, Probe>> = {},
+        private readonly session?: RunnerSession,
+        readonly record?: StepMarks,
+    ) {}
 
     async ensure(names: readonly string[] | undefined): Promise<void> {
         for (const n of names ?? []) {
@@ -158,8 +174,7 @@ export async function resolveResume<C>(steps: ReadonlyArray<Step<C>>, obs: Obser
     for (let i = 0; i < steps.length; i++) {
         const s = steps[i]!;
         if (!s.done) continue;
-        await obs.ensure(s.probes);
-        if (s.done(obs, c)) lastDone = i;
+        if (await milestoneDone(s, obs, c)) lastDone = i;
         else {
             firstUndone = i;
             break;
@@ -188,6 +203,16 @@ export async function resolveResume<C>(steps: ReadonlyArray<Step<C>>, obs: Obser
         why.push({ step: s.name, why: at });
     }
     throw new ResumeError(why, lastDone, firstUndone);
+}
+
+/**
+ * Milestone `s` is done: out of the world, once this attempt's record has it (its own `done` and
+ * probes are not read then: out of game they can only read empty); otherwise its own `done`.
+ */
+export async function milestoneDone<C>(s: Step<C>, obs: Observation, c: C): Promise<boolean> {
+    if (!obs.state.inGame && obs.record?.has(s.name)) return true;
+    await obs.ensure(s.probes);
+    return !!s.done?.(obs, c);
 }
 
 /**
@@ -377,7 +402,7 @@ async function walkHeld<C>(session: RunnerSession, steps: ReadonlyArray<Step<C>>
         if (hitAgain(s)) throw new MidStepError(e.index, e.step, `${combatWhy(s)}: hit again ${currentTick(session.sdk) - t0} ticks into the hold, so something is still attacking`, true, e.lastDone, e.firstUndone);
         if (!w.ok) throw new MidStepError(e.index, e.step, `${combatWhy(s)} after a ${maxTicks}-tick wait for the fight to end`, true, e.lastDone, e.firstUndone);
         const hold = { step: e.step, why: e.why, ticks: currentTick(session.sdk) - t0 };
-        return { point: await resolveResume(steps, new Observation(s, opts.probes, session), opts.c), hold };
+        return { point: await resolveResume(steps, new Observation(s, opts.probes, session, opts.record), opts.c), hold };
     }
 }
 
@@ -435,7 +460,7 @@ export async function runResumable<C>(session: RunnerSession, steps: ReadonlyArr
             // Never a fault: a scene that does not load in time is observed as it is and the row says so.
             const scene = await awaitScene(session.sdk, opts.sceneMaxTicks);
             const state = session.sdk.getState()!;
-            const obs = new Observation(state, opts.probes, session);
+            const obs = new Observation(state, opts.probes, session, opts.record);
             let point: ResumePoint;
             let hold: MidStepHold | undefined;
             if (attempt === 1 && opts.from !== undefined) {

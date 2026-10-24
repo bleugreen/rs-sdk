@@ -32,7 +32,7 @@ import { levelForXp, xpForLevel } from '../lib/xp';
 import * as smithing from '../skills/smithing';
 import { MANIFEST, parseLedger, walk, type Held } from '../tools/slot-ledger';
 import { boneSession, buildChain, isCueStop, KIT_PARTNER_ROWS, PLACEMENT, type ChainStep, type CueSink, type RunConfig } from './chain';
-import { HandOffRecord } from './handoff';
+import { AttemptRecord } from './attempt-record';
 import type { LegStep } from './legs';
 import { RelogBudget } from './relog-budget';
 import { Observation, resolveResume, ResumeError } from './resume';
@@ -218,12 +218,12 @@ function worldAt(k: number): World {
     }
     const open = openAt(k);
     const cues: CueSink = { open: async () => {}, stop: () => {}, isOpen: sc => { const o = open.get(keeperOf(sc)); return !!o && sameScope(o, sc); } };
-    const record = new HandOffRecord(join(dir, 'handoffs'), ATTEMPT);
-    REF.forEach((s, i) => { if (s.kind === 'handoff' && i <= k) record.mark(s.id === 'S01' ? 'H1' : s.name.replace(/ hand-off$/, ''), 1000 + i); });
+    const record = new AttemptRecord(join(dir, 'handoffs'), ATTEMPT);
+    REF.forEach((s, i) => { if (s.kind === 'handoff' && i <= k) record.handOffs.mark(s.id === 'S01' ? 'H1' : s.name.replace(/ hand-off$/, ''), 1000 + i); });
     const relogs = new RelogBudget(join(dir, 'relog'));
     if (k >= at(SCORED_LOGOUT)) relogs.beginPlanned(SCORED_RELOG, 100);
     if (k >= at(SCORED_LOGIN)) relogs.endPlanned(SCORED_RELOG, 'page');
-    const chain = buildChain(config(dir), { cues, handOffs: record, relogs, attempt: ATTEMPT });
+    const chain = buildChain(config(dir), { cues, record, relogs, attempt: ATTEMPT });
     if (chain.length !== REF.length) throw new Error(`the chain at #${k} has ${chain.length} steps, the reference ${REF.length}`);
     const walked = chain.map((s, i): ChainStep => (isQuest(s) && s.done ? { ...s, done: () => i <= k, inProgress: undefined, preconditions: () => true } : s));
     const obs = new Observation(stateAt(k));
