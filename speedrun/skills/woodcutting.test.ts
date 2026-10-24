@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { CueWatcher, nameHash, readCue, writeJsonAtomicSync } from '../helpers/altar-cue';
+import { CueWatcher, CueWriter, nameHash, readCue, writeJsonAtomicSync } from '../helpers/altar-cue';
 import { boneServer, groupLoadsDone, readBoneStatuses, type BonePhase, type BoneStatus } from '../helpers/bone-giver';
 import type { BotWorldState, InventoryItem, NearbyPlayer, TradeItem } from '../../sdk/types';
 import { baseState, FakeSdk } from '../lib/fake-sdk';
@@ -14,7 +14,7 @@ import { decideReceiver, newReceiverCtx, type GiveSpec, type ReceiveResult, type
 import { Observation, resolveResume } from '../runner/resume';
 import type { StepContext } from '../runner/step';
 import {
-    BandLedger, bandFor, bandParams, bandTechnique, BANDS, BoneCue, CAMELOT_RUNES, erlangB, expectedRolls, FOOTPRINT, freeDirs, handBackSpecs, hitBetween, MEASURE_DROPS, modelTicksPerLog, NORMAL_KEEP, PRAYER_RUN_TICKS, PROBE_DIRS, respawnTicks, routeFrom, ROUTES,
+    BandLedger, bandFor, bandParams, bandTechnique, BANDS, BoneCue, CAMELOT_RUNES, carriedLogs, erlangB, expectedRolls, FOOTPRINT, freeDirs, handBackSpecs, hitBetween, MEASURE_DROPS, modelTicksPerLog, NORMAL_KEEP, PRAYER_RUN_TICKS, PROBE_DIRS, respawnTicks, routeFrom, ROUTES,
     S07_BONE_CUE, SITES, skill, steps, successChance, summarizeBand, type WoodcuttingOptions
 } from './woodcutting';
 import { createKnifeCycle, CYCLE_METHODS } from '../../server/webclient/src/bot/programs/knife-cycle';
@@ -279,10 +279,12 @@ describe('woodcutting: preconditions', () => {
         expect(pre('woodcutting:willow-73-99', s, group)).toBe(true);
         expect(pre('woodcutting:willow-73-99', s, { bury: true, bones: { giver: 'g' } })).toBe(true);
         expect(pre('woodcutting:willow-73-99', s, { bury: true })).toBe(true);
+        // the census's oak log is room (rs/635: carried in from the oak band, dropped at the willow band's start); with nothing to bury there is no room for a load
         const noBones = state({ level: 73, items: census, fill: 23, prayer: 53 });
-        expect(pre('woodcutting:willow-73-99', noBones, group)).toBe('1 free inventory slots and 0 bones to bury, 2 needed');
+        expect(pre('woodcutting:willow-73-99', noBones, group)).toBe('2 free slots and 0 bones: no room for a 23-bone load and the log');
         // without bury the bones are only items
-        expect(pre('woodcutting:willow-73-99', s)).toBe('1 free inventory slots, 2 needed');
+        const potNotOak = state({ level: 73, items: ['Rune axe', 'Knife', 'Logs', 'Pot'], bones: 23, prayer: 53 });
+        expect(pre('woodcutting:willow-73-99', potNotOak)).toBe('1 free inventory slots, 2 needed');
     });
 
     test('bury: bones or a giver, and room for a load and the log', () => {
@@ -1304,6 +1306,31 @@ describe("woodcutting: S07's giver group takes turns (rs/383's b01-b04, bones.gr
         expect(g.receives.map(r => r.partner)).toEqual(['cairn_b02', 'cairn_b03', 'cairn_b01']);
     });
 
+    test("the cue names SCORED's site (rs/635): the oak stand through the oak band, the willows' from the oak band's end (SCORED sets off), and through the willow band", async () => {
+        const dir = newDir();
+        const g = group(dir);
+        const tile = (t: readonly [number, number]) => ({ x: t[0], z: t[1] });
+        // The cue each load is taken under, read as the givers read it.
+        const named: unknown[] = [];
+        const receive = ((sdk: FakeSdk, partner: string, opt: { want?: unknown }) => {
+            named.push(readCue(dir)?.site);
+            return (g.fn as unknown as (s: FakeSdk, p: string, o: { want?: unknown }) => Promise<ReceiveResult>)(sdk, partner, opt);
+        }) as unknown as WoodcuttingOptions['receive'];
+        const h = harness(inSight(state({ level: 60 })), { bury: true, bones: { group: GROUP }, cueDir: dir, receive }, buryRuns(1));
+        const unfollow = g.follow(h.sdk);
+        await h.byName(OAKS).run(h.ctx);
+        const atOaks = named.length;
+        expect(atOaks).toBeGreaterThan(0);
+        expect(readCue(dir)).toMatchObject({ site: tile(SITES.willow.stand) });
+        expect(readCue(dir)!.stop).toBeUndefined();
+        h.sdk.push({ player: { ...h.sdk.getState()!.player!, worldX: SITES.willow.stand[0], worldZ: SITES.willow.stand[1] } });
+        await h.byName(WILLOWS).run(h.ctx);
+        unfollow();
+        expect(named.length).toBeGreaterThan(atOaks);
+        expect(named).toEqual([...Array(atOaks).fill(tile(SITES.oak.stand)), ...Array(named.length - atOaks).fill(tile(SITES.willow.stand))]);
+        expect(readCue(dir)).toMatchObject({ stop: true, site: tile(SITES.willow.stand) });
+    });
+
     test('while no giver serves (all four away) the load waits on observed ticks, then takes the first giver back', async () => {
         const dir = newDir();
         const g = group(dir, { start: {} });
@@ -1546,7 +1573,9 @@ describe("woodcutting: S07's giver group takes turns (rs/383's b01-b04, bones.gr
         const SESSION = 'run-20261023-213447.S07.bone';
         // The stopped process: its cue (seq 1), and the givers' statuses in its session. b04 served load 1 and went
         // to restock; b03, the oldest ready, waits at the willows; b01 and b02 wait at the oaks.
-        new BoneCue(dir, SESSION).write(baseState({ tick: 1312 }), 'cairn_test');
+        // Attempt 3's cue, written before cues named a site.
+        new CueWriter(dir, 'cairn_test', S07_BONE_CUE, SESSION).write({ beacons: [{ tick: 1312, ms: Date.now() }], turns: [] });
+        expect(readCue(dir)!.site).toBeUndefined();
         const status = (account: string, o: Partial<BoneStatus>) =>
             writeJsonAtomicSync(join(dir, `bones-${account}.json`), { v: 1, account, phase: 'waiting', held: 23, n: 23, trades: 0, bounces: 0, tile: null, readyAt: null, session: SESSION, final: account === 'cairn_b04', loads: 19, ms: Date.now(), ...o });
         status('cairn_b04', { phase: 'restock', held: 0, trades: 1 });
@@ -1555,8 +1584,10 @@ describe("woodcutting: S07's giver group takes turns (rs/383's b01-b04, bones.gr
         status('cairn_b02', { readyAt: 3 });
         expect(groupLoadsDone(readBoneStatuses(dir), GROUP, SESSION)).toBe(1);
         const tried: string[] = [];
+        const named: unknown[] = [];
         const receive = (async (sdk: FakeSdk, partner: string) => {
             tried.push(partner);
+            named.push(readCue(dir)?.site);
             const st = readBoneStatuses(dir).find(x => x.account === partner)!;
             writeJsonAtomicSync(join(dir, `bones-${partner}.json`), { ...st, phase: 'restock', held: 0, readyAt: null, trades: st.trades + 1, ms: Date.now() });
             const s = sdk.getState()!;
@@ -1576,7 +1607,10 @@ describe("woodcutting: S07's giver group takes turns (rs/383's b01-b04, bones.gr
             stop();
         }
         const cue = readCue(dir)!;
-        expect([cue.session, cue.seq]).toEqual([SESSION, 2]);
+        // seq 2: the resumed band's start, naming the oaks (the load is taken under it); seq 3: its end, naming the willows.
+        expect([cue.session, cue.seq]).toEqual([SESSION, 3]);
+        expect(named).toEqual([{ x: SITES.oak.stand[0], z: SITES.oak.stand[1] }]);
+        expect(cue.site).toEqual({ x: SITES.willow.stand[0], z: SITES.willow.stand[1] });
         expect(tried).toEqual(['cairn_b01']);
         // The row numbers the group's load: 2, counted on from the persisted session's statuses.
         expect(loadRows(h)[0]!.meta).toMatchObject({ load: 2, giver: 'cairn_b01', received: 23, repicks: 0 });
@@ -1596,7 +1630,7 @@ describe("woodcutting: S07's giver group takes turns (rs/383's b01-b04, bones.gr
      */
     const session = (o: { loads: number; trades?: Record<string, number>; final?: boolean; bone?: string }) => {
         const dir = newDir();
-        new BoneCue(dir, A4).write(baseState({ tick: 900 }), 'cairn_test');
+        new BoneCue(dir, A4).write(baseState({ tick: 900 }), 'cairn_test', SITES.oak.stand);
         const put = (account: string, st: Partial<BoneStatus> = {}) =>
             writeJsonAtomicSync(join(dir, `bones-${account}.json`), {
                 v: 1, account, phase: 'waiting', held: 23, n: 23, trades: o.trades?.[account] ?? 0, bounces: 0, tile: null, readyAt: GROUP.indexOf(account) + 1, session: A4,
@@ -1772,7 +1806,7 @@ describe("woodcutting: S07's giver group takes turns (rs/383's b01-b04, bones.gr
         const band = h.byName(WILLOWS);
         // the willow log counts as room: the band drops it
         expect(band.preconditions(full, {})).toBe(true);
-        const noLog = inSight(state({ level: 99, prayer: 99, items: [...KIT, 'Oak logs', 'Pot'], bones: 23 }));
+        const noLog = inSight(state({ level: 99, prayer: 99, items: [...KIT, 'Pot', 'Pot'], bones: 23 }));
         expect(band.preconditions(noLog, {})).toBe('0 free inventory slots and 23 bones to bury, 2 needed, 1 of them free for the first log');
         const willowSlot = full.inventory.find(i => i.name === 'Willow logs')!.slot;
         h.sdk.onStateUpdate(() => {});
@@ -1790,6 +1824,64 @@ describe("woodcutting: S07's giver group takes turns (rs/383's b01-b04, bones.gr
             stop();
         }
         expect(await firstRun).toContain(willowSlot);
+    });
+
+    describe("oak logs carried into the willow band count as room, and the band drops them first (rs/635's lab)", () => {
+        /** The willow band's start: the drops it sent before its first run (the script stops there). */
+        const firstDrops = async (start: BotWorldState) => {
+            const g = session({ loads: 19, trades: { cairn_b01: 1 }, final: true });
+            let drops: number[] | null = null;
+            const h = harness(start, s07(g.dir, g.receive, { lastLoad: 21 }), async sdk => {
+                drops = drops_(sdk);
+                throw new Error('stop at the first run');
+            });
+            const band = h.byName(WILLOWS);
+            const pre = band.preconditions(start, {});
+            const stop = ticking(h.sdk);
+            try {
+                await band.run(h.ctx).catch(() => {});
+            } finally {
+                stop();
+            }
+            return { h, pre, drops: drops as number[] | null };
+        };
+        const oakSlots = (s: BotWorldState) => s.inventory.filter(i => i.name === 'Oak logs').map(i => i.slot);
+
+        test('(a) 2 oak logs and 13 bones carried in from the oak band (the lab\'s pack, 10 free): it passes and drops both oak logs before its first run', async () => {
+            const start = inSight(state({ level: 73, items: [...KIT, 'Oak logs', 'Oak logs'], bones: 13, prayer: 41 }));
+            expect(28 - start.inventory.length).toBe(10);
+            const r = await firstDrops(start);
+            expect(r.pre).toBe(true);
+            expect(r.drops).toEqual(oakSlots(start));
+            expect(r.h.lines.join('\n')).toMatch(/dropped 2 oak log\(s\) carried in from the oak band/);
+        });
+
+        test("(b) attempt 3's live willow census (axe, knife, a log, an oak log, 23 bones) still passes, and its oak log is dropped", async () => {
+            const start = inSight(state({ level: 73, items: [...KIT, 'Oak logs'], bones: 23, prayer: 53 }));
+            expect(28 - start.inventory.length).toBe(1);
+            const r = await firstDrops(start);
+            expect(r.pre).toBe(true);
+            expect(r.drops).toEqual(oakSlots(start));
+        });
+
+        test('(c) a resume into the willow band holding 2 oak logs and 23 bones (a full pack): it resumes there, passes, and drops the oak logs', async () => {
+            const start = inSight(state({ level: 73, items: [...KIT, 'Oak logs', 'Oak logs'], bones: 23, prayer: 53, tick: 2000 }));
+            expect(start.inventory).toHaveLength(28);
+            const g = session({ loads: 19, trades: { cairn_b04: 1 } });
+            const h = harness(start, s07(g.dir, g.receive), prayerRuns(0, []));
+            const p = await resolveResume(h.all, new Observation(start), {} as never);
+            expect(`${p.mode} ${p.step}`).toBe('resume woodcutting:willow-73-99');
+            const r = await firstDrops(start);
+            expect(r.pre).toBe(true);
+            expect(r.drops).toEqual(oakSlots(start));
+        });
+
+        test('only the willow band carries logs in: the oak and normal bands count and drop nothing new (unchanged)', () => {
+            const s = inSight(state({ level: 15, items: [...KIT, 'Oak logs'] }));
+            expect(carriedLogs(s, 'oak')).toEqual([]);
+            expect(carriedLogs(s, 'normal')).toEqual([]);
+            expect(carriedLogs(s, 'willow').map(i => i.name)).toEqual(['Oak logs']);
+        });
     });
 
     test('a trade mixing babydragon and big bones fills the bones want, and the knife cycle buries both', () => {
@@ -1917,18 +2009,19 @@ describe('woodcutting: the S07 bone cue session across a resume', () => {
 
     test("a resumed process with the attempt's session carries it on; no session or another one starts its own; another receiver is refused", () => {
         const dir = mkdtempSync(join(tmpdir(), 'wc-bonecue-'));
-        new BoneCue(dir, 'run-a.S07.bone').write(s, 'Scored Name');
+        const oak = SITES.oak.stand;
+        new BoneCue(dir, 'run-a.S07.bone').write(s, 'Scored Name', oak);
         const first = readCue(dir)!;
-        expect([first.session, first.seq, first.scope]).toEqual(['run-a.S07.bone', 1, S07_BONE_CUE]);
+        expect([first.session, first.seq, first.scope, first.site]).toEqual(['run-a.S07.bone', 1, S07_BONE_CUE, { x: oak[0], z: oak[1] }]);
         // A new process of the same attempt: the same session, the next seq, so the givers' load count in it holds.
-        new BoneCue(dir, 'run-a.S07.bone').write(s, 'Scored Name');
+        new BoneCue(dir, 'run-a.S07.bone').write(s, 'Scored Name', oak);
         expect([readCue(dir)!.session, readCue(dir)!.seq]).toEqual(['run-a.S07.bone', 2]);
-        new BoneCue(dir, 'run-b.S07.bone').write(s, 'Scored Name');
+        new BoneCue(dir, 'run-b.S07.bone').write(s, 'Scored Name', oak);
         expect([readCue(dir)!.session, readCue(dir)!.seq]).toEqual(['run-b.S07.bone', 1]);
-        new BoneCue(dir).write(s, 'Scored Name');
+        new BoneCue(dir).write(s, 'Scored Name', oak);
         expect(readCue(dir)!.session).not.toMatch(/S07\.bone$/);
-        new BoneCue(dir, 'run-c.S07.bone').write(s, 'Scored Name');
-        expect(() => new BoneCue(dir, 'run-c.S07.bone').write(s, 'Someone Else')).toThrow('identity mismatch');
+        new BoneCue(dir, 'run-c.S07.bone').write(s, 'Scored Name', oak);
+        expect(() => new BoneCue(dir, 'run-c.S07.bone').write(s, 'Someone Else', oak)).toThrow('identity mismatch');
     });
 
     test('boneSession needs a giver group and a nonempty name, and reaches the cue the steps write', () => {

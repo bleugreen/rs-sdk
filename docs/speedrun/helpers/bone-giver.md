@@ -77,6 +77,41 @@ only a cue scoped to its own step and family (`scope`, altar-giver.md "The cue c
 for on-request. Runecraft's S06 cue, which ends with a stop, is invisible to both. The giver
 publishes `bones-<account>.json` there (phase, bones held, trades, refusals).
 
+## Which site (S07: the cue names SCORED's)
+
+S07 chops at two sites, the Taverley oaks and then the willows, and a standing giver serves at
+the one SCORED is at. The S07 cue says which. Its `site` (`altar-cue.ts` `Cue.site`) is SCORED's
+stand tile, and `woodcutting.ts` writes it, the cue's only writer. It names a band's own stand at
+the band's start (a resume too), and the willows' stand as soon as the oak band is done, so the
+givers set off when SCORED does instead of after its walk. Each cycle the giver picks its site
+afresh (`namedSite`): the `sites` entry whose `receiver` is that tile, else the nearest within 8
+tiles. So a restock walks back to SCORED's current site, and a custom `sites` list works the same.
+
+- **A named site** is held with no timeout. The giver walks there and waits for SCORED to come into
+  sight, for the stop, or for the cue to name another site, which breaks the wait, the queue and a
+  standing request alike. A giver whose walk ended after the site changed walks on without ever
+  publishing `waiting` on the old site.
+- **Before any cue** the giver holds on its current site, `sites[0]` (the oaks) at launch, with no
+  timeout, because without a cue it has no receiver to find. The first cue ends the hold. A
+  `cue.json` written before the role started (a previous attempt's final stop, a rehearsal's
+  willow-band cue) counts only when its session is the giver's own last status session (a relaunch
+  mid-session). Otherwise it is no cue at all: no site, no stop, no receiver. The run machine's cue
+  directory outlives an attempt, and `run.ts` clears it only once it starts, after the launcher has
+  started the givers. A mid-S07 relaunch therefore depends on the giver's status file surviving the
+  relaunch, which is the host's existing rule.
+- **A cue naming no site** (an older writer, the S18 courier's cue, or a tile far from every
+  site) keeps the rotation the givers had before sites were named: `siteWaitTicks` (30) at a site
+  without the receiver, then the next one.
+- **A walk that can't stand on the site.** At a named site the giver tries the same site
+  `NAMED_TRAVEL_TRIES` (3) times, never rotating away from where SCORED is. Then it logs the fault
+  and stays, phase `fault`, until the cue names another site. The phase gate refuses a faulted
+  giver, which is right, because SCORED's site has no giver. Without a named site, a failed walk
+  moves on to the next site, as attempt 2 required.
+- **A stop** stands the giver down. It doesn't rotate first.
+
+The scored side's in-sight check stays as the safety net (`woodcutting.ts` `awaitServerInSight`):
+a load is taken only from a server SCORED can see.
+
 ## Taking turns (S07's group, b01-b04)
 
 S07 has four givers, cairn_b01-b04, because one restock round trip is longer than three loads' worth of burying. Each carries `group: ["cairn_b01", "cairn_b02", "cairn_b03", "cairn_b04"]`, and the group takes turns by one rule, `boneServer`. It is the same `altar-cue.ts turnOrder` the altar side's batch uses:
@@ -172,7 +207,7 @@ the send while the relay still held the click. Rs/105's three 30-tick trades cam
 | `item`, `n` | `Dragon bones`, 23 | what and how many per S07 load (unnoted, one press). `item` may be a priority list, S07's `["Dragon bones", "Babydragon bones"]` ("Taking turns") |
 | `group` | none | standing mode only: the accounts taking turns at the site, this one included (S07: b01-b04; "Taking turns"). With a group, `trades` counts the group's loads |
 | `acceptReturn` | false | rehearsal only (standing, bank restock): take each load back from the stand-in and bank everything at the end ("The trade-and-return rehearsal"). Never set on the run |
-| `sites` | S07's oak then willow | `[{ giver, receiver }]` tiles in run order; the giver moves on when the receiver is not in sight within `siteWaitTicks` (30). Required for `on-request` (where to wait) |
+| `sites` | S07's oak then willow | `[{ giver, receiver }]` tiles in run order. Standing mode: the giver waits at the site the cue names ("Which site"), and holds on `sites[0]` before any cue. Only a cue naming no site rotates, moving on when the receiver is not in sight within `siteWaitTicks` (30). Required for `on-request` (where to wait) |
 | `trades` | no limit | stop after this many trades (else when the cue says stop) |
 | `restock` | `{ kind: 'bank', bank: Falador west }` | `cheat` makes the bones with a staff command (lab only). `labSeed: [{ obj, n }]` (bank, lab only): staff-gives these, noted, before the first bank visit, which banks them, so every later withdrawal is a real one |
 | `noReplyTicks`, `resendTicks` | 2, 100 | re-send with no answer (frames after the click's action result); refresh a standing request |

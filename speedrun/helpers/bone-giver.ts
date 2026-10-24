@@ -33,8 +33,11 @@
 //                altar-cue.ts turnOrder); the rest wait loaded on the tile without requesting.
 //                With a group, `trades` counts the group's loads, and the one giver whose entry
 //                carries finalExtras serves the group's last load (boneServer)
-//   sites        [{ giver: {x,z}, receiver: {x,z} }] in run order (default: the oak tile, then the Taverley willow)
-//   siteWaitTicks  how long to wait at a site for the receiver before trying the next (default 30)
+//   sites        [{ giver: {x,z}, receiver: {x,z} }] in run order (default: the oak tile, then the Taverley willow).
+//                Standing mode: while the cue names a site (Cue.site, SCORED's stand: namedSite) the giver goes
+//                to that site's giver tile and waits there for as long as it is named; before any cue it holds
+//                on its current site (sites[0] at launch); a cue naming none of the sites keeps the rotation
+//   siteWaitTicks  rotation only (a cue naming no site): how long to wait at a site for the receiver before trying the next (default 30)
 //   trades       stop after this many trades, the group's with a group (default: until the cue says stop)
 //   restock      { kind: 'bank'|'cheat', bank?: {x,z}, labSeed? } (cheat: local lab only; bank default Falador west).
 //                labSeed [{ obj, n }] (bank, local lab only): staff-give these into the pack before the first bank
@@ -94,8 +97,32 @@ export interface Site {
 /** S07's chopping tiles (woodcutting.md, bones-placement.md section 3): the giver stands on the tile beside. */
 export const S07_SITES: Site[] = [
     { receiver: { x: 2914, z: 3494 }, giver: { x: 2913, z: 3494 } }, // Taverley oaks
-    { receiver: { x: 2920, z: 3406 }, giver: { x: 2920, z: 3407 } } // Taverley willows
+    // Taverley willows: (2920,3407) is inside a willow and can't be stood on (attempt 2); players don't block players.
+    { receiver: { x: 2920, z: 3406 }, giver: { x: 2920, z: 3405 } }
 ];
+
+/** How far (Chebyshev) a cue's site may be from a site's receiver tile and still name it: woodcutting.ts NEAR, the radius a band starts within. */
+export const SITE_MATCH_TILES = 8;
+
+/**
+ * The index of the site the cue names: the one whose receiver tile is the cue's `site` (SCORED's
+ * stand), else the nearest receiver within SITE_MATCH_TILES (the first on a tie). null when the cue
+ * names no site, none of ours, or is a stop.
+ */
+export function namedSite(sites: readonly Site[], cue: Pick<Cue, 'site' | 'stop'> | null | undefined): number | null {
+    const at = cue && !cue.stop ? cue.site : undefined;
+    if (!at) return null;
+    let best: number | null = null;
+    let bestD = Number.POSITIVE_INFINITY;
+    for (const [i, s] of sites.entries()) {
+        const d = chebyshev(s.receiver, at);
+        if (d < bestD) [best, bestD] = [i, d];
+    }
+    return bestD <= SITE_MATCH_TILES ? best : null;
+}
+
+/** Walks onto a named site that may fail in a row before the giver stops trying and stays, faulted, until the cue names another site. */
+export const NAMED_TRAVEL_TRIES = 3;
 
 /** Falador west bank, the nearest to Taverley's trees. */
 export const DEFAULT_BONE_BANK: Tile = { x: 2946, z: 3368 };
@@ -632,6 +659,10 @@ export class BoneGiver {
     private readonly flagged: FlagReader = (x, z, mask) => !!this.isFlagged?.(x, z, pos(this.s).level, mask);
     /** acceptReturn: a returned load waits in the pack; bank it on the next cycle even though it is a full load. */
     private mustBank = false;
+    /** Date.now() at the role's start: a cue written before it counts only on a resume (onCue). */
+    private readonly startedMs = Date.now();
+    /** Failed walks in a row onto the named site (by aim key); NAMED_TRAVEL_TRIES of them and the giver stays. */
+    private refused = { key: '', n: 0, error: '' };
 
     constructor(private readonly ctx: RoleContext) {
         this.o = boneGiverOptions(ctx.options);
@@ -646,6 +677,13 @@ export class BoneGiver {
 
     /** The first cue: a relaunch within the same scored session carries on from the trades its last process counted. */
     onCue(cue: Cue): void {
+        // cue.json outlives a launch: one written before we started (a previous attempt's final stop, a
+        // rehearsal's willow-band cue) is no cue at all, its site, stop and receiver alike, unless it is the
+        // session our own last status counted in (a relaunch mid-session). The giver holds until a cue counts.
+        if (!(cue.ms >= this.startedMs || (!!this.prior && this.prior.session === cue.session))) {
+            this.ctx.log('cue ignored: written before this giver started, in another session', { session: cue.session, seq: cue.seq, stop: !!cue.stop });
+            return;
+        }
         const fresh = this.cue?.session !== cue.session;
         this.cue = cue;
         if (!this.resumeChecked) {
@@ -658,6 +696,21 @@ export class BoneGiver {
         }
         // The receiver counts only statuses in its cue's session: show ours in it at once, not at the next heartbeat.
         if (fresh) this.publish();
+    }
+
+    /**
+     * Where the standing mode waits this cycle. 'named': the site the cue names (namedSite), held with
+     * no timeout. 'hold': before any cue (one that counts, onCue), or on a stop: the current site, held with
+     * no timeout, since there is no receiver to find and the stop stands the giver down. 'rotate': a cue
+     * naming none of our sites: the next site after siteWaitTicks without the receiver, as before sites
+     * were named. `key` changes exactly when the aim does: a wait on one aim ends when it changes.
+     */
+    private aim(): { index: number; how: 'named' | 'hold' | 'rotate'; key: string } {
+        const cue = this.cue;
+        const named = namedSite(this.o.sites, cue);
+        const how = named !== null ? 'named' : !cue || cue.stop ? 'hold' : 'rotate';
+        const index = named ?? this.site;
+        return { index, how, key: `${how}:${index}` };
     }
 
     /** The group's statuses, ours as of now rather than as last written. */
@@ -793,40 +846,62 @@ export class BoneGiver {
             this.setPhase('restock', carriesFinal ? 'with the last load\'s extras' : extras.length ? 'the last load' : '');
             await this.restock(bones, extras);
         }
+        if (this.cue?.stop) return;
+        // The cue's site, set every cycle before the travel check: a restock comes back to SCORED's site, not the rotation's next.
+        const aim = this.aim();
+        this.site = aim.index;
+        const moved = () => this.aim().key !== aim.key;
         const site = o.sites[this.site]!;
         const p = pos(this.s);
         // Already on the tile (a request that came to nothing, a turn waited out): keep our place in the group's order.
         if (p.x !== site.giver.x || p.z !== site.giver.z) {
+            if (aim.how === 'named' && this.refused.key === aim.key && this.refused.n >= NAMED_TRAVEL_TRIES) {
+                // Never rotate away from the site SCORED is at: stay, faulted (the phase gate refuses it), until the cue names another site or stops.
+                this.setPhase('fault', `site ${this.site} refused ${this.refused.n} walks: ${this.refused.error}`);
+                await until(ctx, () => moved() || !!this.cue?.stop || ctx.signal.aborted, Number.POSITIVE_INFINITY);
+                return;
+            }
             this.setPhase('travel', `site ${this.site}`);
             try {
                 await this.travel(site);
             } catch (e) {
+                const error = String(e).slice(0, 200);
+                if (aim.how === 'named') {
+                    this.refused = { key: aim.key, n: this.refused.key === aim.key ? this.refused.n + 1 : 1, error };
+                    ctx.log('travel fault: named site', { site: this.site, tries: this.refused.n, of: NAMED_TRAVEL_TRIES, error });
+                    throw e;
+                }
                 // A site we cannot reach or stand on must not hold us: the next cycle tries the next site
                 // (attempt 2: an unstandable willow tile kept b01-b04 retrying it while SCORED waited at the oaks).
                 const from = this.site;
                 if (!ctx.signal.aborted) this.site = (this.site + 1) % o.sites.length;
-                ctx.log('travel fault: next site', { from, to: this.site, error: String(e).slice(0, 200) });
+                ctx.log('travel fault: next site', { from, to: this.site, error });
                 throw e;
             }
+            // The cue named another site on the way: go there, never publishing 'waiting' on this one.
+            if (moved()) return;
         }
+        this.refused = { key: '', n: 0, error: '' };
         if (this.trip) this.logTrip();
         this.setPhase('waiting', `site ${this.site}`);
-        if (!(await until(ctx, () => !!this.receiverInSight() || !!this.cue?.stop, o.siteWaitTicks))) {
+        // Only the rotation gives up on a site; a named or held one waits for the receiver, the stop, or a new aim.
+        const found = await until(ctx, () => !!this.receiverInSight() || !!this.cue?.stop || moved() || ctx.signal.aborted, aim.how === 'rotate' ? o.siteWaitTicks : Number.POSITIVE_INFINITY);
+        if (!found && aim.how === 'rotate') {
             this.site = (this.site + 1) % o.sites.length;
             this.setPhase('travel', `site ${this.site}`);
             return;
         }
-        if (this.cue?.stop) return;
+        if (!found || this.cue?.stop || moved()) return;
         // A group takes turns: wait loaded, without requesting, until we are its server.
         while (!this.ourTurn()) {
-            if (this.cue?.stop || ctx.signal.aborted || !this.receiverInSight() || this.loadsDone() >= o.trades) return;
+            if (this.cue?.stop || ctx.signal.aborted || !this.receiverInSight() || this.loadsDone() >= o.trades || moved()) return;
             const server = this.server();
             this.setPhase('waiting', server ? `queued behind ${server}` : carriesFinal ? 'holding the last load' : 'queued');
             await until(ctx, () => this.ourTurn() || !!this.cue?.stop, 2);
         }
         this.setPhase('requested');
         // Two group givers can both start requesting on one frame: the order keeps the one ready longest, and the other stands down.
-        const req = await requestUntilOpen(ctx, o, { receiver: () => this.receiverInSight(), stopped: () => !!this.cue?.stop || !this.ourTurn(), log: ctx.log });
+        const req = await requestUntilOpen(ctx, o, { receiver: () => this.receiverInSight(), stopped: () => !!this.cue?.stop || !this.ourTurn() || moved(), log: ctx.log });
         this.bounces += req.bounces;
         if (!req.ok) {
             ctx.log('request', { ...req });

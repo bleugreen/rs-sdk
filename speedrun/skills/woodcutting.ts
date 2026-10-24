@@ -94,7 +94,10 @@
 // The giver group (`bones.group`, S07's b01-b04 taking turns; bone-giver.md "Taking turns"): the
 // module writes the cue the givers read, scoped { step: 'S07', family: 'bone' } (S07_BONE_CUE), at
 // each burying band's start and stops it when S07's last band reaches `to`, in one session for the
-// whole step so the group counts its loads across both bands. Nothing else writes it: Runecraft's
+// whole step so the group counts its loads across both bands. The cue names SCORED's site (Cue.site,
+// the band's stand), and the givers wait there rather than rotate between the trees: each band's
+// start (a resume too) names its own stand, and the oak band's end names the willows' as SCORED sets
+// off for them, so the givers walk with it. Nothing else writes it: Runecraft's
 // S06 cue is scoped to S06's altar givers. Before each load the partner is the group's server
 // (bone-giver.ts boneServer over the givers' status files) once SCORED sees it (awaitServerInSight),
 // waiting on observed ticks while none serves here; a trade that fails before any item can have moved
@@ -340,6 +343,15 @@ const PRODUCT: Record<Exclude<Tree, 'normal'>, RegExp> = { oak: /^oak logs$/i, w
  */
 export function productLogs(s: BotWorldState, tree: Tree): InventoryItem[] {
     return tree === 'normal' ? [] : s.inventory.filter(i => PRODUCT[tree].test(i.name));
+}
+
+/**
+ * The oak band's product logs carried into the willow band (its last runs' logs): the willow band drops
+ * them at its start and counts them as room. Without it, two oak logs carried in with a part load left
+ * the willow precondition one slot short of a load (rs/635's lab). None for another band.
+ */
+export function carriedLogs(s: BotWorldState, tree: Tree): InventoryItem[] {
+    return tree === 'willow' ? productLogs(s, 'oak') : [];
 }
 
 function near(s: BotWorldState, t: Tile, r: number): boolean {
@@ -957,9 +969,10 @@ export class BoneCue {
         return [{ tick: s?.tick ?? 0, ms: Date.now() }];
     }
 
-    write(s: BotWorldState | null, receiver: string): void {
+    /** `stand`: SCORED's stand at the site it chops at now (Cue.site), which the givers go to and wait at. */
+    write(s: BotWorldState | null, receiver: string, stand: Tile): void {
         this.writer ??= new CueWriter(this.dir, receiver, S07_BONE_CUE, this.sessionId);
-        this.writer.write({ beacons: BoneCue.beacons(s), turns: [] });
+        this.writer.write({ beacons: BoneCue.beacons(s), turns: [], site: { x: stand[0], z: stand[1] } });
     }
 
     stop(s: BotWorldState | null): void {
@@ -1034,7 +1047,8 @@ function endWorkOf(o: Resolved, b: Band, last: boolean, cue: BoneCue | null): (s
     return s => wcLevel(s) >= end && ((prayerShort(o, s) && (bonesIn(o, s) > 0 || left(s) === true)) || (runesOwed(o, s) && left(s) === true));
 }
 
-function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null): Step {
+/** `next`: the burying band after this one (the willows after the oaks), whose site the cue names once this band is done. */
+function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null, next: Site | null = null): Step {
     const end = bandEnd(o, b);
     const site = o.sites[b.tree];
     const technique = techniqueOf(o, b.tree);
@@ -1060,7 +1074,7 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null): Ste
         if (knifeCapable && (!count(s.inventory, KNIFE) || !count(s.inventory, LOGS))) return `technique ${technique} needs a knife and a normal log`;
         if (knifeCapable && !s.skills.some(k => k.name.toLowerCase() === 'fletching' && k.baseLevel >= 1)) return 'technique needs Fletching 1';
         // the logs this band drops at its start count as free
-        const free = 28 - s.inventory.length + (b.tree === 'normal' ? 0 : extraLogs(s, o.keepProducts).length + productLogs(s, b.tree).length);
+        const free = 28 - s.inventory.length + (b.tree === 'normal' ? 0 : extraLogs(s, o.keepProducts).length + productLogs(s, b.tree).length + carriedLogs(s, b.tree).length);
         // a burying band's first cycles bury the bones it holds, each a slot freed for the log; the
         // first log needs a free slot all the same, as a run buries only once it has anchored on one
         const held = burying ? bonesHeld(s) : 0;
@@ -1084,8 +1098,10 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null): Ste
         if (b.tree !== 'normal') {
             // a drop keeps the walk queue, and it lands before the first load's trade completes
             const extra = extraLogs(s0, o.keepProducts);
-            for (const i of extra.slice(0, 5)) void sdk.sendDropItem(i.slot);
+            const carried = carriedLogs(s0, b.tree);
+            for (const i of [...extra, ...carried].slice(0, 5)) void sdk.sendDropItem(i.slot);
             if (extra.length) o.log(`${b.name}: dropped ${Math.min(5, extra.length)} normal log(s) past ${o.keepProducts} at the band's start`);
+            if (carried.length) o.log(`${b.name}: dropped ${Math.min(5 - Math.min(5, extra.length), carried.length)} oak log(s) carried in from the oak band at the band's start`);
         }
         if (site.trees && !(s0.player?.worldX === site.stand[0] && s0.player?.worldZ === site.stand[1])) {
             // `trees` are the tiles reachable from the stand itself (knife-cycle header)
@@ -1101,8 +1117,8 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null): Ste
         const gate = technique === 'auto' ? o.makeGate(sdk, { plainTicksPerRoll: o.plainTicksPerRoll, measureDrops: MEASURE_DROPS, log: o.log, ...(dirs.length ? { dirs } : {}), ...o.gate }) : undefined;
         const ledger = new BandLedger(b.tree, startTick, startLevel);
         const segments: GatedSegment[] = [];
-        // The group finds the scored account by the cue: written before the first load, every band.
-        if (group && cue) cue.write(sdk.getState(), session.name);
+        // The group finds the scored account by the cue, and its site by the cue's: written before the first load, every band (a resume too).
+        if (group && cue) cue.write(sdk.getState(), session.name, site.stand);
         // The loads the group gave in this session before the band (the oak band's, or a stopped process's): row numbers carry on from them.
         const loadsBefore = group && cue?.session ? groupLoadsDone(readBoneStatuses(group.cueDir), group.group, cue.session) : 0;
         let loads = 0;
@@ -1278,6 +1294,8 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null): Ste
         if (ended !== 'done') throw new Error(`knife-cycle ended ${ended} at Woodcutting ${wcLevel(endState)}`);
         // S07's chopping is over: the group stands down (a band that failed keeps it, for the resume).
         if (last && group && cue) cue.stop(endState);
+        // SCORED leaves for the next band's site now: the givers set off with it, not after its walk.
+        else if (next && group && cue) cue.write(endState, session.name, next.stand);
     };
 
     return {
@@ -1373,7 +1391,7 @@ export function steps(opts: WoodcuttingOptions = {}): Step[] {
     return [
         walkStep(o, 'woodcutting:walk-oaks', o.sites.oak.stand, s => wcLevel(s) < oakEnd, o.sites.approach),
         bandStep(o, normal, false, cue),
-        bandStep(o, oak, !willowLast, cue),
+        bandStep(o, oak, !willowLast, cue, willowLast ? o.sites.willow : null),
         walkStep(o, 'woodcutting:walk-willows', o.sites.willow.stand, s => (wcLevel(s) >= oakEnd && wcLevel(s) < o.to) || willowOwes(s), []),
         bandStep(o, willow, willowLast, cue),
         ...(o.handBack !== null ? [handBackStep(o, o.handBack)] : []),
