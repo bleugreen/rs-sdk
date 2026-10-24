@@ -1054,16 +1054,12 @@ describe("the cue's lastLoad (rs/663): the final giver's next load is the last, 
             (sdk as unknown as { waitForReady: () => Promise<void> }).waitForReady = async () => {};
             return { sdk, g, priv: g as unknown as Priv, logs, status: () => readJson<BoneStatus>(join(dir, `bones-${account}.json`))! };
         };
-        /**
-         * Tick the client up to `n` frames, a little real time apart: the trade path also waits on timers
-         * (lib/wait.ts), and frames pushed faster than those fire would run its tick bounds out on a loaded machine.
-         */
+        /** Tick the client up to `n` frames; true once `p` settled. */
         const drive = async (sdk: FakeSdk, p: Promise<unknown>, n: number): Promise<boolean> => {
             let settled = false;
             p.then(() => (settled = true), () => (settled = true));
             for (let i = 0; i < n && !settled; i++) {
                 await flush();
-                await Bun.sleep(2);
                 sdk.tick();
             }
             await flush();
