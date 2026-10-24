@@ -135,6 +135,16 @@ their combined saving (1,710 normal cycle).
 - **Doors give the bot no feedback** on bridged tiles, and clicking an open door closes
   it. The script walks first and opens only if the walk fails (`viaDoor`). The doors
   close by themselves after 500 ticks (`doors.rs2:1`, `open_door(500)`).
+- **Another player may have taken the broken glass (rs/661).** A picked-up ground spawn returns
+  after 100 ticks (the obj default; neither the glass nor the damp sticks sets a `respawnrate`).
+  The glass has a second spawn at (2765,3289) in the store room under Kennith's, behind a twin of
+  the glass room door (`loc_1533` at 2765,3287; shut, the spawn is unreachable). E takes the
+  glass room's glass if it is there, else the store room's, else it waits at the glass room door
+  for whichever returns first, up to `RESPAWN_WAIT_TICKS` (120). A pickup lost under the click
+  goes back to that wait. F's sticks (one spawn) share the wait. Lab, lite, 400 ms (m): the
+  second spawn costs E+F +4 ticks (40 against 36); the wait, with the taker ~10 ticks before E,
+  +80 (116); the module before rs/661 failed E after its 60-tick wait (a `--from` restart).
+  The two-bot lab is `speedrun/lab/quests/sea-slug-taker.ts`.
 - **Firemaking.** At exactly 30 each rub is 77%: a failure costs about 1 tick and a
   re-click. Firemaking is helper-fed and passes 30 early, so schedule Sea Slug after that.
 - **Kennith answers once per click.** A second click on his wall while the first chat is
