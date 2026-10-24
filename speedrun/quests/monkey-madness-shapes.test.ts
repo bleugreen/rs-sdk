@@ -161,11 +161,12 @@ describe('S15 dialogue modes', () => {
 
     test('the module reaches converse\'s shape and burst options only through dialogueOptions', () => {
         // Every talk spreads `shaped(...)` (dialogueOptions in the running mode) and sets neither key itself, so a fixed
-        // run's calls are main's; `shape:` appears only as the module's own talk() argument, which goes through shaped.
+        // run's calls are main's; `shape:` appears only as a parameter's type or as the module's own talk() argument,
+        // which goes through shaped.
         expect(SOURCE.match(/\btalkShape\(/g)).toHaveLength(1);
         expect(SOURCE.match(/\bburst\s*:/g) ?? []).toEqual([]);
-        const shapeKeys = SOURCE.split('\n').filter(l => /\bshape\s*:/.test(l) && !/^\s*(\/\/|\*)/.test(l));
-        for (const l of shapeKeys) expect(l).toMatch(/await talk\(|o: \{ shape: string|shape: t\.shape/);
+        const shapeKeys = SOURCE.split('\n').filter(l => /\bshape\s*:/.test(l.replace(/\bshape: string/g, '')) && !/^\s*(\/\/|\*)/.test(l));
+        for (const l of shapeKeys) expect(l).toMatch(/await talk\(|shape: t\.shape/);
     });
 
     test("CONVENTIONS' columns: fixed a tick a page; burst ceil(k/5), 1 + ceil((k-1)/5) after an option or state page", () => {
