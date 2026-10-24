@@ -25,7 +25,7 @@ What binds first is a shared outlet, not setup and not the address:
 | The steel bar market (no bid: 74,175 traded in 7 days, ~441 an hour world-wide) | 1 login sells ~36% of the world's flow | more logins sell into a falling price |
 | The iron ore bid (993,853 at a mean of 80) | ~66 h with 12 logins | the iron logins move to guards |
 | Iron rock respawn (6 rocks a cluster, 13 ticks) | ~2-3 logins a cluster (inferred) | 12 iron logins need 4-6 clusters |
-| Knights, heroes | not reached: the rate per login is flat to 23 of our bots on one knight and 24 on the market's knights (lab, 'Knights crowding'), 8 bots on 3 heroes, and live at 50-100 players nearby | |
+| Knights, heroes | not reached: the rate per login is flat to 24 of our bots on one knight (lab, 'Knights crowding at 8, 16 and 24'), 8 bots on 3 heroes, and live at 50-100 players nearby | |
 
 Setup does not bind on one address: each fresh account trains its own levels in parallel, and the longest setup
 (Shilo, ~0.8 login-hours plus quest bots nobody has written) is for one login only. Every setup-driven crossover
@@ -72,7 +72,7 @@ The plan's two allocations are in `markets/methods/phase2-plan.ts` (`WITH_KNIGHT
 **What caps a pickpocket group: nothing in content.** `pickpocket.rs2` takes no lock on the NPC: a failure sets the
 NPC's mode to face the player for the stun and clears it, and the stun and its delay sit on the player
 (`thieving.rs2` `fail_pick_pocket`). Players do not collide with each other. So any number of accounts can work one
-knight; the lab has measured 23 of ours on one ('Knights crowding at 8, 16 and 24' below).
+knight; the lab has measured 24 of ours on one ('Knights crowding at 8, 16 and 24' below).
 
 ### Measured (lab, bgsrv-ub, M8)
 
