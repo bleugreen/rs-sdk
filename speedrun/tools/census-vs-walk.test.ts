@@ -13,8 +13,8 @@ const LEDGER = HEAD + [
     '| S01 | - | - | +staff of water | 0 | (m) |',
     '| T01-02 | - | tinderbox x1 (drop); law rune x1 (consume) | - | 0 | (m) |',
     '| S02 entry | - | air rune x5 (consume) | - | 0 | a sub-row (m) |',
-    '| S02 | quest key x1 [u] | quest key x1 (hand-in) | - | 0 | (m) |',
-    '| T02-03 | - | - | - | 0 | (m) |',
+    '| S02 | quest key x1 [u] | - | - | 0 | (m) |',
+    '| T02-03 | - | quest key x1 (drop) | - | 0 | (m) |',
     '| H9 | shark x2 [u] | - | - | 2 | (m) |',
     '| S03 | - | - | - | 0 | (m) |',
 ].join('\n') + '\n';
@@ -41,7 +41,7 @@ const LOG = [
     census('S02:B-key', 'S02', 30, [...KIT, ['Law rune', 1], ['Quest key', 1], ['Picture', 1], ['Vial', 1]], ['Staff of water']),
     census('S02:B-key', 'S02', 31, [...KIT, ['Law rune', 1], ['Quest key', 1], ['Picture', 1], ['Vial', 1]], ['Staff of water']),
     // The vial outlives S02 (FAIL); air 7 against the walk's 5 compares by name (rule A); the potion is drunk (info).
-    census('T02-03a run', 'T02-03a', 40, [['Knife', 1], ['Air rune', 7], ['Law rune', 1], ['Vial', 1]], ['Staff of water']),
+    census('T02-03a run', 'T02-03a', 40, [['Knife', 1], ['Air rune', 7], ['Law rune', 1], ['Quest key', 1], ['Vial', 1]], ['Staff of water']),
     census('H9 hand-off', 'H9', 50, [['Knife', 1], ['Air rune', 7], ['Law rune', 1], ['Vial', 1]], ['Staff of water']),
     // After H9: three sharks against two (rule A), the band's shafts (FAIL), a second knife (surplus).
     census('T02-03b run', 'T02-03b', 60, [['Knife', 1], ['Knife', 1], ['Air rune', 7], ['Law rune', 1], ['Vial', 1], ['Shark', 1], ['Shark', 1], ['Shark', 1], ['Arrow shaft', 30]], ['Staff of water']),
