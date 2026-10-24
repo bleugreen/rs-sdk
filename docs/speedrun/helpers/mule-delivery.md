@@ -347,9 +347,15 @@ For each delivery row R on the path, in chain order:
 2. **Ready gate.** The `{R, mule}` cue's open first stops any open cue, then
    waits (at most `READY_MAX_TICKS` observed ticks) for
    `readyFor(..., preparationSeq)`. It refuses with the carrier's last status,
-   and refuses at once on a delivery fault. The gate is at the cue's open, so a
-   hand-off step's own precondition (the partner in view, which the resume
-   walker also uses to place SCORED at the meeting) is evaluated before it.
+   and refuses at once on a delivery fault. The gate is at the cue's open,
+   after the hand-off step's own preconditions, so those do not ask for the
+   carrier: they ask that SCORED stand within `PRE_REQUEST_TILES` of the row's
+   meeting tile (the carrier's own reach, `muleMeeting` in `runner/chain.ts`)
+   and that it not already hold everything the row brings. A carrier that is
+   merely late is waited for, up to the gate's bound, and then served. The
+   resume walker reads the same preconditions: SCORED away from the meeting,
+   or holding the row's delivery without the attempt's hand-off record, walks
+   down past the row instead of trading it again.
 3. **Cue.** The cue is written under `deliverySession(run, R)`. While it is
    open it is rewritten (same session, seq+1) every `CUE_REFRESH_TICKS`, and
    again just before a hand-off's first trade click (`beforeTrade`). The
