@@ -845,7 +845,7 @@ const BURY_RUNS: Record<string, (params?: Record<string, unknown>) => ReturnType
 
 /** BURY_RUNS' digests with knife-cycle.ts as of f6ecd96f (before the on-time counters and the bury cycles' hold marks). */
 const BURY_GOLDEN: Record<string, string> = {
-    knifeBuryOak: '', knifeBuryWillow: '', knifeBuryMerged: '', plainBuryOak: '', plainBuryWillow: '', plainBuryMerged: ''
+    knifeBuryOak: 'baa52a7f', knifeBuryWillow: '593785dc', knifeBuryMerged: '6b20c200', plainBuryOak: 'eac0e18c', plainBuryWillow: '669084d8', plainBuryMerged: '787d9e69'
 };
 
 describe('knife cycle: the bury streams', () => {
