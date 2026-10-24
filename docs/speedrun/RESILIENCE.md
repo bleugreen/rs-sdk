@@ -277,6 +277,60 @@ SDK session (a second controller would take the gateway from run.ts).
 - relog-now refuses while run.ts holds the lock, while S21's planned relog is
   open, and when the budget is spent, and does nothing in each case.
 
+### The client's idle logout, and what keeps SCORED's input alive (rs/648)
+
+The engine never logs a connected player out for want of input. `World.ts`
+`processLogouts` removes one only on byte silence, after `TIMEOUT_NO_RESPONSE` (1,000 ticks
+with no bytes from the client; a live client sends `NO_TIMEOUT` every second), or on a lost
+socket, after `TIMEOUT_NO_CONNECTION` (500 ticks). Its AFK constants drive random events
+only. The one idle logout is the browser webclient's own: after **10 minutes of wall time
+with no input** (`Client.ts`, `now - idleTimer > 600_000`) the client sends `IDLE_TIMER`,
+and the engine's `IdleTimerHandler` requests the logout. An engine with `NODE_DEBUG` on
+(the lab's default) ignores the request.
+
+Only input resets that timer: the page's mouse and key handlers, and every gateway action
+as it arrives (`BotOverlay.onAction`). **In-page program clicks do not**, because the
+program host calls the action executor directly. So whenever the run itself sends no SDK
+action for 10 minutes, the client logs SCORED out, whether SCORED stands still waiting on a
+partner or runs a program band.
+
+`lib/wait.ts` `keepInput` is the one keep-input. While a wait stands, it sends
+`sendWait(1)` once 60 s of wall time (`KEEP_INPUT_MS`, a tenth of the logout) have passed
+with nothing sent, one in flight at a time, and nothing once the wait ends. A `wait` action
+sends no game packet: the overlay answers it itself after one client frame (~20 ms), so it
+moves nothing, opens nothing and leaves a pending trade request standing. Its one
+SDK-visible effect is that an SDK action sent in that same frame queues behind it. A wait
+under 60 s sends nothing, so no measured step's actions change. It runs in:
+
+- `runHandOffOnCue`'s wait for the partner in sight (H11 and H23's cannon holder, up to
+  6,000 ticks); the report's `keepInputs` counts what it sent;
+- `DeliveryOwner.awaitReady`, the mule rows' wait for the carrier's readiness (up to 600
+  ticks);
+- `lib/programs.ts` `awaitProgram`, so every in-page band (agility, rc-cycle, pickpocket,
+  the knife-cycle and knife-mine bands, item-cycle) is covered however long it runs.
+
+**The ceiling on an outage** (main's ruling for attempt 4). While our gateway is down, no
+SDK action reaches the page, so nothing resets the client's timer. Two waits can stand that
+long: the watchdog's `gateway_down` wait, which has no bound, and drop-relog's
+`RESTORE_WAIT_TICKS` (4,500 ticks, 30 min). An outage longer than 10 minutes therefore lets
+the client log SCORED out on its own. Recovery from it is a relog through the drop-relog
+path above, charged to the relog budget, not a resume in place. There is no in-page idle
+override.
+
+**Measured** (fedora, 400 ms, NODE_DEBUG=false, headless browser tabs, `lab/keep-input-accept.ts`;
+the controls ran with the keep-input disabled by an uncommitted lab patch):
+
+- **A held cannon-cue wait.** The page's idle timer was set 5 min back at the wait's start. The control
+  got `IDLE_TIMER` and an idle logout 310 s into the wait. With the keep-input, 6 were sent in 900
+  ticks, the client never went 60 s without input after the first one, and it stayed in the world.
+- **An 11-minute knife-cycle band with nothing else sent.** The control got `IDLE_TIMER` 610 s after
+  the program start. With the keep-input, 10 were sent, one every 150 ticks, and it stayed in.
+- **The knife's timing, on against off.** Two pairs on one account, in opposite orders: ticks per
+  expected roll 3.008 on against 3.097 off, and 3.083 off against 3.181 on. The differences are
+  roll luck at about 250 rolls a band and change sign with the order. The cadence itself was
+  identical: 243 starters in 759 ticks with and without, with no late clicks and no skipped or
+  deferred ticks.
+
 ### Confirmed logout (`session.ts` `logoutClean`)
 
 A logout click is confirmed by the account being out (the page's flag, the

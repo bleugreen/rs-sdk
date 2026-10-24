@@ -171,6 +171,7 @@ export class FakeSdk {
     sendPickup(x: number, z: number, itemId: number) { return this.record('sendPickup', x, z, itemId); }
     sendDropItem(slot: number) { return this.record('sendDropItem', slot); }
     sendTogglePrayer(prayer: string | number) { return this.record('sendTogglePrayer', prayer); }
+    sendWait(ticks = 1) { return this.record('sendWait', ticks); }
 
     /** The SDK route for findPath (default: straight to the destination on the player's level). */
     pathTo: (x: number, z: number) => { success: boolean; waypoints: Array<{ x: number; z: number; level: number }>; reachedDestination?: boolean } = (x, z) => ({

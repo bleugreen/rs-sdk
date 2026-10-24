@@ -518,6 +518,8 @@ export interface CueHandOffReport extends HandOffReport {
     standingAtClick: boolean;
     /** Observed ticks from the cue to the partner in sight. */
     arriveTicks: number;
+    /** Keep-inputs sent while SCORED waited for the partner (wait.ts keepInput): one a minute of wall time. */
+    keepInputs: number;
 }
 
 const requestFrom = (partner: string, since: number) => (s: BotWorldState) =>
@@ -535,13 +537,15 @@ export async function runHandOffOnCue(ctx: Pick<StepContext<unknown>, 'sdk'>, pl
     await cue.open(ctx);
     const since = sdk.getState()?.tick ?? 0;
     const near = (s: BotWorldState) => s.nearbyPlayers.some(p => sameName(p.name, partner));
-    const seen = await waitUntil(sdk, near, { maxTicks: cue.waitTicks ?? 6000 });
-    if (!seen.ok) throw new Error(`${plan.id}: ${partner} did not come into sight within ${cue.waitTicks ?? 6000} ticks of the ${cue.scope.step}/${cue.scope.family} cue`);
+    // A late partner can leave SCORED standing far past the client's idle logout: keep its input alive.
+    let keepInputs = 0;
+    const seen = await waitUntil(sdk, near, { maxTicks: cue.waitTicks ?? 6000, keepInput: { sdk: ctx.sdk, onInput: e => void (keepInputs = e.n) } });
+    if (!seen.ok) throw new Error(`${plan.id}: ${partner} did not come into sight within ${cue.waitTicks ?? 6000} ticks of the ${cue.scope.step}/${cue.scope.family} cue (${keepInputs} keep-inputs sent)`);
     const arriveTicks = seen.tick - since;
     await waitUntil(sdk, requestFrom(partner, since), { maxTicks: cue.requestTicks ?? 30 });
     const standingAtClick = requestFrom(partner, since)(sdk.getState()!);
     const report = await runHandOff(sdk, plan, partner, o);
-    return { ...report, standingAtClick, arriveTicks };
+    return { ...report, standingAtClick, arriveTicks, keepInputs };
 }
 
 /**
