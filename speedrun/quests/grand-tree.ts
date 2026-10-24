@@ -730,11 +730,16 @@ export function steps(input: Options = {}): Step<any>[] {
                 }
                 const s = sdk.getState()!;
                 if (!inVillage(s) && !inStronghold(s)) {
+                    mark(ctx, name('C-translation'), 'after the teleport');
                     await go(ctx, TILES.battlefieldTree, 2);
+                    mark(ctx, name('C-translation'), 'at the battlefield tree');
                     await tree(sdk, 'village');
+                    mark(ctx, name('C-translation'), 'in the village');
                 }
                 await villageToStronghold(sdk);
+                mark(ctx, name('C-translation'), 'in the stronghold');
                 await enterTree(sdk, ctx);
+                mark(ctx, name('C-translation'), 'in the tree');
                 await talk(sdk, opts, NARNODE, {
                     choices: [/I think so/i, /None of the above/i, /None of the above/i, /King's seal/i, /gave the man Daconia/i, /kill the tree/i],
                     shape: '4c, opt, 2c, opt, opt, opt, 1c, opt, 1c, opt, state, 8c',
@@ -868,13 +873,19 @@ export function steps(input: Options = {}): Step<any>[] {
             run: async ctx => {
                 const { sdk } = ctx;
                 if (inKaramja(sdk.getState()!)) await varrockTeleport(sdk);
+                mark(ctx, name('J-charlie'), 'after the teleport');
                 if (nearVarrockTree(sdk.getState()!)) {
                     await go(ctx, TILES.varrockTreeFoot, 1);
+                    mark(ctx, name('J-charlie'), 'at the varrock tree');
                     await tree(sdk, 'village');
+                    mark(ctx, name('J-charlie'), 'in the village');
                 }
                 await villageToStronghold(sdk);
+                mark(ctx, name('J-charlie'), 'in the stronghold');
                 await enterTree(sdk, ctx);
+                mark(ctx, name('J-charlie'), 'in the tree');
                 await treeLadder(sdk, 3);
+                mark(ctx, name('J-charlie'), 'on level 3');
                 await talk(sdk, opts, /^Charlie$/i, { shape: '8c, state', expect: /I'll see what I can find/i });
             },
             postconditions: isStarted,
@@ -889,12 +900,18 @@ export function steps(input: Options = {}): Step<any>[] {
                 const { sdk } = ctx;
                 if (invCount(sdk, ITEM.key) === 0) {
                     await leaveTree(sdk, ctx);
+                    mark(ctx, name('K-plans'), 'out of the tree');
                     await go(ctx, TILES.anitaStairsFoot, 1);
+                    mark(ctx, name('K-plans'), 'at the stairs');
                     await loc(sdk, "Anita's stairs up", TILES.anitaStairs, /^climb-up$/i, lvl(1), { maxTicks: 20 });
+                    mark(ctx, name('K-plans'), 'upstairs');
                     await talk(sdk, opts, /^Anita$/i, { shape: '6c, state, 4c', until: s => invCount(s, ITEM.key) > 0 });
+                    mark(ctx, name('K-plans'), 'key held');
                     await loc(sdk, "Anita's stairs down", TILES.anitaStairsDown, /^climb-down$/i, lvl(0), { maxTicks: 20 });
+                    mark(ctx, name('K-plans'), 'downstairs');
                 }
                 await gloughUp(sdk, ctx);
+                mark(ctx, name('K-plans'), 'on the Glough floor');
                 // The chest shows the plans' objbox, then adds them (quest_grandtree.rs2 oplocu,grandtree_chestclosed).
                 const r = await useOn(sdk, ITEM.key, { loc: { x: TILES.chest.x, z: TILES.chest.z, name: /chest/i } }, s => invCount(s, ITEM.plans) > 0 || /found a scroll/i.test(pageText(s.dialog)), { maxTicks: 30 });
                 if (!r.ok) throw new Error("Glough's key on the chest did nothing within 30 ticks");
@@ -991,6 +1008,7 @@ export function steps(input: Options = {}): Step<any>[] {
             preconditions: isStarted,
             run: async ctx => {
                 await go(ctx, TILES.narnodeRoots, 1);
+                mark(ctx, name('O-guards'), 'at Narnode');
                 // Narnode calls the guard (p_delay 6), the guard searches (p_delay 4): king_narnode.rs2.
                 await talk(ctx.sdk, opts, NARNODE, { shape: '3c, state, state, state, 1c, state, 8c, state, 1c', expect: /A reward will have to wait/i });
             },
