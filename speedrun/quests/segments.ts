@@ -16,7 +16,7 @@
 // step id, and `runSteps({from})` starts at any segment by its full name.
 
 import type { BotSDK } from '../../sdk/index';
-import type { BotWorldState } from '../../sdk/types';
+import type { BotWorldState, InventoryItem } from '../../sdk/types';
 import type { QuestKey, StageName } from '../data/quest-stages';
 import { prayerDoses } from '../lib/combat';
 import type { ConverseOptions } from '../lib/converse';
@@ -257,6 +257,49 @@ export async function drinkPrayerTo(sdk: DrinkSdk, target: number, maxTicks = 9)
         }
         drunk++;
     }
+}
+
+// ---------------------------------------------------------------- poison
+
+/** The poison hitmark's type (skill_combat/configs/hitmark.constant `^hitmark_poison`), on a damage_taken event that carries it. */
+export const HITMARK_POISON = 2;
+
+/** Ticks a fresh 'You have been poisoned!' reads as a poisoning (MM's cureWanted window). */
+export const POISONED_MESSAGE_TICKS = 30;
+
+const ANTIPOISON_DOSE = /^(super)?antipoison\((\d)\)$/i;
+
+/** The tick of this process's last antipoison dose (noteAntipoison); -Infinity after a restart. */
+let lastAntipoisonTick = -Infinity;
+
+/** Record an antipoison dose drunk on `tick`: signs of poison from before it no longer read as poisoned. */
+export function noteAntipoison(tick: number): void {
+    lastAntipoisonTick = Math.max(lastAntipoisonTick, tick);
+}
+
+/**
+ * Whether SCORED reads as poisoned: a poison hitmark on the player since the last dose, or a fresh
+ * 'You have been poisoned!' within POISONED_MESSAGE_TICKS of the state and after the last dose. The
+ * message fires only on a new poisoning (poison.rs2), so a poison carried across a login shows only
+ * by its hitmark.
+ */
+export function poisoned(s: BotWorldState): boolean {
+    const hit = s.combatEvents.some(e => e.type === 'damage_taken' && e.targetType === 'player' && (e as { hitmark?: number }).hitmark === HITMARK_POISON && e.tick > lastAntipoisonTick);
+    if (hit) return true;
+    return s.gameMessages.some(m => /you have been poisoned/i.test(m.text) && m.tick > lastAntipoisonTick && s.tick - m.tick <= POISONED_MESSAGE_TICKS);
+}
+
+/**
+ * The antipoison dose to drink: a plain antipoison before a super one (a kit counts its super
+ * potion, S15's H12 by `Superantipoison(4)`), and the fewest doses first, so a part-drunk potion
+ * goes before a full one. Null when none is held.
+ */
+export function cureDose(s: BotWorldState): InventoryItem | null {
+    const rank = (i: InventoryItem) => {
+        const m = ANTIPOISON_DOSE.exec(i.name)!;
+        return (m[1] ? 10 : 0) + Number(m[2]);
+    };
+    return s.inventory.filter(i => ANTIPOISON_DOSE.test(i.name)).sort((a, b) => rank(a) - rank(b))[0] ?? null;
 }
 
 // ---------------------------------------------------------------- inventory need

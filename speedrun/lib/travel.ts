@@ -17,7 +17,7 @@
 
 import type { BotSDK } from '../../sdk/index';
 import type { BotActions } from '../../sdk/actions';
-import type { BotWorldState, NearbyLoc } from '../../sdk/types';
+import type { BotWorldState, InventoryItem, NearbyLoc } from '../../sdk/types';
 import { act, actConverse, castTeleport, clickWalk, settle, slotOf, walkTo, TELEPORTS, type ActSdk, type JumpCounts } from './act';
 import { converse, type ConverseSdk } from './converse';
 import type { OptionPattern } from './dialogue';
@@ -777,13 +777,27 @@ function onRoute(s: BotWorldState, route: readonly XZ[], from: number, to: numbe
     return null;
 }
 
+/** Hitpoints under which the run's eat rule eats by default (EatOptions `below`). */
+export const EAT_BELOW = 15;
+/** Ticks after an eat before the rule eats again: an eat takes that long to land. */
+export const EAT_SPACING = 3;
+
+/**
+ * The run's eat rule: the food to eat now, or null. Hitpoints under `o.below` (EAT_BELOW), no eat in
+ * the EAT_SPACING ticks since `lastEat`, and a food held. A travel's `eat` follows it, and so does
+ * the upkeep around SCORED's helper waits (runner/wait-guard.ts).
+ */
+export function eatDue(s: BotWorldState, o: EatOptions, lastEat: number): InventoryItem | null {
+    const hp = s.player?.hp ?? 99;
+    if (hp >= (o.below ?? EAT_BELOW) || s.tick - lastEat < EAT_SPACING) return null;
+    return invItem(s, o.food ?? FOOD);
+}
+
 function eater(sdk: TravelSdk, trip: Trip, o?: EatOptions): (s: BotWorldState) => Promise<void> {
     if (!o) return async () => {};
     let last = -99;
     return async s => {
-        const hp = s.player?.hp ?? 99;
-        if (hp >= (o.below ?? 15) || s.tick - last < 3) return;
-        const f = invItem(s, o.food ?? FOOD);
+        const f = eatDue(s, o, last);
         if (!f) return;
         last = s.tick;
         trip.ate++;
