@@ -1,5 +1,5 @@
 /**
- * The runner's memory (docs/markets/phase2.md 'Memory'): its own figures for the totals line, and two workarounds that
+ * The runner's memory and load (docs/markets/phase2.md 'Memory'): its own figures for the totals line, and two workarounds that
  * take what sdk/ and the lite client hold per process and per login down to what they use.
  *
  * - The SDK pathfinder imports sdk/collision-data.json (27.5 MB) as a module and reads it once, in initPathfinding()
@@ -23,6 +23,71 @@ const mb = (b: number) => Math.round((b / 1_048_576) * 10) / 10;
 
 export function memoryLine(m: Pick<NodeJS.MemoryUsage, 'rss' | 'heapUsed' | 'external' | 'arrayBuffers'> = process.memoryUsage()): MemoryLine {
     return { rssMb: mb(m.rss), heapUsedMb: mb(m.heapUsed), externalMb: mb(m.external), arrayBuffersMb: mb(m.arrayBuffers) };
+}
+
+export interface LoadLine {
+    /** CPU time over wall time since the last read, % of one core (every account's JS runs on one thread). */
+    cpuPct: number;
+    /** How late a 100 ms timer fired since the last read: the delay any account's reaction to a tick waits behind. */
+    lagP50Ms: number;
+    lagP99Ms: number;
+    lagMaxMs: number;
+}
+
+/** Lag samples kept between reads; a read empties them. Past this the max still counts. */
+const LAG_KEEP = 6_000;
+
+/** The runner's load for its totals line: CPU share and event-loop lag (a timer's drift), each since the last read. */
+export class LoadMeter {
+    private lags: number[] = [];
+    private lagMax = 0;
+    private last: number;
+    private cpu: { user: number; system: number };
+    private wall: number;
+    private readonly timer: ReturnType<typeof setInterval>;
+
+    constructor(
+        private readonly everyMs = 100,
+        private readonly now: () => number = () => performance.now(),
+        private readonly cpuUsage: () => { user: number; system: number } = () => process.cpuUsage()
+    ) {
+        this.last = this.wall = now();
+        this.cpu = cpuUsage();
+        this.timer = setInterval(() => this.tick(), everyMs);
+        this.timer.unref?.();
+    }
+
+    /** @internal The timer's callback: one drift sample. */
+    tick(): void {
+        const t = this.now();
+        const lag = Math.max(0, t - this.last - this.everyMs);
+        this.last = t;
+        this.lagMax = Math.max(this.lagMax, lag);
+        if (this.lags.length < LAG_KEEP) this.lags.push(lag);
+    }
+
+    get held(): number {
+        return this.lags.length;
+    }
+
+    read(): LoadLine {
+        const t = this.now();
+        const c = this.cpuUsage();
+        const wallUs = (t - this.wall) * 1000;
+        const cpuPct = wallUs > 0 ? Math.round(((c.user - this.cpu.user + c.system - this.cpu.system) / wallUs) * 1000) / 10 : 0;
+        const sorted = [...this.lags].sort((a, b) => a - b);
+        const at = (q: number) => (sorted.length ? Math.round(sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))]!) : 0);
+        const line = { cpuPct, lagP50Ms: at(0.5), lagP99Ms: at(0.99), lagMaxMs: Math.round(this.lagMax) };
+        this.lags = [];
+        this.lagMax = 0;
+        this.cpu = c;
+        this.wall = t;
+        return line;
+    }
+
+    stop(): void {
+        clearInterval(this.timer);
+    }
 }
 
 /** Empty every array property of `source` in place; returns how many entries were dropped. */

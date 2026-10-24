@@ -9,6 +9,9 @@
  * 5th line is taken after a full collection (`gc: true`), so what is retained reads apart from garbage not yet
  * collected. At each minute in PHASE2_HEAP_SNAPSHOTS (default 5,60) it also writes heap-<minute>.heapsnapshot, a V8-format
  * snapshot after a full collection, which `heap-diff.ts` compares. Nothing happens without PHASE2_HEAP_DIR.
+ *
+ * Writing a snapshot is not free: in rs/767's baseline the minute-5 snapshot (86 MB) was followed by a transient climb
+ * to 1.6 GB RSS before the next full collection, so read the minutes after a snapshot as the probe's, not the runner's.
  */
 import { heapStats, memoryUsage as allocatorUsage } from 'bun:jsc';
 import { appendFileSync, writeFileSync } from 'node:fs';

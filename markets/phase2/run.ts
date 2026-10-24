@@ -58,7 +58,7 @@ import { DeathWatch, type DeathRecord } from './deaths.ts';
 import { buySharks, sellAtExchange, sellByShip, type BookReader } from './errands.ts';
 import { DEFAULT_POLICY, LoginGate } from './gate.ts';
 import { HpSites } from './hp-sites.ts';
-import { initPathfindingAndRelease, memoryLine, shareLocIndex } from './memory.ts';
+import { initPathfindingAndRelease, LoadMeter, memoryLine, shareLocIndex } from './memory.ts';
 import { accountLine, COINS_ID, totalsLine, type AccountSnapshot, type Stack, type Valuer } from './ledger.ts';
 import { aliasOf, nameScrubber, scrubRecord, unlistedAccounts } from './names.ts';
 import { EARNS_COINS, NEEDS, nextFallback, parsePlan, PlanError, planWarnings, roleOptions, SALE_ROUTE, sequenceFor, type AccountPlan, type MethodId, type Plan } from './plan.ts';
@@ -230,6 +230,7 @@ export class Runner {
     private readonly hpSites: HpSites;
     /** One npc per bot at the Hitpoints sites, across every account of this process. */
     private readonly claims = new TargetClaims();
+    private readonly load = new LoadMeter();
 
     constructor(
         readonly plan: Plan,
@@ -315,7 +316,7 @@ export class Runner {
 
     private totals(final: boolean): void {
         const latest = this.workers.flatMap(w => (w.latest ? [w.latest] : []));
-        this.ledger({ ...totalsLine(latest, this.valuer, this.gate.sessions(), new Date(), final), ramp: this.ramp ? { phase: this.ramp.phase, step: this.ramp.stepNumber, admitted: this.ramp.admitted() } : null, memory: memoryLine() });
+        this.ledger({ ...totalsLine(latest, this.valuer, this.gate.sessions(), new Date(), final), ramp: this.ramp ? { phase: this.ramp.phase, step: this.ramp.stepNumber, admitted: this.ramp.admitted() } : null, memory: memoryLine(), load: this.load.read() });
     }
 
     /** The book for every item an account banks (and every item with a sale floor), one read every 3 s. */
@@ -822,6 +823,7 @@ export class Runner {
             const all = await Promise.race([Promise.allSettled(active).then(() => true), Bun.sleep(STOP_WAIT_MS).then(() => false)]);
             if (this.timer) clearInterval(this.timer);
             this.totals(true);
+            this.load.stop();
             const logouts = Object.fromEntries(this.workers.map(w => [w.alias, w.active ? 'still logging in or out at exit' : (w.logout?.outcome ?? (w.sessionNo ? 'session ended' : 'never logged in'))]));
             const clean = all && Object.values(logouts).every(v => v === 'out' || v === 'queued' || v === 'never logged in' || v === 'session ended');
             this.ledger({ kind: 'end', reason, logouts, clean });
