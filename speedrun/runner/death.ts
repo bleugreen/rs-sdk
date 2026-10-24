@@ -212,12 +212,12 @@ export function watchFrames(sdk: Frames, session: { died?: Death } | undefined, 
     };
 }
 
-/** `fn` raced against `stretch`'s death: on a death, `<label>: <reason>` at once, whatever `fn` still waits for; else `fn`'s result or throw. Stops the stretch. */
-export async function raceDeath<T>(stretch: DeathStretch, label: string, fn: () => Promise<T>): Promise<T> {
+/** `fn` raced against `stretch`'s death: on a death, the death's reason at once, whatever `fn` still waits for; else `fn`'s result or throw. Stops the stretch. */
+export async function raceDeath<T>(stretch: DeathStretch, fn: () => Promise<T>): Promise<T> {
     try {
         const r = await Promise.race([fn().then(v => ({ v }), (e: unknown) => ({ e })), stretch.died.then(() => ({ dead: true as const }))]);
         const death = stretch.death();
-        if (death) throw new Error(`${label}: ${death.reason}`);
+        if (death) throw new Error(death.reason);
         if ('e' in r) throw r.e;
         return (r as { v: T }).v;
     } finally {
@@ -225,9 +225,9 @@ export async function raceDeath<T>(stretch: DeathStretch, label: string, fn: () 
     }
 }
 
-/** `fn` under a DeathWatch (watchFrames, raceDeath): a death ends it at once, on `session.died`, failing with its reason. */
+/** `fn` under a DeathWatch (watchFrames, raceDeath): a death ends it at once, on `session.died`, failing with its reason ('SCORED died <during>: ...'). */
 export function watchDeath<T>(sdk: Frames, session: { died?: Death } | undefined, during: string, fn: () => Promise<T>): Promise<T> {
-    return raceDeath(watchFrames(sdk, session, during), during, fn);
+    return raceDeath(watchFrames(sdk, session, during), fn);
 }
 
 // ------------------------------------------------------------------ acting on it

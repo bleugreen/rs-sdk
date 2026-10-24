@@ -12,9 +12,11 @@
 // guard on the same SDK adds nothing: the outer one already watches and feeds every frame.
 
 import type { BotWorldState, InventoryItem } from '../../sdk/types';
+import { annotation } from '../lib/attempt';
+import type { TickLog } from '../lib/ticks';
 import { tradeOf } from '../lib/trade';
-import { eatDue, type EatOptions } from '../lib/travel';
-import type { StateSource } from '../lib/wait';
+import { EAT_SPACING, eatDue, type EatOptions } from '../lib/travel';
+import { waitUntil, type StateSource } from '../lib/wait';
 import { opIndex } from '../lib/world';
 import { cureDose, noteAntipoison, poisoned } from '../quests/segments';
 import { raceDeath, watchFrames, type Death, type DeathStretch } from './death';
@@ -100,6 +102,14 @@ export class WaitUpkeep {
         this.act('cure', s, dose, /^drink$/i);
     }
 
+    /** Whether this frame still wants an eat or a dose (held or not): what a stretch's `settle` waits out. */
+    wants(s: BotWorldState): boolean {
+        if (!s.inGame || !s.player) return false;
+        if (eatDue(s, this.o.eat ?? {}, this.lastEat)) return true;
+        const cure = this.o.cure ?? SEGMENT_CURE;
+        return this.cureDue(s) && cure.poisoned(s) && cure.cureDose(s) !== null;
+    }
+
     /** No drink in CURE_SPACING ticks, or the last one still held as clicked after CURE_RESEND (it did not land). */
     private cureDue(s: BotWorldState): boolean {
         const d = this.drink;
@@ -123,7 +133,16 @@ export interface GuardContext {
 
 export interface Stretch extends DeathStretch {
     readonly upkeep: WaitUpkeep;
+    /**
+     * Wait, at most `maxTicks` observed ticks, until the upkeep wants nothing more (an eat and a dose go on
+     * separate frames), or a death. A stretch ending at a step's entry settles first, so a cure due behind
+     * an eat is not left to a step that may not cure a poison carried in.
+     */
+    settle(maxTicks?: number): Promise<void>;
 }
+
+/** Ticks a stretch's settle waits at most: an eat, its EAT_SPACING, a dose and its resend. */
+export const SETTLE_TICKS = EAT_SPACING + CURE_RESEND + 2;
 
 /** SDKs with a stretch's upkeep running on them: a guard inside one adds nothing. */
 const kept = new WeakMap<object, number>();
@@ -142,6 +161,10 @@ export function watchStretch(ctx: GuardContext, during: string, o: UpkeepOptions
         upkeep,
         died: frames.died,
         death: () => frames.death(),
+        settle: async (maxTicks = SETTLE_TICKS) => {
+            if (stopped) return;
+            await waitUntil(ctx.sdk, s => !!frames.death() || !upkeep.wants(s), { maxTicks });
+        },
         stop: () => {
             if (!stopped) {
                 stopped = true;
@@ -152,12 +175,34 @@ export function watchStretch(ctx: GuardContext, during: string, o: UpkeepOptions
     };
 }
 
+/** Upkeep options that write each eat or dose as a 0-tick note row, `<prefix> upkeep <during>: eat|cure`, in the step's log. */
+export function loggedActs(ctx: { log: TickLog; session: { name: string; sessionId: number } }, during: string, prefix = '(wait)'): Pick<UpkeepOptions, 'onAct'> {
+    return {
+        onAct: a => ctx.log.append(annotation(ctx.log, ctx.session.name, 'note', `${prefix} upkeep ${during}: ${a.kind}`, { sessionId: ctx.session.sessionId, startTick: a.tick, meta: { ...a } })),
+    };
+}
+
+/**
+ * `steps` with each entry (`run`, `resume`) first ending `stretch`: the step's own upkeep takes over
+ * from it, and a death the stretch saw fails the step before it sends anything (run.ts's upkeep
+ * from login to the first step's entry).
+ */
+export function enteringEnds<S extends { run(ctx: never): Promise<void>; resume?(ctx: never): Promise<void> }>(steps: readonly S[], stretch: Pick<Stretch, 'stop' | 'settle'>): S[] {
+    const enter = <A extends unknown[]>(f: (...a: A) => Promise<void>) => async (...a: A): Promise<void> => {
+        await stretch.settle();
+        const death = stretch.stop();
+        if (death) throw new Error(death.reason);
+        await f(...a);
+    };
+    return steps.map(s => ({ ...s, run: enter(s.run), ...(s.resume ? { resume: enter(s.resume) } : {}) }));
+}
+
 /**
  * `fn`, a wait SCORED stands through for a helper, under watchStretch: a death ends it at once with
- * `<during>: <the death's reason>` (session.died set), whatever `fn` was still waiting for; otherwise
- * `fn`'s own result or throw. Inside another stretch on the same SDK it is just `fn`.
+ * the death's reason ('SCORED died <during>: ...', session.died set), whatever `fn` was still waiting
+ * for; otherwise `fn`'s own result or throw. Inside another stretch on the same SDK it is just `fn`.
  */
 export function guardWait<T>(ctx: GuardContext, during: string, fn: () => Promise<T>, o: UpkeepOptions = {}): Promise<T> {
     if ((kept.get(ctx.sdk) ?? 0) > 0) return fn();
-    return raceDeath(watchStretch(ctx, during, o), during, fn);
+    return raceDeath(watchStretch(ctx, during, o), fn);
 }

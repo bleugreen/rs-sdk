@@ -1041,7 +1041,7 @@ describe('a death inside a quest step: runSteps watches every step in the world 
         });
         const ran = await w.run();
         expect(ran.result.code).toBe(EXIT_DIED);
-        expect(ran.result.outcome).toMatch(/^DIED: SCORED died in S15:A-narnode: \(2465,3489,0\) on tick \d+ to \(2465,3489,0\) on tick \d+ \(dead; hp 6 at the start, lowest 0, 0 after\) \(the chain had ended: FAILED: step "S15:A-narnode" run failed: DIED: SCORED died in S15:A-narnode/);
+        expect(ran.result.outcome).toMatch(/^DIED: SCORED died in S15:A-narnode: \(2465,3489,0\) on tick \d+ to \(2465,3489,0\) on tick \d+ \(dead; hp 6 at the start, lowest 0, 0 after\) \(the chain had ended: FAILED: step "S15:A-narnode" run failed: SCORED died in S15:A-narnode/);
         // The step was ended by the death, not by its own 40-tick wait.
         expect(w.finished()).toBe(false);
         expect(w.session.died).toMatchObject({ signs: ['dead'], hpMin: 0 });

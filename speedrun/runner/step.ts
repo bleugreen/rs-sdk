@@ -170,7 +170,7 @@ export async function deathWatched<T>(session: RunnerSession, name: string, fn: 
     void stretch.died.then(d => attempt.abort(d.reason));
     const ran = fence.run(attempt, fn);
     void ran.then(unfence, unfence);
-    return raceDeath(stretch, 'DIED', () => ran);
+    return raceDeath(stretch, () => ran);
 }
 
 export class StepError extends Error {

@@ -23,6 +23,7 @@ import type { ConverseOptions } from '../lib/converse';
 import { matchesItem, type ItemPattern } from '../lib/items';
 import { requireQuestStage, type QuestView } from '../lib/quests';
 import { receiveFrom, type WantSpec } from '../lib/trade';
+import { FOOD } from '../lib/travel';
 import { waitUntil, type StateSource } from '../lib/wait';
 import type { Check, Observed, ObservedCheck, Step, StepContext } from '../runner/step';
 
@@ -300,6 +301,17 @@ export function cureDose(s: BotWorldState): InventoryItem | null {
         return (m[1] ? 10 : 0) + Number(m[2]);
     };
     return s.inventory.filter(i => ANTIPOISON_DOSE.test(i.name)).sort((a, b) => rank(a) - rank(b))[0] ?? null;
+}
+
+// ---------------------------------------------------------------- kit consumables
+
+/**
+ * Whether a kit line names something the run uses up after the row's serve: food (lib/travel.ts FOOD), a
+ * potion at any dose, a rune. Once the row is recorded served, such a line is satisfied by its count at the
+ * serve: eating, drinking or casting afterwards never re-opens the kit's want (main's ruling, 10-24).
+ */
+export function consumable(name: string): boolean {
+    return FOOD.test(name) || /\(\d\)$/.test(name) || /potion|antipoison/i.test(name) || / rune$/i.test(name);
 }
 
 // ---------------------------------------------------------------- inventory need
