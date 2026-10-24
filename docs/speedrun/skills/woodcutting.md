@@ -410,6 +410,20 @@ place of one `bones.giver`:
   (`finalExtras` on one giver, served on the group's last load by `boneServer`). Once the runes
   are in, that load was the last: the band asks for no other, and the knife cycle chops on without
   bones to the band end, as the bones run out well before 99.
+- **The early last load (rs/663).** The group's load count is padded above need, so it must not
+  decide when the band ends. When the last band is past `to` with Prayer at `prayerTo` (the run
+  sets 99 and 99), holds no bones, and still owes the runes, it writes `lastLoad` into the S07 cue
+  once (`BoneCue.markLastLoad`; a resumed process reads it back and never writes it twice). Its
+  next ask wants exactly `CAMELOT_RUNES`, from the group's final giver only, and the band closes on
+  that load without starting another run. If no final giver serves within `serverWait`, the band
+  fails by name and keeps the cue for the resume. The fallback for that case is the coordinator's
+  call; the code never closes without the runes. The flag's row is `woodcutting:last-load`, and the
+  band summary carries `bothTargetsTick` for measuring the close.
+- **No bones at the close.** On the scored run's path (`bones.lastLoad` set), the last band buries
+  every bone it holds before it closes, Prayer 99 or not, so T07-08 starts with the knife, a log and
+  the runes. The early last load brings no bones, and a count-driven last load (21 bones and the
+  runes) is buried in a Prayer run. A resume that finds bones held at both targets re-enters the
+  band to bury them.
 - `handBack: true` names one giver, so it is refused with a group (name the partner instead).
 
 **Measured** (local engine, `NODE_TICKRATE=300`, a headless Chrome tab on bgsrv-mac, load 2.2-5.2,
