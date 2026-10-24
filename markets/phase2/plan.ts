@@ -71,6 +71,11 @@ export interface SharkPlan {
     ceiling: number;
     /** Fewer sharks than this after a purchase (or none left in the bank) sends the account to the food fallback. */
     minimum: number;
+    /**
+     * A food-redirected shark eater goes back to buy sharks and its method once its coins cover this many at the
+     * ceiling (sharks.ts rebuyDecision; source 'buy' only). Defaults to `perAccount`.
+     */
+    rebuyMinSharks: number;
     /** Minutes the buy offer waits for its fill before the remainder is cancelled. */
     fillMinutes: number;
 }
@@ -128,7 +133,7 @@ export const LOW_FOOD_MIX: Mix = { iron: 12, guards: 23 };
 export const DEFAULTS = {
     loginSpacingMs: 2_000,
     hp: 40,
-    sharks: { source: 'bank', perAccount: 200, perLoginHour: 40, hours: 72, ceiling: 701, minimum: 28, fillMinutes: 10 } satisfies SharkPlan,
+    sharks: { source: 'bank', perAccount: 200, perLoginHour: 40, hours: 72, ceiling: 701, minimum: 28, fillMinutes: 10 } satisfies Omit<SharkPlan, 'rebuyMinSharks'>,
     ramp: { steps: [8, 20, 43], holdMinutes: 15, dropPct: 10, admitTimeoutMinutes: 30, fallbackMix: PLAN_B_MIX } satisfies RampPlan,
     ledger: { everyTicks: 50, bookMinutes: 15 },
     sell: { enabled: false, cap: 500, everyMinutes: 120, floors: {}, fillMinutes: 10 } satisfies SellPlan
@@ -225,15 +230,18 @@ export function parsePlan(raw: unknown): Plan {
     const s = isObj(sk) ? sk : {};
     const source = s.source ?? DEFAULTS.sharks.source;
     if (source !== 'bank' && source !== 'buy') problems.push("sharks.source must be 'bank' or 'buy'");
+    const perAccount = num('sharks.perAccount', s.perAccount, DEFAULTS.sharks.perAccount, { min: 1, max: 20_000, integer: true });
     const sharks: SharkPlan = {
         source: source === 'buy' ? 'buy' : 'bank',
-        perAccount: num('sharks.perAccount', s.perAccount, DEFAULTS.sharks.perAccount, { min: 1, max: 20_000, integer: true }),
+        perAccount,
         perLoginHour: num('sharks.perLoginHour', s.perLoginHour, DEFAULTS.sharks.perLoginHour, { min: 0 }),
         hours: num('sharks.hours', s.hours, DEFAULTS.sharks.hours, { min: 0 }),
         ceiling: num('sharks.ceiling', s.ceiling, DEFAULTS.sharks.ceiling, { min: 1, integer: true }),
         minimum: num('sharks.minimum', s.minimum, DEFAULTS.sharks.minimum, { min: 1, integer: true }),
-        fillMinutes: num('sharks.fillMinutes', s.fillMinutes, DEFAULTS.sharks.fillMinutes, { min: 0, max: 30 })
+        fillMinutes: num('sharks.fillMinutes', s.fillMinutes, DEFAULTS.sharks.fillMinutes, { min: 0, max: 30 }),
+        rebuyMinSharks: num('sharks.rebuyMinSharks', s.rebuyMinSharks, perAccount, { min: 1, max: perAccount, integer: true })
     };
+    if (sharks.rebuyMinSharks < sharks.minimum) problems.push(`sharks.rebuyMinSharks ${sharks.rebuyMinSharks} is below sharks.minimum ${sharks.minimum}: a rebuy that small sends the account straight back to the food fallback`);
 
     // ramp: null turns it off (every knights login is admitted at once)
     let ramp: RampPlan | null = null;

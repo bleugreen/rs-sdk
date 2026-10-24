@@ -19,7 +19,7 @@ describe('parsePlan', () => {
         const p = parsePlan({ accounts: accounts(3, 'knights') });
         expect(p.maxSessions).toBe(3);
         expect(p.hp).toBe(40);
-        expect(p.sharks).toEqual({ source: 'bank', perAccount: 200, perLoginHour: 40, hours: 72, ceiling: 701, minimum: 28, fillMinutes: 10 });
+        expect(p.sharks).toEqual({ source: 'bank', perAccount: 200, perLoginHour: 40, hours: 72, ceiling: 701, minimum: 28, fillMinutes: 10, rebuyMinSharks: 200 });
         expect(p.ramp?.steps).toEqual([3]);
         expect(p.ramp?.dropPct).toBe(10);
         expect(p.ramp?.fallbackMix).toEqual({ iron: 12, heroes: 8, guards: 23 });
@@ -97,6 +97,21 @@ describe('sequenceFor', () => {
 
     test('knights: Hitpoints, Thieving 55, the ramp, then ship coins and the voyage', () => {
         expect(dos('knights')).toEqual(['tutorial', 'hp:40', 'thieving:55', 'admission', 'coins:100', 'to-ardougne', 'method']);
+    });
+    test('the rebuy minimum defaults to perAccount and stays between the minimum and perAccount', () => {
+        const one = accounts(1, 'knights');
+        expect(parsePlan({ accounts: one, sharks: { source: 'buy', perAccount: 160 } }).sharks.rebuyMinSharks).toBe(160);
+        expect(parsePlan({ accounts: one, sharks: { source: 'buy', perAccount: 160, rebuyMinSharks: 60 } }).sharks.rebuyMinSharks).toBe(60);
+        const problems = (sharks: Record<string, unknown>) => {
+            try {
+                parsePlan({ accounts: one, sharks });
+                return [];
+            } catch (e) {
+                return (e as PlanError).problems;
+            }
+        };
+        expect(problems({ perAccount: 160, rebuyMinSharks: 200 })).toContain('sharks.rebuyMinSharks must be at most 160');
+        expect(problems({ perAccount: 160, rebuyMinSharks: 10 })[0]).toMatch(/rebuyMinSharks 10 is below sharks.minimum 28/);
     });
     test('a bought shark supply adds the purchase before the voyage', () => {
         const buy = parsePlan({ accounts: accounts(1, 'knights'), sharks: { source: 'buy' }, ramp: null });
