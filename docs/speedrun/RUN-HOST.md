@@ -2773,12 +2773,13 @@ step below writes a ledger line:
 | `drop` | `--id=ID --have=N --at=X,Z[,L] [--within=2] [--worn=ID] [--slots=N]` | the pack holds exactly N of ID first; SCORED is within `--within` of `--at`; afterwards ID is gone, every other id is unchanged (`pack-other` otherwise), `--worn` is still worn, and with `--slots` the pack uses exactly that many slots |
 | `receive` | `--id=ID [--amount=1] --have=N --courier-hash=HEX --meet=X,Z[,L] [--free=N]` | exactly one listed player's name hash starts with HEX, standing within 6 tiles of `--meet`; SCORED is within 10 tiles of `--meet` and holds N of ID; afterwards it holds N + amount, every other id is unchanged, and with `--free` exactly that many slots are free (the S15 kit needed one; a full 28/28 pack broke Narnode's seal) |
 | `walk` | `--to=X,Z[,L]` | the exact tile and level within 15 ticks of `walkTo` |
+| `rekit` | `--couriers=HEX[,HEX...] --meet=X,Z[,L] [--optional=HEX,...] [--optional-wait=600] [--optional-items=ID,...] [--want=FILE] [--drop=ID,...] [--swap-give=ID,...] [--give-after=ID,... [--give-to=HEX]] [--teleport=SPELL] [--to=X,Z[,L]] [--walk-timeout=480]` | the re-kit after a death (host's `rekit-a3.ts`). Every courier not in `--optional` is listed within 6 tiles of `--meet`, and SCORED within 10 of it. SCORED records what it kept, then trades with each courier in order: an optional one is waited for and skipped if it never comes, and `--optional-items` are then left out of the check. After the trades the pack holds at least `--want` (a JSON file `{id: count}`, less `--drop`). `--give-after` items are handed back and checked gone. Then an optional `--teleport` (skipped when `teleportRefusal` says no), and a walk to the exact `--to` tile |
 
 The courier is named by a prefix (6 or more hex digits) of the sha256 of its name as the player
 list shows it (`_` shown as a space), lowercased: `printf '%s' 'cairn h61' | sha256sum | cut -c1-12`.
-So no name goes in a command, and its name is redacted to `COURIER`. Host's `rekit-a3.ts` (a
-receive with a want-list, an optional teleport and a walk) is not in the repo yet; it is attempt 5's
-most likely one-off after a death. A new kind of one-off becomes a file in `speedrun/tools/oneoff/` on
+So no name goes in a command, and its name is redacted to `COURIER`. `rekit` names its couriers the
+same way, comma-separated; in the ledger they appear as `courier 1`, `courier 2`, and so on. A new
+kind of one-off becomes a file in `speedrun/tools/oneoff/` on
 `runOneoff`. The wrapper runs nothing else, and only a tool on the machine's `RUN_COMMIT` exists
 there. Attempt 4 needed two tools written inside the hold window, so the flags above are meant to
 cover those cases without new code.
