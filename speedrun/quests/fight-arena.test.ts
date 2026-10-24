@@ -1,12 +1,13 @@
 import { describe, expect, test } from 'bun:test';
-import type { BotWorldState, InventoryItem, PlayerState, QuestJournalState } from '../../sdk/types';
+import type { BotWorldState, InventoryItem, NearbyLoc, NearbyNpc, PlayerState, QuestJournalState } from '../../sdk/types';
+import { configId } from '../lib/world';
 import { baseState, drive, FakeSdk, runeNeedProblems } from '../lib/fake-sdk';
 import { journalProbeName } from '../lib/quests';
 import { TickLog } from '../lib/ticks';
 import { Observation, resolveResume } from '../runner/resume';
 import type { RunnerSession, StepContext } from '../runner/step';
 import {
-    ARENA, ARENA_DRINK_BELOW, ARENA_PRAYER, ARRIVAL, castRunes, census, DEAD_AT_EXIT, entryCheck, exitCheck, fightOptions, LETTERS, MAX_CASTS, MIN_CASTS, observed, QUEST_ITEMS, quest, RUNE_NEED, RUNE_STAFF, RUNE_USE,
+    ARENA, ARENA_DRINK_BELOW, ARENA_PRAYER, ARRIVAL, caged, castRunes, census, MAX_RERELEASES, released, DEAD_AT_EXIT, entryCheck, exitCheck, fightOptions, LETTERS, MAX_CASTS, MIN_CASTS, observed, QUEST_ITEMS, quest, RUNE_NEED, RUNE_STAFF, RUNE_USE,
     SHAPES, stepId, steps, TILES,
 } from './fight-arena';
 import { DEFAULT_DIALOGUE, slotNeed } from './segments';
@@ -255,6 +256,38 @@ describe('rune pins: RUNE_USE and RUNE_NEED agree with the entry check (tools/ru
         expect(MAX_CASTS).toBeLessThanOrEqual(MIN_CASTS);
         expect(RUNE_USE.G!.firerune).toBeUndefined();
         expect(castRunes(1)(world({ worn: [] }), {})).toMatch(new RegExp(RUNE_STAFF, 'i'));
+    });
+});
+
+describe('H and I: a target still in its cage (rs/693)', () => {
+    const scorpion = (x: number, z: number) => ({ kind: 'npc', id: 2, index: 9, name: 'Khazard Scorpion', x, z, tileX: x, tileZ: z, size: 2, distance: 3, hp: 40, maxHp: 40, optionsWithIndex: [{ text: 'Attack', opIndex: 2 }], options: ['Attack'] }) as unknown as NearbyNpc;
+    const arenaDoor = (): NearbyLoc => ({ id: configId('loc', 'fightarena_door2'), name: 'Door', x: TILES.arenaDoor.x, z: TILES.arenaDoor.z, level: 0, distance: 1, optionsWithIndex: [{ text: 'Open', opIndex: 1 }], options: ['Open'] }) as NearbyLoc;
+
+    test('caged: east of the gate line (x 2606|2607), the release tile and the arena are not', () => {
+        expect(caged(scorpion(2607, 3159))).toBe(true);
+        expect(caged(scorpion(2608, 3160))).toBe(true);
+        expect(caged(scorpion(2606, 3159))).toBe(false);
+        expect(caged(scorpion(2603, 3156))).toBe(false);
+    });
+
+    test('released: out of its cage within the wait, no door', async () => {
+        const sdk = new FakeSdk({ ...world({ at: { x: 2603, z: 3155 } }), nearbyNpcs: [scorpion(2607, 3159)], nearbyLocs: [arenaDoor()] });
+        let t = 0;
+        const ran = await drive(sdk, released(ctxFor(sdk), /^Khazard Scorpion$/i, 'Khazard scorpion'), 30, () => (++t === 3 ? { nearbyNpcs: [scorpion(2606, 3159)] } : {}));
+        expect(ran).toBe(false);
+        expect(sdk.sent).toEqual([]);
+    });
+
+    test('released: still caged after the wait, the arena door from inside runs the release again', async () => {
+        const sdk = new FakeSdk({ ...world({ at: TILES.arenaDoorInside }), nearbyNpcs: [scorpion(2608, 3160)], nearbyLocs: [arenaDoor()] });
+        let releaseAt = -1;
+        sdk.onSend = (a, f) => {
+            if (a.method === 'sendInteractLoc' && a.args[0] === TILES.arenaDoor.x && a.args[1] === TILES.arenaDoor.z) releaseAt = f.state!.tick + 3;
+        };
+        const ran = await drive(sdk, released(ctxFor(sdk), /^Khazard Scorpion$/i, 'Khazard scorpion'), 60, s => (releaseAt >= 0 && s.tick + 1 >= releaseAt ? { nearbyNpcs: [scorpion(2606, 3159)] } : {}));
+        expect(ran).toBe(true);
+        expect(sdk.sent.filter(a => a.method === 'sendInteractLoc').map(a => a.args.slice(0, 2))).toEqual([[TILES.arenaDoor.x, TILES.arenaDoor.z]]);
+        expect(MAX_RERELEASES).toBe(2);
     });
 });
 
