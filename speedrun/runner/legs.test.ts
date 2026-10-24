@@ -8,7 +8,7 @@ import { parseTiles, resolveOptions, routeLogs } from '../skills/firemaking';
 import { baseState, drive, FakeSdk, simulateWalking, type WalkSim } from '../lib/fake-sdk';
 import { TickLog } from '../lib/ticks';
 import { eatAt, eatDue, HP_FLOOR, inArea, SPELLS, SPIRIT_TREES, type Area, type Hop } from '../lib/travel';
-import { arrived, CHURCH_ALTAR, dropDue, DROPS_PER_TICK, dropsDue, entersWilderness, leg, LEG_URGENT_HP, legById, legPreconditions, LEGS, legsAfter, legsFor, legUpkeep, neededBy, netTotal, resumeHop, runLeg, splitLeg, TILES, type LegStep, type LegStopRecord } from './legs';
+import { arrived, CHURCH_ALTAR, dropDue, DROPS_PER_TICK, dropsDue, entersWilderness, hostileLeg, hostileLegIds, leg, LEG_URGENT_HP, legById, legPreconditions, LEGS, legsAfter, legsFor, neededBy, netTotal, resumeHop, runLeg, splitLeg, startFloor, startFloorShort, TILES, type LegStart, type LegStep, type LegStopRecord } from './legs';
 import { WaitUpkeep } from './wait-guard';
 import { PLACEMENT } from './chain';
 import { Observation, resolveResume } from './resume';
@@ -249,10 +249,10 @@ describe('splitLeg', () => {
         // A leg out of the Wilderness keeps it on the part that is still in it (T14-15's run to level 20).
         const [a1415, b1415] = splitLeg(legById('T14-15'), 1, { firstTicks: 70 });
         expect([a1415.def.food, b1415.def.food]).toEqual([2, undefined]);
-        // The upkeep goes to both parts: T14-15b holds no food check but eats a poison carried into it (rs/762).
-        expect([legUpkeep(a1415.def), legUpkeep(b1415.def)]).toEqual([true, true]);
-        expect([a.def.upkeep, b.def.upkeep]).toEqual([true, true]);
-        expect(legUpkeep(legById('T12-13').def)).toBe(false);
+        // Hostility (the start floor and the upkeep) goes to both parts: T14-15b holds no food check but passes the Khazard battlefield poisoned (rs/762).
+        expect([hostileLeg(a1415.def), hostileLeg(b1415.def)]).toEqual([true, true]);
+        expect([a.def.hostile, b.def.hostile]).toEqual([true, true]);
+        expect(hostileLeg(legById('T12-13').def)).toBe(false);
         expect(entersWilderness([{ kind: 'teleport', spell: 'ardougne' }], SPELLS.ardougne.landing)).toBe(false);
     });
 
@@ -910,6 +910,8 @@ describe("the leg upkeep under poison (attempt 4: T14-15b reached hpMin 1 with 3
         drinks: number[];
         /** The lowest hitpoints any published frame showed. */
         hpMin: number;
+        /** The lowest hitpoints a frame showed from the first eat's heal on (rs/764's acceptance: never under the floor after it). */
+        hpMinAfterEat: number;
         treeClicks: number[];
         rides: number[];
     }
@@ -927,7 +929,8 @@ describe("the leg upkeep under poison (attempt 4: T14-15b reached hpMin 1 with 3
         let eat: number | null = null;
         let drink: number | null = null;
         let ride: { at: number; to: Area; locs: NearbyLoc[] } | null = null;
-        const sim: PoisonSim = { eats: [], drinks: [], hpMin: sdk.state!.player!.hp, treeClicks: [], rides: [] };
+        const sim: PoisonSim = { eats: [], drinks: [], hpMin: sdk.state!.player!.hp, hpMinAfterEat: Infinity, treeClicks: [], rides: [] };
+        let healed = false;
         const prev = sdk.onSend;
         sdk.onSend = (a, f) => {
             prev(a, f);
@@ -954,6 +957,7 @@ describe("the leg upkeep under poison (attempt 4: T14-15b reached hpMin 1 with 3
                 inventory = inventory.filter(i => i.slot !== slot);
                 hp = Math.min(p.maxHp, hp + 20);
                 eat = null;
+                healed = true;
             }
             if (drink !== null) {
                 const slot = drink;
@@ -983,6 +987,7 @@ describe("the leg upkeep under poison (attempt 4: T14-15b reached hpMin 1 with 3
                 ride = null;
             }
             sim.hpMin = Math.min(sim.hpMin, hp);
+            if (healed) sim.hpMinAfterEat = Math.min(sim.hpMinAfterEat, hp);
             return { player, inventory, combatEvents, ...more };
         };
         return { sim, each };
@@ -990,7 +995,7 @@ describe("the leg upkeep under poison (attempt 4: T14-15b reached hpMin 1 with 3
 
     const at = (x: number, z: number, hp: number, more: Partial<BotWorldState> = {}) =>
         state(x, z, { player: { ...player(x, z), hp, maxHp: MAX_HP }, prayers: { activePrayers: [], prayerPoints: 99, prayerLevel: 99 } as never, ...more });
-    const travelRow = (ctx: StepContext<unknown>) => ctx.log.rows.find(r => r.kind === 'travel')!.meta as { ate: number; cured?: number; hpMin: number };
+    const travelRow = (ctx: StepContext<unknown>) => ctx.log.rows.find(r => r.kind === 'travel')!.meta as { ate: number; cured?: number; hpMin: number; start?: LegStart };
 
     test('the floor rule: eat at or under 25 at SCORED\'s maximum (15 + one poison hit 6 + one hit 4), 10 under a small maximum, never under the old rule', () => {
         expect(eatAt(40)).toBe(25);
@@ -1009,7 +1014,7 @@ describe("the leg upkeep under poison (attempt 4: T14-15b reached hpMin 1 with 3
 
     test('a leg poisoned from 20 HP on its tree rides eats before 15 and never reaches 1, the eat landing inside a ride', async () => {
         const rides = leg('TX', TILES.khazardTree, { ...SPIRIT_TREES.stronghold.landing }, [{ kind: 'tree', to: 'village' }, { kind: 'tree', to: 'stronghold' }], {
-            after: 'A', before: 'B', method: 'two tree rides', upkeep: true, expected: { ticks: 10, label: 'i', source: 'test', net: 10 },
+            after: 'A', before: 'B', method: 'two tree rides', hostile: true, expected: { ticks: 10, label: 'i', source: 'test', net: 10 },
         });
         // 27 HP: above the floor rule, so no eat before the first ride; the poison takes 6 inside it.
         const sdk = new FakeSdk(at(TILES.khazardTree.x, TILES.khazardTree.z, 27, { inventory: [shark(3), shark(4), shark(5)], nearbyLocs: [YOUNG_TREE] }));
@@ -1096,5 +1101,133 @@ describe("the leg upkeep under poison (attempt 4: T14-15b reached hpMin 1 with 3
         expect(sdk.state!.inventory.map(i => i.name)).toContain('Superantipoison(3)');
         expect(travelRow(ctx).cured).toBe(1);
         expect(sim.hpMin).toBeGreaterThanOrEqual(HP_FLOOR);
+    });
+});
+
+// ------------------------------------------------------------------ the hostile legs' start floor
+
+describe("the hostile legs' start floor (main 19:1xZ; rs/764's run 1: T14-15b from 12 of 42 HP with 7 sharks, ate nothing, dead after a tree ride)", () => {
+    const MAX_HP = 42;
+    const fish = (slot: number, name = 'Shark'): InventoryItem => ({ slot, id: 385 + slot, name, count: 1, optionsWithIndex: [{ text: 'Eat', opIndex: 1 }] }) as unknown as InventoryItem;
+    const sharks = (n: number) => Array.from({ length: n }, (_, i) => fish(3 + i));
+    const YOUNG = { id: 1317, x: TILES.khazardTree.x + 1, z: TILES.khazardTree.z + 1, level: 0, name: 'Spirit tree', distance: 1, options: ['Talk-to'], optionsWithIndex: [{ text: 'Talk-to', opIndex: 1 }] } as unknown as NearbyLoc;
+    const landing = SPELLS.ardougne.landing;
+    const T14_15B = () => splitLeg(legById('T14-15'), 1, { firstTicks: 70 })[1];
+    const at = (hp: number, inventory: InventoryItem[], more: Partial<BotWorldState> = {}) =>
+        state(landing.x, landing.z, { player: { ...player(landing.x, landing.z), hp, maxHp: MAX_HP }, inventory, nearbyLocs: [YOUNG], ...more });
+    const travelRow = (ctx: StepContext<unknown>) => ctx.log.rows.find(r => r.kind === 'travel')?.meta as { ate: number; hpMin: number; start?: LegStart } | undefined;
+
+    test('the hostile legs are the table\'s food legs, both parts of a split one, and no other', () => {
+        expect(hostileLegIds(LEGS)).toEqual(['T13-14', 'T14-15', 'T15-16', 'T26-27', 'T27-17']);
+        expect(hostileLegIds(legsFor({ s21Altar: 'body' }))).toEqual(hostileLegIds(LEGS));
+        expect(hostileLegIds(splitLeg(legById('T14-15'), 1, { firstTicks: 70 }))).toEqual(['T14-15a', 'T14-15b']);
+        expect(hostileLegIds(splitLeg(legById('T15-16'), 0))).toEqual(['T15-16a', 'T15-16b']);
+    });
+
+    test('the floor is the eat line, 25 at SCORED\'s 38-42, never above the maximum', () => {
+        expect([startFloor(38), startFloor(42), startFloor(99)]).toEqual([25, 25, 25]);
+        expect(startFloor(30)).toBe(20);
+        expect(startFloor(12)).toBe(12);
+    });
+
+    test('a start under the floor that the food held cannot heal to is refused by name, at the boundary; a non-hostile leg is not judged', () => {
+        const b = T14_15B().def;
+        expect(startFloorShort(b, at(12, []))).toBe("T14-15b: 12 HP, and the 0 food held heals 0, short of the leg's start floor of 25");
+        expect(legPreconditions(b, at(12, [fish(3, 'Trout')]))).toBe("T14-15b: 12 HP, and the 1 food held heals 7, short of the leg's start floor of 25");
+        expect(legPreconditions(b, at(12, [fish(3, 'Trout'), fish(4, 'Trout')]))).toBe(true);
+        expect(legPreconditions(b, at(12, sharks(1)))).toBe(true);
+        expect(legPreconditions(b, at(25, []))).toBe(true);
+        expect(startFloorShort(legById('T12-13').def, at(3, []))).toBeNull();
+    });
+
+    test("rs/764's shape: T14-15b from 12 HP with 7 sharks, poisoned, eats to the floor before the first hop and never falls under it after", async () => {
+        const b = T14_15B();
+        const sdk = new FakeSdk(at(12, sharks(7)));
+        const walk = simulateWalking(sdk);
+        const eats: number[] = [];
+        const firstMove: number[] = [];
+        let eat: number | null = null;
+        let nextHit = 103;
+        let ride: { at: number; to: Area } | null = null;
+        let healed = false;
+        let hpAfter = Infinity;
+        const prev = sdk.onSend;
+        sdk.onSend = (a, f) => {
+            prev(a, f);
+            const t = f.state!.tick;
+            if (a.method === 'sendUseItem') {
+                eats.push(t);
+                eat = a.args[0] as number;
+            } else if (!firstMove.length) firstMove.push(t);
+            if (a.method === 'sendInteractLoc' && (a.args[2] === 1317 || a.args[2] === 1294)) {
+                const village = a.args[2] === 1317;
+                ride ??= { at: t + 4, to: SPIRIT_TREES[village ? 'village' : 'stronghold'].landing };
+            }
+        };
+        const each = (s: BotWorldState): Partial<BotWorldState> => {
+            const t = s.tick + 1;
+            let { hp } = s.player!;
+            let inventory = s.inventory;
+            if (eat !== null) {
+                const slot = eat;
+                inventory = inventory.filter(i => i.slot !== slot);
+                hp = Math.min(MAX_HP, hp + 20);
+                eat = null;
+                healed = true;
+            }
+            // Poison at severity 27 every 10 ticks (a hit of 6, then 6, 5 ...) and a 3 from a trooper each 4 ticks: far over rs/764's rate.
+            if (t >= nextHit) {
+                hp -= 6;
+                nextHit = t + 10;
+            }
+            if (t % 4 === 0) hp -= 3;
+            hp = Math.max(0, hp);
+            let player = { ...s.player!, hp };
+            const more: Partial<BotWorldState> = {};
+            if (ride && t >= ride.at) {
+                player = { ...player, worldX: ride.to.x, worldZ: ride.to.z, x: ride.to.x, z: ride.to.z };
+                more.nearbyLocs = ride.to === SPIRIT_TREES.village.landing ? [{ ...YOUNG, id: 1294, x: ride.to.x, z: ride.to.z + 1 }] : [];
+                walk.target = null;
+                ride = null;
+            }
+            if (healed) hpAfter = Math.min(hpAfter, hp);
+            return { player, inventory, ...more };
+        };
+        const ctx = ctxFor(sdk);
+        await drive(sdk, b.run(ctx), 600, each);
+        expect(arrived(b.def, sdk.state!)).toBe(true);
+        // The first eat goes on the leg's first frame, and the first hop's click only once the heal shows.
+        expect(eats[0]).toBe(100);
+        expect(firstMove[0]!).toBeGreaterThan(eats[0]!);
+        expect(travelRow(ctx)!.start).toEqual({ hp: 12, floor: 25, reached: 32, ticks: 1 });
+        expect(hpAfter).toBeGreaterThanOrEqual(HP_FLOOR);
+        expect(sdk.state!.player!.hp).toBeGreaterThan(0);
+    });
+
+    test('at or above the floor the start costs 0 ticks and eats nothing first', async () => {
+        const b = T14_15B();
+        const sdk = new FakeSdk(at(25, sharks(2)));
+        const sends: string[] = [];
+        const prev = sdk.onSend;
+        sdk.onSend = (a, f) => {
+            prev(a, f);
+            sends.push(`${f.state!.tick} ${a.method}`);
+        };
+        simulateWalking(sdk);
+        const ctx = ctxFor(sdk);
+        await drive(sdk, b.run(ctx).catch(() => {}), 30);
+        // The upkeep eats 25 on the first frame as ever, beside the first hop's click: no wait between.
+        expect(sends.filter(x => x.startsWith('100 '))).toContain('100 sendUseItem');
+        expect(sends.some(x => x.startsWith('100 ') && !x.endsWith('sendUseItem'))).toBe(true);
+        expect(travelRow(ctx)?.start).toBeUndefined();
+    });
+
+    test('a resumed hostile leg (no precondition check) under the floor with too little food refuses before it sends anything', async () => {
+        const b = T14_15B();
+        const sdk = new FakeSdk(at(12, [fish(3, 'Trout')]));
+        const ctx = ctxFor(sdk);
+        await expect(drive(sdk, b.resume!(ctx), 20)).rejects.toThrow("T14-15b: 12 HP, and the 1 food held heals 7, short of the leg's start floor of 25");
+        // The upkeep's first-frame eat (the trout) is the only click: no hop went.
+        expect(sdk.sent.every(a => a.method === 'sendUseItem')).toBe(true);
     });
 });
