@@ -44,8 +44,16 @@
 // The end: S17's final logout (agility's `finish: 'final-logout'`), confirmed; the total level read
 // from the last state against 1,881; the run's claim released (rs-claim release).
 //
+// A death (runner/death.ts): a logout that saw SCORED die while it held (lib/session.ts
+// logoutClean, at a stop, after a refused or failed step, at a signal, or the watchdog's) writes a
+// `(death)` row with the tile before and after, the logout line says DIED, the drop recovery
+// refuses to relog, and the attempt ends with exit 6 whatever the chain ended with. Any later run
+// into the same log, a walk from game state or a --from, is refused (exit 3) until R8's recovery is
+// done and --r8-recovered=<key> names that death; the start then writes `(death) acknowledged`.
+//
 // Exit: 0 the run done at 1,881 (or the --until slice done), 1 error or a short total, 2 usage,
-// 3 refused by a start gate, 4 stopped (resume), 5 host reserved (paused; resume once it is gone).
+// 3 refused by a start gate, 4 stopped (resume), 5 host reserved (paused; resume once it is gone),
+// 6 SCORED died before a logout landed (R8's recovery, then --r8-recovered).
 
 import { existsSync, readFileSync } from 'fs';
 import { join, resolve } from 'path';
@@ -73,6 +81,7 @@ import { LOST_AFTER_TICKS, sessionLink } from './runner/resume';
 import { RelogBudget } from './runner/relog-budget';
 import { HandOffRecord } from './runner/handoff';
 import { SCORED_LOGIN, SCORED_RELOG } from './runner/scored-relog';
+import { ackRow, deathGate, deathRow, diedResult, operatorLine } from './runner/death';
 
 /** Ticks past the link's stale bound before the watchdog acts, with the drop recovery on. */
 export const WATCHDOG_AFTER_LINK_TICKS = 10;
@@ -85,7 +94,8 @@ export const USAGE = `usage: bun speedrun/run.ts --bot=<env name> --config=<run 
     [--from=<id|step name|index>] [--until=<id|step name>] [--dry-run] [--log=<file>]
     [--run-commit=<rev>] [--run-dir=<dir>] [--host-reservation=<file>] [--claim-owner=<rs/NNN>]
     [--s21-relog=on|off]  (SCORED's relog after S21's givers are ready; default on)
-    [--tick-override]  (operator only: go past a tick preflight refusal, logged as overridden)`;
+    [--tick-override]  (operator only: go past a tick preflight refusal, logged as overridden)
+    [--r8-recovered=<key>]  (operator only: R8's recovery is done for the death the log's (death) row records)`;
 
 /** The account every log row carries. */
 export const LOG_ACCOUNT = 'SCORED';
@@ -114,9 +124,11 @@ export interface RunArgs {
     tickOverride: boolean;
     /** SCORED's in-page relog between S21's pre-login and its first trade (--s21-relog=on|off, default on). */
     s21Relog: boolean;
+    /** The death (runner/death.ts deathKey) R8's recovery was done for: the start's death gate lets the run in past it. */
+    r8Recovered?: string;
 }
 
-const VALUE_FLAGS = new Set(['bot', 'config', 'client', 'from', 'until', 'log', 'run-commit', 'run-dir', 'host-reservation', 'claim-owner', 'cannon-serve', 's21-relog']);
+const VALUE_FLAGS = new Set(['bot', 'config', 'client', 'from', 'until', 'log', 'run-commit', 'run-dir', 'host-reservation', 'claim-owner', 'cannon-serve', 's21-relog', 'r8-recovered']);
 const SWITCHES = new Set(['dry-run', 'tick-override']);
 
 export function parseArgs(argv: readonly string[]): RunArgs {
@@ -146,7 +158,7 @@ export function parseArgs(argv: readonly string[]): RunArgs {
         log: resolve(v.log ?? join(runDir, 'run.jsonl')), cannonServe: resolve(v['cannon-serve'] ?? join(runDir, 'cannon-serve.json')),
         ...(v.from ? { from: v.from } : {}), ...(v.until ? { until: v.until } : {}),
         ...(v['run-commit'] ? { runCommit: v['run-commit'] } : {}), ...(v['host-reservation'] ? { hostReservation: v['host-reservation'] } : {}),
-        ...(v['claim-owner'] ? { claimOwner: v['claim-owner'] } : {}),
+        ...(v['claim-owner'] ? { claimOwner: v['claim-owner'] } : {}), ...(v['r8-recovered'] ? { r8Recovered: v['r8-recovered'] } : {}),
     };
 }
 
@@ -562,10 +574,25 @@ export async function runChainOnSession(session: Session, o: ChainRunOptions): P
     const tabMem = startRunTabMemory(session, log, o.tabMemory);
 
     let lastLogout: LogoutResult | null = null;
+    // The one `(death)` row, for whichever logout saw it: ours, or the watchdog's.
+    let died: TickRow | null = null;
+    const noteDeath = (): TickRow | null => {
+        const d = session.died;
+        if (!d || died) return died;
+        died = deathRow(log, account, session.sessionId, d, lastLogout ?? undefined);
+        log.append(died);
+        console.log(`${tag} DIED: ${d.reason}`);
+        console.log(`${tag} operator: ${operatorLine(died)}`);
+        return died;
+    };
     const leave = async (): Promise<LogoutResult> => {
         const r = await logoutClean(session);
         lastLogout = r;
-        console.log(`${tag} logout: ${r.ok ? `out after the click on tick ${r.clickTick}` : `NOT confirmed (${r.reason})`}`);
+        const t = (x: { x: number; z: number }) => `(${x.x},${x.z})`;
+        const held = r.held ? `; held ${r.held.ticks} ticks, ${r.held.inCombatTicks} in combat, hp ${r.held.hp.map(h => h.hp).join(' > ')}` : '';
+        const died = r.death ? `DIED before it landed, ${t(r.death.from)} to ${t(r.death.to)}; ` : '';
+        console.log(`${tag} logout: ${died}${r.ok ? `out after the click on tick ${r.clickTick}` : `NOT confirmed (${r.reason})`}${held}`);
+        noteDeath();
         return r;
     };
     const sig = signalShutdown(tag, leave, o.signals);
@@ -573,12 +600,18 @@ export async function runChainOnSession(session: Session, o: ChainRunOptions): P
     try {
         result = await untilTerminated(runAttempt(session, o.chain, {
             log, account, link, reservation: o.reservation, probes,
-            ...(recovery ? { recover: recovery.recover } : {}),
+            // After a death the respawn is not a place to relog into and go on from.
+            ...(recovery ? { recover: async (reason: string, at: { step: string | null; tick: number }) => {
+                if (session.died) throw new Error(`no drop recovery after a death: ${session.died.reason}`);
+                await recovery.recover(reason, at);
+            } } : {}),
             stopAsked: sig.stopAsked, gateStop: () => null, logout: () => leave(), label: o.label ?? 'run',
             ...(o.from !== undefined ? { from: o.from } : {}),
             onEvent: e => console.log(`[resume] ${JSON.stringify(e)}`),
         }), sig);
         if (session.expectInWorld && !sig.leaving()) await leave();
+        const death = noteDeath();
+        if (death) result = diedResult(death, result);
         return { result, lastLogout, lastState };
     } finally {
         wd.stop();
@@ -596,6 +629,7 @@ export async function runChainOnSession(session: Session, o: ChainRunOptions): P
         sig.dispose();
         for (const st of programs.flush()) log.append(programRow(log, account, session.sessionId, st));
         unsubscribe();
+        noteDeath();
         const out = lastLogout as LogoutResult | null;
         clock.close(log, account, session.sessionId, 'logout', out?.ok ? out.lastInWorldTick : session.lastInWorldTick, out ?? undefined);
         }
@@ -767,6 +801,14 @@ async function main(argv: string[]): Promise<number> {
         console.log(`[gate] ok      delivery: run ${delivery.owner.runId}, rows ${chain.filter(s => s.cue?.family === 'mule').map(s => s.cue!.step).join(', ')}`);
     }
 
+    const death = deathGate(earlier, a.r8Recovered);
+    if ('refusal' in death) {
+        console.error(`[gate] REFUSED death: ${death.refusal}`);
+        console.error('[run] nothing was logged in');
+        return EXIT_REFUSED;
+    }
+    if (death.acknowledge.length) console.log(`[gate] ok      death: ${death.acknowledge.join(', ')} acknowledged (R8's recovery done)`);
+
     const fresh = earlier.length === 0 && from === undefined;
     // A fresh run's budget is whole: the last run's relogs and any stale lock go (prepareCueDir's rule).
     if (fresh && !a.dryRun) relogs.clear();
@@ -793,6 +835,7 @@ async function main(argv: string[]): Promise<number> {
         }
     }
     const log = TickLog.open(runId, a.log);
+    if (death.acknowledge.length) log.append(ackRow(log, LOG_ACCOUNT, death.acknowledge));
     const bin = owner ? claimBin() : null;
     const reservation = new ReservationWatch(reservationPath(a.hostReservation), { label: 'run', ...(owner ? { owner, touch: bin ? claimToucher(bin) : null } : {}) });
     const recorded = gates.find(g => g.gate === 'demo tick rate')!.meta!.recorded as TickMsParse;
