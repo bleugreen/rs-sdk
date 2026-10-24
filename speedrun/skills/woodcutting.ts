@@ -781,11 +781,13 @@ export interface BandSummary extends SubBandRow {
     segments: Array<{ technique: SegmentTechnique; reason: string; runId: number; ticks: number; logs: number }>;
     /** `knife->plain (measured)` style list of the segment ends that switched technique. */
     switches: string[];
+    /** A burying band's buries and Burys judged on time and late (knife-cycle), by technique: the per-mode bones a tick and on-time rate. */
+    bury?: Partial<Record<SegmentTechnique, { buried: number; onTime: number; late: number }>>;
 }
 
 const r3 = (n: number) => (Number.isFinite(n) ? Math.round(n * 1000) / 1000 : Number.NaN);
 
-const COUNTERS = ['phaseResyncs', 'resyncs', 'slips', 'switches', 'noTarget', 'levelUps', 'held', 'starters', 'fellBack', 'buried', 'burySent', 'noBoneCycles', 'lateClicks', 'prayerLevelUps', 'overBudget'] as const;
+const COUNTERS = ['phaseResyncs', 'resyncs', 'slips', 'switches', 'noTarget', 'levelUps', 'held', 'starters', 'fellBack', 'buried', 'burySent', 'buryOnTime', 'buryLate', 'noBoneCycles', 'lateClicks', 'prayerLevelUps', 'overBudget'] as const;
 
 function addCell(a: Cell, b: Cell): void {
     a.ticks += b.ticks;
@@ -851,8 +853,15 @@ export function summarizeBand(ledger: BandLedger, segments: readonly GatedSegmen
     const counters: Record<string, number> = {};
     let deferred = 0;
     let skippedTicks = 0;
+    const bury: NonNullable<BandSummary['bury']> = {};
     for (const seg of segments) {
         const st = seg.status;
+        if (st.counters.burySent) {
+            const b = (bury[seg.technique] ??= { buried: 0, onTime: 0, late: 0 });
+            b.buried += st.counters.buried ?? 0;
+            b.onTime += st.counters.buryOnTime ?? 0;
+            b.late += st.counters.buryLate ?? 0;
+        }
         const h = ((st.result as { histogram?: Record<string, number> } | undefined)?.histogram ?? {}) as Record<string, number>;
         const into = (histogram[seg.technique] ??= {});
         for (const [gap, n] of Object.entries(h)) into[Number(gap)] = (into[Number(gap)] ?? 0) + n;
@@ -870,8 +879,106 @@ export function summarizeBand(ledger: BandLedger, segments: readonly GatedSegmen
         deferred,
         skippedTicks,
         segments: segs,
-        switches: segs.slice(0, -1).flatMap((s, i) => (segs[i + 1]!.technique !== s.technique ? [`${s.technique}->${segs[i + 1]!.technique} (${s.reason})`] : []))
+        switches: segs.slice(0, -1).flatMap((s, i) => (segs[i + 1]!.technique !== s.technique ? [`${s.technique}->${segs[i + 1]!.technique} (${s.reason})`] : [])),
+        ...(Object.keys(bury).length ? { bury } : {})
     };
+}
+
+// ------------------------------------------------------------------ the on-time switch (burying bands)
+
+/**
+ * The on-time share at which knife + bury and plain + bury cost the same per landed roll: 17.6 of 20
+ * (main's design for rs/643). A knife bury cycle lands its roll only when both of its sends land on
+ * their ticks, so it costs about 3 / r^2 ticks per landed roll against plain + bury's measured ~3.87
+ * (rs/206): r = 0.88.
+ */
+export const BURY_BREAK_EVEN = 17.6 / 20;
+/** Burys judged per window. A window holds one technique's Burys only: a switch starts a new one. */
+export const SWITCH_WINDOW = 50;
+/** On time in a knife window, at least, to keep the knife: the break-even, 44 of 50. */
+export const KNIFE_KEEP = Math.ceil(BURY_BREAK_EVEN * SWITCH_WINDOW - 1e-9);
+/** On time in a plain + bury window, at least, to go back to the knife: 47 of 50 (0.94). */
+export const KNIFE_BACK = 47;
+
+export interface RateWindow {
+    /** The tick of the status that closed it. */
+    tick: number;
+    technique: SegmentTechnique;
+    onTime: number;
+    judged: number;
+    /** The technique it switched to, or null when it kept the one it ran. */
+    to: SegmentTechnique | null;
+}
+
+/**
+ * A burying band's switch between knife + bury and plain + bury on the on-time rate it measures in
+ * itself, with no probe. It reads knife-cycle's `buryOnTime` and `buryLate` from every status of the
+ * technique it holds, into tumbling windows of SWITCH_WINDOW Burys:
+ *
+ * - knife: once more than SWITCH_WINDOW - KNIFE_KEEP (6) of the window are late it can no longer
+ *   reach the break-even, and the band switches to plain + bury then, not at the window's end: on a
+ *   ragged server each late send costs a roll, so the early switch is the window's own verdict, sooner.
+ * - plain + bury: a full window of KNIFE_BACK (47) or more on time switches back to the knife.
+ *
+ * Why a minimum window and a deadband (44 to 46 keeps either technique), not a bare threshold: the
+ * on-time share over 50 Burys has a standard error of about 0.046 near the break-even, so a bare
+ * threshold re-switches on chop-to-chop noise, and each switch stops and restarts the program (a
+ * re-anchor, a few ticks). Near the break-even the two loops cost the same per roll, so the deadband
+ * costs nothing there; above it, at a true 0.94, plain + bury runs about 1.5 windows (some 300 ticks)
+ * before the knife is back. At exactly 0.88 the knife keeps a window about half the time and plain +
+ * bury returns about one window in eight: a switch every ~550 Burys, under 1% of the band's ticks in
+ * restarts. The meter lives for one band's run: a resume starts on the knife with an empty window,
+ * since a rate measured before the stop says nothing sure about the server now, and the early
+ * switch bounds a ragged start at 7 late Burys.
+ */
+export class OnTimeMeter {
+    technique: SegmentTechnique = 'knife';
+    /** The open window's counts. */
+    onTime = 0;
+    late = 0;
+    readonly windows: RateWindow[] = [];
+    private runId = Number.NaN;
+    private seenOnTime = 0;
+    private seenLate = 0;
+
+    /** One status of a run of `technique`; returns the technique to switch to now, or null. */
+    observe(st: ProgramStatus, technique: SegmentTechnique): SegmentTechnique | null {
+        if (st.runId !== this.runId) {
+            this.runId = st.runId;
+            this.seenOnTime = 0;
+            this.seenLate = 0;
+        }
+        const on = st.counters.buryOnTime ?? 0;
+        const late = st.counters.buryLate ?? 0;
+        const dOn = Math.max(0, on - this.seenOnTime);
+        const dLate = Math.max(0, late - this.seenLate);
+        this.seenOnTime = on;
+        this.seenLate = late;
+        // a stopped run's last statuses, after the switch away from it, are not the new technique's
+        if (technique !== this.technique) return null;
+        this.onTime += dOn;
+        this.late += dLate;
+        return this.judge(st.tick);
+    }
+
+    private judge(tick: number): SegmentTechnique | null {
+        const judged = this.onTime + this.late;
+        if (this.technique === 'knife') {
+            if (this.late > SWITCH_WINDOW - KNIFE_KEEP) return this.close(tick, 'plain');
+            if (judged >= SWITCH_WINDOW) this.close(tick, null);
+            return null;
+        }
+        if (judged < SWITCH_WINDOW) return null;
+        return this.close(tick, this.onTime >= KNIFE_BACK ? 'knife' : null);
+    }
+
+    private close(tick: number, to: SegmentTechnique | null): SegmentTechnique | null {
+        this.windows.push({ tick, technique: this.technique, onTime: this.onTime, judged: this.onTime + this.late, to });
+        this.onTime = 0;
+        this.late = 0;
+        if (to) this.technique = to;
+        return to;
+    }
 }
 
 // ------------------------------------------------------------------ steps
