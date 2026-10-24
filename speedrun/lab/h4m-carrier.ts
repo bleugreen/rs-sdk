@@ -9,7 +9,8 @@
 // The receiver is lab.sh's bot (or --serve). --rows (default H4p) selects the ordered rows, and H4m's
 // loads follow H4p when the manifest has the row H4m.1-H4m.N. The bank is seeded with exactly the
 // packages' stock. With --background the role runs in a child process; the parent returns once the
-// carrier is staged at its first bank with the role started (pid in $LAB_LOG/h4m-carrier.pid). The
+// carrier is staged at its first bank with the role started (pid in $LAB_LOG/h4m-carrier.pid); the
+// options it serves are in $LAB_LOG/h4m-carrier-options.json before it logs in. The
 // child exits when every package is served, when lab.sh's engine (its $LAB_LOG/engine.pid) is gone,
 // or after --max-minutes.
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
@@ -48,10 +49,12 @@ for (const name of [carrier, serve]) {
 const pack = objPack();
 const options = muleRunOptions(muleFromLedger(readFileSync(manifestPath, 'utf8'), { rows, onRequest: [], pack }), cueRoot, { deliveryRun, serve });
 const readyFile = join(labLog, 'h4m-carrier.ready');
+// The scored side writes its launcher config (run.ts's preflight) from these exact options.
+if (!process.argv.includes('--child')) writeFileSync(join(labLog, 'h4m-carrier-options.json'), JSON.stringify(options, null, 2) + '\n');
 
 if (process.argv.includes('--background')) {
     if (existsSync(readyFile)) throw new Error(`stale ${readyFile}; remove it first`);
-    const child = Bun.spawn([process.execPath, import.meta.path, ...process.argv.slice(2).filter(a => a !== '--background')], {
+    const child = Bun.spawn([process.execPath, import.meta.path, ...process.argv.slice(2).filter(a => a !== '--background'), '--child'], {
         stdout: Bun.file(join(labLog, 'h4m-carrier.log')), stderr: Bun.file(join(labLog, 'h4m-carrier.err')), stdin: 'ignore',
     });
     child.unref();
