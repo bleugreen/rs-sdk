@@ -686,8 +686,8 @@ export async function openRunSession(bot: string, o: {
     const ready = pending ? o.chain.find(s => s.name === 'S21 runecraft:pre-login') : null;
     const loginHalf = pending ? o.chain.find(s => s.name === SCORED_LOGIN) : null;
     if (pending && (!ready || !loginHalf)) throw new Error('open S21 relog requires its giver wait and login half; do not disable or slice past it');
-    let lastTick = -1;
-    const launch = { launch: true, takeover: takeoverGate(o.relogs, '(startup) the launch failed', () => lastTick) };
+    // No tick is known before the launch's first state.
+    const launch = { launch: true, takeover: takeoverGate(o.relogs, '(startup) the launch failed', () => -1) };
     let session: Session;
     try {
         session = await (deps.open ?? openSession)(bot, { client: o.client, ...(pending ? { launch: false, awaitInWorld: false as const } : launch) });
@@ -723,7 +723,6 @@ export async function openRunSession(bot: string, o: {
         }));
         // The login half may have logged SCORED in before it threw.
         if (loggingIn) {
-            lastTick = session.lastInWorldTick;
             await abandonScored(session, o.relogs, o.log, '(startup) the S21 login half failed', deps.abandon);
         }
         await (deps.close ?? closeSession)(session);
