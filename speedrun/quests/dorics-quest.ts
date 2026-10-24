@@ -31,7 +31,7 @@ import type { Check, Observed, StepContext } from '../runner/step';
 import { handOffMissing, handOffPre, handOffRoom, loadHandOff, runHandOff, type Given, type HandOffPlan, type HandOffSdk } from '../runner/handoff';
 import { enchantedRingSpecs } from '../skills/magic';
 import { MANIFEST } from '../tools/slot-ledger';
-import { allOf, baseLevels, questSteps, slotsCover, within, type QuestItem, type QuestOptions, type Segment } from './segments';
+import { allOf, baseLevels, questSteps, recorded, segmentName, slotsCover, within, type QuestItem, type QuestOptions, type Segment } from './segments';
 import { near, questMoves } from './small-quest';
 
 export const quest = 'doric' as const;
@@ -221,7 +221,9 @@ export function steps(opts?: Options) {
             preconditions: allOf(atDoric, s => (questStatus(s, quest) === 'complete' ? true : allOf(s2 => requireQuestStage(s2, quest, 'started'), oresHeld, slots('C'))(s, undefined))),
             run: ctx => handIn(ctx, opts),
             postconditions: allOf(s => requireQuestStage(s, quest, 'complete'), baseLevels({ mining: 49 }), s => (s.dialog.isOpen || s.modalOpen ? 'a dialogue or modal is still open' : true), noDeadItems),
-            done: o => questDone(quest)(o) && !stateOf(o).inventory.some(dead),
+            // The coins clause proves C's exit drop, and coins come back from later steps (H9 on), so past S05
+            // the attempt's step record stands in for it. The quest stays required either way.
+            done: o => questDone(quest)(o) && (!stateOf(o).inventory.some(dead) || recorded(o, segmentName(stepId, 'C', 'doric-hand-in'))),
         },
     ];
     return questSteps(stepId, segs);

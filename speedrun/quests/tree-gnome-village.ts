@@ -658,7 +658,9 @@ export function steps(input: Options = {}) {
                 s => check(pos(s).level === 0, 'still upstairs in the stronghold'),
                 s => check(!prayerActive(s, 'protect_from_melee'), 'Protect from Melee is still on'),
             ),
-            done: o => atLeast(o, 'retrieved_orb') && pos(stateOf(o)).level === 0,
+            // Plane 0 binds only while the orb is in hand: once Bolren has it (returned_first_orb) SCORED is out of
+            // the stronghold for good, and a later upper plane (S11a's platforms, S11b's tree) must not read H undone.
+            done: o => atLeast(o, 'retrieved_orb') && (pos(stateOf(o)).level === 0 || atLeast(o, 'returned_first_orb')),
             probes: PROBES,
         },
         {
