@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { FailureRun, nextErrand, roamTo, shouldEat, unroutable, walkThroughDoors, WalkFailed, type DoorWalk } from './pickpocket';
+import { FailureRun, nextErrand, roamTo, routable, shouldEat, toward, unroutable, walkThroughDoors, WalkFailed, type DoorWalk } from './pickpocket';
 
 // the messages sdk/actions.ts walkTo returns; the first two are the demo's trapped knights' (2026-10-24)
 const SHORT = 'Path to (2653, 3300) stops 17 tiles short at (2669, 3317) - the rest is unroutable from here (locked door or separate room?)';
@@ -31,6 +31,7 @@ function fakeDoors(walks: string[]): DoorWalk & { calls: string[] } {
             return { ok: m === 'Arrived', message: m };
         },
         openDoor: async () => (calls.push('door'), { success: true, message: 'Door opened' }),
+        clickWalk: async t => (calls.push('click'), { ok: true, message: '', at: t }),
         wait: async n => void calls.push(`wait:${n}`),
         log: () => undefined
     };
@@ -43,25 +44,47 @@ describe('walkThroughDoors', () => {
         await walkThroughDoors(d, bank);
         expect(d.calls).toEqual(['walk:ok']);
     });
-    test('unroutable: open the door, walk again', async () => {
+    test('unroutable: open the door, click through it, walk again', async () => {
         const d = fakeDoors([NO_WAY, 'Arrived']);
         await walkThroughDoors(d, bank);
-        expect(d.calls).toEqual(['walk:fail', 'door', 'walk:ok']);
+        expect(d.calls).toEqual(['walk:fail', 'door', 'click', 'walk:ok']);
     });
-    test('still shut: wait, open again, walk again', async () => {
+    test('still shut: wait, open, click and walk again', async () => {
         const d = fakeDoors([SHORT, NO_WAY, 'Arrived']);
         await walkThroughDoors(d, bank, 5);
-        expect(d.calls).toEqual(['walk:fail', 'door', 'walk:fail', 'wait:5', 'door', 'walk:ok']);
+        expect(d.calls).toEqual(['walk:fail', 'door', 'click', 'walk:fail', 'wait:5', 'door', 'click', 'walk:ok']);
     });
     test('no way out after both tries: throws, so the bank is not opened from the room', async () => {
         const d = fakeDoors([SHORT, NO_WAY, NO_WAY]);
         await expect(walkThroughDoors(d, bank)).rejects.toBeInstanceOf(WalkFailed);
-        expect(d.calls).toEqual(['walk:fail', 'door', 'walk:fail', 'wait:5', 'door', 'walk:fail']);
+        expect(d.calls).toEqual(['walk:fail', 'door', 'click', 'walk:fail', 'wait:5', 'door', 'click', 'walk:fail']);
     });
     test('any other failed walk throws without touching a door', async () => {
         const d = fakeDoors(['Walk aborted: player died en route to (2654, 3285)']);
         await expect(walkThroughDoors(d, bank)).rejects.toThrow(/died en route/);
         expect(d.calls).toEqual(['walk:fail']);
+    });
+});
+
+describe('toward', () => {
+    test('the target itself within reach, else the tile `reach` along the way', () => {
+        expect(toward({ x: 2671, z: 3315 }, { x: 2654, z: 3285 })).toEqual({ x: 2654, z: 3285 });
+        expect(toward({ x: 0, z: 0 }, { x: 100, z: -50 }, 30)).toEqual({ x: 30, z: -15 });
+    });
+});
+
+describe('routable', () => {
+    const anchor = { x: 2667, z: 3306 };
+    test('only a path ending on the tile itself counts, and each answer is asked once', () => {
+        let asked = 0;
+        // the map stops one tile short of the room's floor, across its wall
+        const find = (_: unknown, to: { x: number; z: number }) => (asked++, to.z >= 3315 ? [{ x: to.x, z: 3314 }] : [to]);
+        const cache = new Map<string, boolean>();
+        expect(routable(anchor, { x: 2671, z: 3313 }, find, cache)).toBe(true);
+        expect(routable(anchor, { x: 2671, z: 3315 }, find, cache)).toBe(false);
+        expect(routable(anchor, { x: 2671, z: 3315 }, find, cache)).toBe(false);
+        expect(routable(anchor, { x: 2671, z: 3315 }, () => [], new Map())).toBe(false);
+        expect(asked).toBe(2);
     });
 });
 
