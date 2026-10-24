@@ -42,6 +42,8 @@ export interface PickSpot {
     level: number;
     /** Map spawn tiles: walked in turn when no target is in view (a target can wander out of view range). */
     spawns: readonly Tile[];
+    /** Slots the bank trip leaves free for the stackable loot: coins, and each kind of rune the pocket holds. */
+    reserve: number;
 }
 
 /** East Ardougne south bank, booths at (2656,3283) and (2656,3286) (speedrun/skills/thieving.ts). */
@@ -50,12 +52,14 @@ export const ARDOUGNE_SOUTH_BANK: Tile = { x: 2654, z: 3285 };
 export const SPOTS: Record<'knight' | 'paladin' | 'hero', PickSpot> = {
     // the eastern two spawns wander least
     knight: {
-        npc: /^knight of ardougne$/i, anchor: { x: 2667, z: 3306 }, radius: 16, bank: ARDOUGNE_SOUTH_BANK, damage: 3, level: 55,
+        npc: /^knight of ardougne$/i, anchor: { x: 2667, z: 3306 }, radius: 16, bank: ARDOUGNE_SOUTH_BANK, damage: 3, level: 55, reserve: 1,
         spawns: [{ x: 2669, z: 3298 }, { x: 2671, z: 3313 }, { x: 2653, z: 3300 }, { x: 2652, z: 3318 }]
     },
-    paladin: { npc: /^paladin$/i, anchor: { x: 2655, z: 3311 }, radius: 12, bank: ARDOUGNE_SOUTH_BANK, damage: 3, level: 70, spawns: [{ x: 2653, z: 3315 }, { x: 2657, z: 3307 }] },
+    // coins and chaos runes
+    paladin: { npc: /^paladin$/i, anchor: { x: 2655, z: 3311 }, radius: 12, bank: ARDOUGNE_SOUTH_BANK, damage: 3, level: 70, reserve: 2, spawns: [{ x: 2653, z: 3315 }, { x: 2657, z: 3307 }] },
     // spread across the market: none is in view from the bank, where a trip starts
-    hero: { npc: /^hero$/i, anchor: { x: 2650, z: 3304 }, radius: 24, bank: ARDOUGNE_SOUTH_BANK, damage: 4, level: 80, spawns: [{ x: 2647, z: 3306 }, { x: 2667, z: 3316 }, { x: 2630, z: 3288 }] }
+    // coins, blood and death runes; the rare unstackable loot takes the slots the eats free
+    hero: { npc: /^hero$/i, anchor: { x: 2650, z: 3304 }, radius: 24, bank: ARDOUGNE_SOUTH_BANK, damage: 4, level: 80, reserve: 3, spawns: [{ x: 2647, z: 3306 }, { x: 2667, z: 3316 }, { x: 2630, z: 3288 }] }
 };
 
 /** Hitpoints per eat (consume_normal.dbrow), by inventory name. */
@@ -190,13 +194,14 @@ export const ERRAND_LOG = 'errand';
 export const INVENTORY_SLOTS = 28;
 
 /**
- * Food to withdraw into an inventory with `used` slots taken: all but one free slot (or `perTrip`, if fewer), so the
- * coins have a slot. A success into a full pack drops its coins on the ground (engine InvOps.ts INV_ADD, the
- * overflow), and a pack filled with sharks right after a deposit stays full until the next eat: at HP 40 that eat
- * waited for ~7 failures, and the lab knights lost 1.3-2.5 minutes of coins after every bank visit.
+ * Food to withdraw into an inventory with `used` slots taken after the deposit: all but `reserve` free slots (or
+ * `perTrip`, if fewer), so the loot's stacks have a slot. A success into a full pack drops its loot on the ground
+ * (engine InvOps.ts INV_ADD, the overflow), and a pack filled with sharks right after a deposit stays full until the
+ * next eat: at HP 40 that eat waited for ~7 failures, and the lab knights lost 1.3-2.5 minutes of coins after every
+ * bank visit.
  */
-export function foodToWithdraw(used: number, perTrip: number): number {
-    const room = Math.max(0, INVENTORY_SLOTS - used - 1);
+export function foodToWithdraw(used: number, perTrip: number, reserve = 1): number {
+    const room = Math.max(0, INVENTORY_SLOTS - used - reserve);
     return perTrip > 0 ? Math.min(perTrip, room) : room;
 }
 
@@ -319,7 +324,7 @@ export class Pickpocketer {
         const d = await depositAll(this.ctx.sdk);
         if (!d.ok) this.ctx.log('deposit incomplete', { reason: d.reason, remaining: d.remaining.map(i => i.name) });
         const food = new RegExp(`^${this.o.food.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
-        const n = foodToWithdraw(this.ctx.sdk.getState()?.inventory.length ?? INVENTORY_SLOTS, this.o.foodPerTrip);
+        const n = foodToWithdraw(this.ctx.sdk.getState()?.inventory.length ?? INVENTORY_SLOTS, this.o.foodPerTrip, this.spot.reserve);
         if (n === 0) throw new Error(`no free slot for food after the deposit (${d.remaining.map(i => i.name).join(', ')})`);
         const w = await withdrawMany(this.ctx.sdk, [{ item: food, n }]);
         this.banks++;

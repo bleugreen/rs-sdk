@@ -10,6 +10,11 @@ describe('foodToWithdraw', () => {
         expect(foodToWithdraw(27, 0)).toBe(0);
         expect(foodToWithdraw(28, 5)).toBe(0);
     });
+    test("keeps a slot for each of the pocket's stacks: a stuck item counts against the room", () => {
+        expect(foodToWithdraw(0, 0, 3)).toBe(25);
+        expect(foodToWithdraw(1, 0, 3)).toBe(24);
+        expect(foodToWithdraw(0, 26, 3)).toBe(25);
+    });
 });
 
 // the messages sdk/actions.ts walkTo returns; the first two are the demo's trapped knights' (2026-10-24)
