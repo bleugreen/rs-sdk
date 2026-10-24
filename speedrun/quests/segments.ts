@@ -290,17 +290,33 @@ export function poisonSeenAt(s: Pick<BotWorldState, 'combatEvents' | 'gameMessag
 }
 
 let drunkAt = -Infinity;
+/** The highest client tick seen since the last restart. */
+let seenTick = -Infinity;
 
 /**
- * The tick of the run's last antipoison dose, by any caller; -Infinity after a restart, or when the record is ahead of
- * `now`: the published tick is the client's own and restarts at a reload, so such a record is another session's.
+ * Watch the published tick: it is the client's own and restarts at a reload, so a tick below the highest seen means a new
+ * session, and a dose recorded in the old one says nothing about a poison carried into it (measured in the S15:A lab: a
+ * stale record hid a carried poison until its next hit, HP 26 to 20).
+ */
+function observeTick(tick: number): void {
+    if (!Number.isFinite(tick)) return;
+    if (tick < seenTick) drunkAt = -Infinity;
+    seenTick = tick;
+}
+
+/**
+ * The tick of the run's last antipoison dose, by any caller; -Infinity after a restart, after a client reload seen at
+ * `now`, or when the record is ahead of `now`.
  */
 export function antipoisonDrunkAt(now = Infinity): number {
+    observeTick(now);
     return drunkAt > now ? -Infinity : drunkAt;
 }
 
-/** Record a dose, in the tick its drink is sent: from then `poisoned` reads every earlier evidence as cured. */
+/** Record a dose, in the tick its drink is sent: from then `poisoned` reads every earlier evidence as cured. -Infinity clears it. */
 export function noteAntipoison(tick: number): void {
+    if (tick === -Infinity) seenTick = -Infinity;
+    observeTick(tick);
     drunkAt = tick;
 }
 
@@ -311,7 +327,9 @@ export function noteAntipoison(tick: number): void {
  * record from before a reload (the client's tick restarts) and counts as no dose: measured in the lab, it hid a carried
  * poison until its next hit.
  */
-export function poisoned(s: Pick<BotWorldState, 'tick' | 'combatEvents' | 'gameMessages'>, since = drunkAt): boolean {
+export function poisoned(s: Pick<BotWorldState, 'tick' | 'combatEvents' | 'gameMessages'>, since?: number): boolean {
+    observeTick(s.tick);
+    since ??= drunkAt;
     const at = poisonSeenAt(s);
     const dose = since > s.tick ? -Infinity : since;
     return at > dose && s.tick - at <= POISON_WINDOW;

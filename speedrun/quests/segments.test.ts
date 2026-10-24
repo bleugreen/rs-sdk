@@ -332,13 +332,22 @@ describe('poison: the published evidence, the shared dose record and the entry c
         expect(await curePoison(new FakeSdk(poisonedBare()) as never, 'T')).toBe('none-held');
     });
 
-    test("a dose record ahead of the client's tick (a reload restarts it) is no dose: the carried poison still reads as on", () => {
+    test("a client reload (its tick restarts) drops the dose record: the carried poison reads as on, ahead of the old dose or past it", () => {
+        const carried = (tick: number) => baseState({ tick, combatEvents: [hit(32)] });
+        // The old session drank at t=37 and ran on to t=66.
         noteAntipoison(37);
-        const s = baseState({ tick: 36, combatEvents: [hit(32)] });
-        expect(poisoned(s)).toBe(true);
-        expect(antipoisonDrunkAt(s.tick)).toBe(-Infinity);
-        expect(antipoisonDrunkAt()).toBe(37);
-        expect(poisoned({ ...s, tick: 40 })).toBe(false); // the same record, now behind the clock: that dose cured it
+        expect(poisoned(baseState({ tick: 66 }))).toBe(false);
+        // Restarted: the lab's case, A checked at t=38, past the old dose's tick.
+        expect(poisoned(carried(38))).toBe(true);
+        expect(antipoisonDrunkAt()).toBe(-Infinity);
+        // Ahead of the clock with no restart seen yet (the first look after a reload).
+        noteAntipoison(-Infinity);
+        noteAntipoison(37);
+        expect(poisoned(carried(36))).toBe(true);
+        expect(antipoisonDrunkAt(36)).toBe(-Infinity);
+        // Within one session the record holds.
+        noteAntipoison(40);
+        expect(poisoned(carried(41))).toBe(false);
     });
 
     test("curePoison returns once the drink's p_delay is over (its doses-left message), not when the slot changes", async () => {
