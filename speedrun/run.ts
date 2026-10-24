@@ -87,6 +87,7 @@ import { exitStopIsFinal, prepareCueDir, RunCues } from './runner/cue-keeper';
 import { deliveryOwnerFor } from './runner/delivery-owner';
 import { dropRecovery } from './runner/drop-relog';
 import { awaitPlayer, LOST_AFTER_TICKS, sessionLink } from './runner/resume';
+import type { StepRecord } from './runner/step';
 import { formatCensus, lastCensus, runeCensus, runePlan, runesHeld, type RuneCensus, type RunePlan } from './runner/rune-census';
 import { loadModules, runeLabel } from './tools/rune-pins';
 import { MANIFEST } from './tools/slot-ledger';

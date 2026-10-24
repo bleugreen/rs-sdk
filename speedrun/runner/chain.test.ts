@@ -7,7 +7,8 @@ import { ASK_FILE, CUE_FILE, CueWatcher, CueWriter, type Cue, type CueScope, typ
 import * as monkeyMadness from '../quests/monkey-madness';
 import { PLAN_FILE } from '../helpers/anvil';
 import { GO_FILE } from '../helpers/fm-row';
-import { handOffFrom, HandOffRecord } from './handoff';
+import { AttemptRecord } from './attempt-record';
+import { handOffFrom } from './handoff';
 import { runAttempt } from '../lib/attempt';
 import { baseState, FakeSdk } from '../lib/fake-sdk';
 import { ReservationWatch } from '../lib/host-reservation';
@@ -1044,8 +1045,8 @@ describe('a placed hand-off stays done once the band after it consumes what it b
             nearbyPlayers: o.partner ? ([{ index: 9, name: o.partner, x, z, level: 3 }] as unknown as BotWorldState['nearbyPlayers']) : [],
         });
     /** The real chain with this attempt's record, sliced from leg `from` up to (not including) `to`. */
-    const sliceWith = (record: HandOffRecord | undefined, from: string, to: string) => {
-        const full = buildChain(CONFIG, { cues: recorder().cues, ...(record ? { handOffs: record } : {}) });
+    const sliceWith = (record: AttemptRecord | undefined, from: string, to: string) => {
+        const full = buildChain(CONFIG, { cues: recorder().cues, ...(record ? { record } : {}) });
         return full.slice(full.findIndex(s => s.id === from), full.findIndex(s => s.id === to));
     };
     const where = async (steps: readonly ChainStep[], s: BotWorldState): Promise<[string | null, string]> => {
@@ -1057,11 +1058,11 @@ describe('a placed hand-off stays done once the band after it consumes what it b
         }
     };
     const marked = (row: string) => {
-        const r = new HandOffRecord(mkdtempSync(join(tmpdir(), 'chain-handoffs-')), 'attempt-1');
-        r.mark(row, 1000);
+        const r = new AttemptRecord(mkdtempSync(join(tmpdir(), 'chain-handoffs-')), 'attempt-1');
+        r.handOffs.mark(row, 1000);
         return r;
     };
-    const unmarked = () => new HandOffRecord(mkdtempSync(join(tmpdir(), 'chain-handoffs-')), 'attempt-1');
+    const unmarked = () => new AttemptRecord(mkdtempSync(join(tmpdir(), 'chain-handoffs-')), 'attempt-1');
 
     // S18 at the knights' anchor (thieving.ts BANDS), Thieving inside the band, as on arrival from T16-18.
     const KNIGHTS = { x: 2670, z: 3305 };
@@ -1122,16 +1123,16 @@ describe('a placed hand-off stays done once the band after it consumes what it b
 
     test('every placed hand-off: recorded in this attempt and nothing it gave held, done with its package spent; another attempt\'s record is not this one', () => {
         const record = marked('none');
-        const other = new HandOffRecord(record.dir, 'attempt-0');
-        const full = buildChain(CONFIG, { cues: recorder().cues, handOffs: record });
+        const other = new AttemptRecord(record.dir, 'attempt-0');
+        const full = buildChain(CONFIG, { cues: recorder().cues, record });
         const handOffs = full.filter(s => s.kind === 'handoff');
         expect(handOffs.length).toBeGreaterThan(15);
         const spent = new Observation(at(0, 0, { held: [] }));
         for (const s of handOffs) {
             const row = s.name.replace(/ hand-off$/, '');
-            other.mark(row, 1);
+            other.handOffs.mark(row, 1);
             expect([row, s.done!(spent, {})]).toEqual([row, false]);
-            record.mark(row, 1);
+            record.handOffs.mark(row, 1);
             expect([row, s.done!(spent, {})]).toEqual([row, true]);
         }
     });
@@ -1141,7 +1142,7 @@ describe('a placed hand-off stays done once the band after it consumes what it b
     // S16's pool, done only in the chamber, so the record carries H13 past S16 (rs/577); the shortbow and
     // superantipoison count as a rollback only until H23, which brings them, is recorded.
     const h13 = handOffFrom(MANIFEST_TEXT, 'H13');
-    const h13Step = (record: HandOffRecord) => buildChain(CONFIG, { cues: recorder().cues, handOffs: record }).find(s => s.name === 'H13 hand-off')!;
+    const h13Step = (record: AttemptRecord) => buildChain(CONFIG, { cues: recorder().cues, record }).find(s => s.name === 'H13 hand-off')!;
     const given = (name: string, n: number): Held => [name, n, h13.give.find(g => g.name === name)!.ids?.[0]];
 
     test('H13 stays done once S18 and H23 bring back items it gave (rune arrows worn, coins, a magic shortbow, a superantipoison)', () => {
@@ -1156,7 +1157,7 @@ describe('a placed hand-off stays done once the band after it consumes what it b
         const s = h13Step(record);
         expect(s.done!(new Observation(afterS18), {})).toBe(true);
         expect(s.done!(new Observation(afterH23), {})).toBe(false);
-        record.mark('H23', 2000);
+        record.handOffs.mark('H23', 2000);
         expect(s.done!(new Observation(afterH23), {})).toBe(true);
     });
 
