@@ -680,7 +680,7 @@ async function main(argv: string[]): Promise<number> {
     const chain = sliceUntil(full, a.until);
     const from = resolveFrom(chain, a.from);
     // The delivery carriers authorize only their row's session under the run config's delivery.run.
-    const delivery = deliveryOwnerFor({ delivery: cfg.delivery, partners: cfg.partners, chain, receiver: loadBotEnv(a.bot).BOT_USERNAME, dir: muleCueDir(cfg) });
+    const delivery = deliveryOwnerFor({ delivery: cfg.delivery, partners: chainPartners(cfg, chain), chain, receiver: loadBotEnv(a.bot).BOT_USERNAME, dir: muleCueDir(cfg) });
     if ('refusal' in delivery) {
         console.error(`[gate] REFUSED delivery: ${delivery.refusal}`);
         console.error('[run] nothing was logged in');

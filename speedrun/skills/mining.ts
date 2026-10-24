@@ -164,6 +164,8 @@ export const ZOO: P = [2604, 3235];
 export const BURY_LAP = '2603,3233>2602,3233 2605,3234>2605,3235 2605,3234>2605,3233 2602,3235>2602,3234 2602,3235>2602,3236';
 /** The band's name for BURY_LAP in its rows. */
 export const BURY_ROTATION = 'stay2';
+/** BURY_LAP's east stay, where its bury lands: the one lap tile beside the H4m carrier's stand (2606,3234; rs/705). */
+export const BURY_TRADE_TILE: readonly [number, number] = [2605, 3234];
 /** knife-mine's stay takes its bone only while the lap holds 3 ticks an ore: iron respawn 13 or less (rs/182). */
 export const BURY_MAX_RESPAWN = 13;
 /** H4m's bones (bones.obj big_bones, bone_exp 150: 15 base each). */
