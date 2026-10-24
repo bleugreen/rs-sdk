@@ -85,6 +85,9 @@ export const VARIANTS: Record<string, Variant> = {
     'knife-plain': { chrome: 'detached', tabmem: false, runTs: false, work: 'knife' },
     'tele-gc': { chrome: 'detached', tabmem: false, runTs: false, work: 'tele', gc: true },
     'tele-slow': { chrome: 'detached', tabmem: false, runTs: false, work: 'tele', teleEvery: 40 },
+    /** Chrome switches a run host could add without a code change, against the teleport case. */
+    'tele-autoplay': { chrome: 'detached', tabmem: false, runTs: false, work: 'tele', args: ['--autoplay-policy=no-user-gesture-required'] },
+    'tele-mute': { chrome: 'detached', tabmem: false, runTs: false, work: 'tele', args: ['--mute-audio'] },
     /** Logged in and standing: nothing sent. */
     idle: { chrome: 'detached', tabmem: false, runTs: false, work: 'idle' },
 };
