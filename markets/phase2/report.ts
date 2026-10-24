@@ -62,6 +62,8 @@ export function hpSummary(lines: readonly Record<string, unknown>[], withinMinut
     };
 }
 
+const RELEASES = ['hp-train: dropped target', 'hp-train: switched target', 'hp-train: released target'];
+
 export interface Collision {
     index: number;
     accounts: [string, string];
@@ -71,9 +73,10 @@ export interface Collision {
 
 /**
  * Npcs two of our accounts targeted at once: the same npc index picked by a second account less than `windowMs`
- * after the first picked it, with no 'dropped target' from the first in between. Every low Hitpoints target
- * respawns in 20 s or more (chickens 50 ticks), so a shorter gap is two bots on one live npc. Reads the trainer's
- * 'target' and 'dropped target' events (events.jsonl).
+ * after the first picked it, with no release from the first in between (its 'dropped target', 'switched target'
+ * or 'released target' at the end of its fight). Every low Hitpoints target respawns in 20 s or more (chickens 50
+ * ticks) and a kill stays claimed for 5 s, so a shorter gap is two bots on one live npc. Reads the trainer's events
+ * (events.jsonl).
  */
 export function hpCollisions(events: readonly Record<string, unknown>[], windowMs = 10_000): { targets: number; collisions: Collision[] } {
     const last = new Map<number, { account: string; at: number; dropped: boolean }>();
@@ -84,7 +87,7 @@ export function hpCollisions(events: readonly Record<string, unknown>[], windowM
         if (!Number.isFinite(index)) continue;
         const account = String(e.account);
         const at = Date.parse(String(e.t));
-        if (e.message === 'hp-train: dropped target') {
+        if (RELEASES.includes(String(e.message))) {
             const l = last.get(index);
             if (l && l.account === account) l.dropped = true;
         } else if (e.message === 'hp-train: target') {

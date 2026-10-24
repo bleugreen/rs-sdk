@@ -368,11 +368,17 @@ export async function fightFor(sdk: BotSDK, bot: BotActions, site: Site, o: Figh
             const live = (i: number | null) => (i === null ? undefined : s.nearbyNpcs.find(n => n.index === i && n.hp !== 0 && site.npc.test(n.name)));
             // Npcs that hit us (any hitsplat, 0 included) in the last 8 ticks: in the crabs' multi-combat
             // field every crab woken stays on us until it dies, so these are always killed first.
-            const attackers = [...hitMe].filter(([i, at]) => t - at <= 8 && live(i)).map(([i]) => live(i)!).sort((a, b) => a.distance - b.distance);
+            // An npc another of our bots has claimed since is on that bot now, not on us (in the M17 lab a bot that
+            // had dropped a chicken took it back from the bot that claimed it, because the chicken had hit it).
+            const attackers = [...hitMe]
+                .filter(([i, at]) => t - at <= 8 && live(i) && !claims?.table.heldByOther(i, claims.owner))
+                .map(([i]) => live(i)!)
+                .sort((a, b) => a.distance - b.distance);
             st.attackerTicks += attackers.length;
             st.maxAttackers = Math.max(st.maxAttackers, attackers.length);
             let cur = live(target);
             if (cur && attackers.length && !attackers.some(a => a.index === cur!.index)) {
+                if (claims) o.log?.('switched target', { index: cur.index });
                 setTarget(null); // switch to a crab that is hitting us
                 cur = undefined;
             }
@@ -450,6 +456,8 @@ export async function fightFor(sdk: BotSDK, bot: BotActions, site: Site, o: Figh
         }
     } finally {
         watcher.stop();
+        // the target reached, a stop or a death: whoever is next to the npc may take it over
+        if (claims && target !== null) o.log?.('released target', { index: target, end: st.end });
         claims?.table.releaseAll(claims.owner);
     }
     return st;
