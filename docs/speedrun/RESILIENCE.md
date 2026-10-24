@@ -399,7 +399,7 @@ a player-kill") and `--r8-recovered=<key>` names that death; the start then
 writes `(death) acknowledged`. The key is the row's `runId@tick`, so a flag left
 on a command line never acknowledges a later death.
 
-### The legs eat and cure on every frame (rs/762)
+### The hostile legs start at a floor, and eat and cure on every frame (rs/762)
 
 Attempt 4's T14-15b brought SCORED to the Grand Tree door at 1 HP, poisoned,
 with 3 sharks held and none eaten. Two things let it happen. First, the leg's eat
@@ -409,8 +409,24 @@ Second, `splitLeg` gave the food option only to a part that enters the
 Wilderness, and T14-15b (the Khazard tree, two tree rides, the run to the door)
 enters none, so it had no eat at all.
 
-Now a leg with food, and both parts of a split one (`LegDef.upkeep`), travels under
-wait-guard.ts's `WaitUpkeep`. That runs on every published frame, whatever the
+A leg is hostile when its route passes aggressive NPCs (`hostileLeg`). The leg
+table marks those routes by the food they need, so the hostile legs are the food
+legs (T13-14, T14-15, T15-16, T26-27, T27-17) and both parts of any split one
+(`LegDef.hostile`): T14-15b enters no Wilderness and holds no food check, but it
+crosses the Khazard battlefield with whatever poison S14 left.
+
+A hostile leg starts its first hop at or above its start floor (`startFloor`,
+the eat line below, 25 at SCORED's levels; main's ruling after rs/764's run 1,
+which started T14-15b at 12 of 42 HP with 7 sharks and died after a tree ride).
+The leg's upkeep does the eating on the leg's first frame, and `runLeg` waits
+for the heal to show before the first hop. An eat holds the player in nothing
+(`consume.rs2` sets only an eat cooldown and a combat delay), so one shark costs
+the one tick its heal takes, and a start at the floor costs nothing. When the food
+held cannot heal to the floor (`FOOD_HEAL`, from `consume_normal.dbrow`), the leg
+refuses by name: in its preconditions at the boundary, and in `runLeg` for a
+resumed leg, which skips them. The travel row's `start` records the eating.
+
+Every hostile leg then travels under wait-guard.ts's `WaitUpkeep`. That runs on every published frame, whatever the
 hop. It eats by the run's one eat rule, `travel.ts` `eatDue`, which eats at or
 under `eatAt(maxHp)`. That is the floor of 15 plus one poison hit (6, from the
 spiders' severity 27) plus one NPC hit (4), so 25 at SCORED's 38-42 hitpoints.
