@@ -65,7 +65,7 @@ import { newRunId, parseLog, TickLog, type TickRow } from './lib/ticks';
 import { startRunTabMemory, type TabMemorySetting } from './lib/tab-memory';
 import { formatRunReport, runReport } from './runner/run-report';
 import { patchMethod } from './runner/fence';
-import { buildChain, chainProbes, missingOnPath, muleCueDir, resolveFrom, sliceUntil, type ChainOptions, type ChainStep, type CueSink, type RunConfig } from './runner/chain';
+import { buildChain, chainPartners, chainProbes, missingOnPath, muleCueDir, resolveFrom, sliceUntil, type ChainOptions, type ChainStep, type CueSink, type RunConfig } from './runner/chain';
 import { exitStopIsFinal, prepareCueDir, RunCues } from './runner/cue-keeper';
 import { deliveryOwnerFor } from './runner/delivery-owner';
 import { dropRecovery } from './runner/drop-relog';
