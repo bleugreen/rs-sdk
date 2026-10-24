@@ -724,8 +724,8 @@ export async function abandonTab(session: Session, opts: AbandonOptions = {}): P
         if (page?.inGame) {
             outListedSince = null;
             if (now - sentAt >= resendMs()) {
-                if (sends >= ABANDON_SENDS) why = `still in game after ${sends} logout clicks`;
-                else if (session.sessionId === gen) {
+                if (sends >= ABANDON_SENDS) return done(false, `still in game after ${sends} logout clicks`);
+                if (session.sessionId === gen) {
                     const click = await pageClickComponent(cdp, session.name, LOGOUT_BUTTON).catch(() => null);
                     if (click?.sent) {
                         sends++;
