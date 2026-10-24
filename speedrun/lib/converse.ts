@@ -14,6 +14,15 @@
 // bursting off and the rest goes one page per tick. A shape that over-counts a
 // run before a choice is not detectable (the extra continue is refused by the
 // engine at the choice and costs nothing); one that under-counts is.
+//
+// Re-engage: a chat closed mid-talk (a poison tick's or a hit's if_close, or
+// the eat that answers it) kills the NPC's script, since the engine drops a
+// script paused on a page whenever the chat closes (Player.closeModal), and
+// nothing reopens it. With `reopen` (talkTo passes the NPC click) and `until`,
+// a talk whose chat stays closed for `idle` ticks with `until` false and with
+// evidence it was cut short (a shape not yet finished, or a hit on the player
+// around the close) clicks again and answers the replay from its start, at
+// most `reopens` times, then fails with a named reason.
 
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState } from '../../sdk/types';
@@ -25,6 +34,17 @@ export type ConverseSdk = StateSource & Pick<BotSDK, 'sendClickDialog' | 'clickD
 
 /** Re-answer a page that is still showing, not waiting, this many ticks after our click (a dropped click). */
 export const STALL_TICKS = 4;
+
+/**
+ * A hit on the player this many ticks before a chat closed (or one tick after, the hitsplat published a tick late)
+ * marks the close as the hit's. A poison tick or a hit closes the chat in its own tick (poison.rs2 if_close), and the
+ * upkeep's eat that answers it closes it too (OpHeld clearPendingAction), a few ticks later: 5 measured at 150 ms
+ * (rs/791, the S15:C bench).
+ */
+export const HIT_CLOSE_TICKS = 6;
+
+/** Re-engages a talk with `reopen` makes by default before it fails. */
+export const REOPENS = 2;
 
 export interface ConverseOptions {
     /** Ticks the dialogue must stay closed before the conversation is over (default 3). Raise it for scripts that close the chat during a p_delay and reopen it. */
@@ -84,6 +104,17 @@ export interface ConverseOptions {
      * `shape`; false (the default) answers every page as it comes.
      */
     burst?: boolean;
+    /**
+     * The click that opened the conversation, sent again to re-engage a talk cut short (talkTo passes its NPC
+     * click). Used only with `until`: once the chat has stayed closed for `idle` ticks, `until` is false, no answer
+     * is in flight, and the talk was evidently cut short (the shape, followed, is not finished; or the player was hit
+     * within HIT_CLOSE_TICKS of the close). The choices go back to the call's and the shape to its start (the
+     * engine killed the script, so the NPC replays the talk). A re-engage whose chat does not reopen within
+     * `openTicks` counts as spent. Without it a talk cut short waits out `maxTicks`.
+     */
+    reopen?: () => Promise<unknown>;
+    /** Re-engages before a talk cut short fails with a named reason (default REOPENS). */
+    reopens?: number;
 }
 
 /**
@@ -165,6 +196,8 @@ export interface ConverseResult {
     shape?: ConverseShape;
     /** Pages dismissed by `interrupts` (present when interrupts were given). */
     interrupts?: number;
+    /** Re-engages sent through `reopen` (present when one was). */
+    reengages?: number;
 }
 
 const short = (s: string) => s.replace(/\s+/g, ' ').slice(0, 90);
@@ -220,6 +253,7 @@ export function converse(sdk: ConverseSdk, choices: OptionPattern[] = [], opts: 
     const openTicks = opts.openTicks ?? 15;
     const maxTicks = opts.maxTicks ?? 400;
     const unmatched = opts.unmatched ?? 'throw';
+    const reopens = opts.reopens ?? REOPENS;
     const queue = [...choices];
     const levelUp = levelUpChain();
     const t0 = sdk.getState()?.tick ?? 0;
@@ -290,6 +324,9 @@ export function converse(sdk: ConverseSdk, choices: OptionPattern[] = [], opts: 
         let lastModal = -1;
         let interruptKey: string | undefined;
         let done = false;
+        // Re-engage (opts.reopen): ticks the player was hit on, and the tick of the last re-engage click until its chat reopens.
+        const hits = new Set<number>();
+        let reopenedAt = -1;
         const stop = () => {
             done = true;
             unsub();
@@ -415,10 +452,49 @@ export function converse(sdk: ConverseSdk, choices: OptionPattern[] = [], opts: 
             }
         };
 
+        /** Note the ticks the player was hit on: the latest hitsplat's, and each damage_taken event's. */
+        const seeHits = (s: BotWorldState) => {
+            const h = s.player?.combat?.lastDamageTick ?? -1;
+            if (h >= 0) hits.add(h);
+            for (const e of s.combatEvents ?? []) if (e.type === 'damage_taken' && e.targetType === 'player') hits.add(e.tick);
+        };
+
+        /** Why the closed chat is a talk cut short, not one over: the shape is unfinished, or a hit came around the close. */
+        const cutShort = (): string | undefined => {
+            if (plan && following && cursor.part < plan.length) return `the shape was at part ${cursor.part + 1}, ${partText(plan[cursor.part], cursor.used)}`;
+            let hit = -1;
+            for (const h of hits) if (h >= closedSince - HIT_CLOSE_TICKS && h <= closedSince + 1) hit = Math.max(hit, h);
+            return hit >= 0 ? `hit at ${hit}` : undefined;
+        };
+
+        /** The chat is closed with `until` false: re-engage a talk cut short, or fail once the re-engages are spent. */
+        const reengage = (s: BotWorldState) => {
+            if (s.tick - closedSince < idle) return;
+            if (reopenedAt >= 0 && s.tick - reopenedAt <= openTicks) return; // the last re-engage's chat may still open
+            const why = cutShort();
+            if (why === undefined) return;
+            const n = res.reengages ?? 0;
+            if (n >= reopens) {
+                return finish(false, reopenedAt >= 0
+                    ? `re-engage ${n} opened no dialogue in ${openTicks} ticks (chat closed at ${closedSince}, ${why})`
+                    : `chat closed mid-talk at ${closedSince} with until unmet (${why}) after ${n} re-engage${n === 1 ? '' : 's'}`);
+            }
+            res.reengages = n + 1;
+            note(s.tick, `re-engage ${n + 1}: chat closed at ${closedSince} with until unmet (${why})`);
+            // The engine dropped the script with the chat: the NPC replays the talk, so the choices and the shape start over.
+            queue.splice(0, queue.length, ...choices);
+            cursor.part = 0;
+            cursor.used = 0;
+            last = null;
+            reopenedAt = s.tick;
+            opts.reopen!().catch(fail);
+        };
+
         function onState(s: BotWorldState): void {
             if (done) return;
             clock.see(s);
             if (clock.elapsed > maxTicks) return finish(false, 'timeout');
+            if (opts.reopen) seeHits(s);
             const d = s.dialog;
             if (d.isOpen) {
                 const key = d.pageId ?? `${pageText(d)}|${d.options.map(o => o.text).join('/')}`;
@@ -437,6 +513,7 @@ export function converse(sdk: ConverseSdk, choices: OptionPattern[] = [], opts: 
                     }
                     closedSince = -1;
                     untilAt = -1;
+                    reopenedAt = -1;
                 } else if (interruptTarget) {
                     // A target page is showing: the idle wait starts again once it closes.
                     if (res.firstTick < 0) res.firstTick = s.tick;
@@ -465,6 +542,7 @@ export function converse(sdk: ConverseSdk, choices: OptionPattern[] = [], opts: 
             else if (untilAt < 0) untilAt = s.tick;
             // Not while a click (or a burst, which spans ticks) is still being answered: its counts are not in yet.
             if (u && s.tick - closedSince >= idle && !busy && !(opts.closeModals && s.modalOpen)) finish(true);
+            else if (!u && opts.reopen && res.opened && !busy && !(opts.closeModals && s.modalOpen)) reengage(s);
         }
 
         const clock = tickClock(t0, () => finish(false, STALLED), sdk.getState()?.tick);
