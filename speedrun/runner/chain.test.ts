@@ -1338,3 +1338,51 @@ describe('S11a: the gnome course to Agility 25', () => {
         expect(s11a[0]!.postconditions(at(25), {})).toBe(true);
     });
 });
+
+describe('the attempt record through the real chain (rs/724)', () => {
+    /** rs/723's record-read milestones: the names the quest modules give them. */
+    const RECORDED = ['S16:D-pool', 'S16:E-statue', 'S16:F-guardian', 'S05:C-doric-hand-in'];
+    const recordAt = () => new AttemptRecord(mkdtempSync(join(tmpdir(), 'chain-attempt-record-')), 'attempt-1');
+    /** An observation where every declared probe reads unanswered, so the walk runs no probe. */
+    const observe = (s: BotWorldState, steps: readonly ChainStep[], record?: AttemptRecord) => {
+        const o = new Observation(s, {}, undefined, record?.steps);
+        for (const st of steps) for (const p of st.probes ?? []) o.probed[p] = null;
+        return o;
+    };
+
+    test('runSteps marks the chain step under the module\'s own name: S16:D-pool, S16:E-statue, S16:F-guardian, S05:C-doric-hand-in', async () => {
+        const record = recordAt();
+        const full = buildChain(CONFIG, { cues: recorder().cues, record });
+        for (const n of RECORDED) expect([n, full.filter(s => s.name === n).length]).toEqual([n, 1]);
+        // Each chain step as the chain built it (tag, its wrappers), its game work stubbed out.
+        const stubbed = RECORDED.map(n => ({ ...full.find(s => s.name === n)!, preconditions: () => true as const, postconditions: () => true as const, run: async () => {}, offline: true as const }));
+        const sdk = new FakeSdk(baseState({ tick: 1 }));
+        const session = { sdk, bot: {}, name: 'lab', sessionId: 0 } as unknown as RunnerSession;
+        await runSteps(session, stubbed, { log: TickLog.memory('t'), c: {}, shouldStop: () => false, tickMonitor: false, record: record.steps });
+        expect(RECORDED.map(n => [n, new AttemptRecord(record.dir, 'attempt-1').steps.has(n)])).toEqual(RECORDED.map(n => [n, true]));
+    });
+
+    test('S21 logged out between its halves, every step before it recorded: the walk resolves to the login half, not S00; H12o\'s trigger and the quests count as done', async () => {
+        const record = recordAt();
+        const relogs = new RelogBudget(join(record.dir, 'relog'));
+        relogs.beginPlanned(SCORED_RELOG, 100);
+        const full = buildChain(COMPLETE, { cues: recorder().cues, record, relogs, attempt: 'attempt-1' });
+        const logout = full.findIndex(s => s.name === SCORED_LOGOUT);
+        const login = full.findIndex(s => s.name === SCORED_LOGIN);
+        expect(logout).toBeGreaterThan(0);
+        const h12o = full.findIndex(s => s.id === 'H12o login');
+        expect(h12o).toBeGreaterThan(0);
+        expect(h12o).toBeLessThan(logout);
+        // The real run marks every step it completes; up to here that is every step before the logout half's end.
+        full.slice(0, logout + 1).forEach((s, i) => record.steps.mark(s.name, 1000 + i));
+        const out = baseState({ tick: 5000, inGame: false, player: null });
+        const p = await resolveResume(full, observe(out, full, record), {});
+        expect([p.step, p.mode]).toEqual([SCORED_LOGIN, 'run']);
+        expect(p.firstUndone).toBe(login);
+        // Every milestone before it read done, H12o's journal-read trigger and the quest segments with them.
+        expect(p.lastDone).toBeGreaterThan(h12o);
+        // Without the record the walk stops far before S21, at the first milestone (S00 reads the player).
+        const bare = await resolveResume(full, observe(out, full), {}).catch(e => e as { firstUndone: number });
+        expect(bare.firstUndone).toBeLessThan(h12o);
+    });
+});
