@@ -58,7 +58,7 @@ import { DeathWatch, type DeathRecord } from './deaths.ts';
 import { buySharks, sellAtExchange, sellByShip, type BookReader } from './errands.ts';
 import { DEFAULT_POLICY, LoginGate } from './gate.ts';
 import { HpSites } from './hp-sites.ts';
-import { memoryLine } from './memory.ts';
+import { initPathfindingAndRelease, memoryLine, shareLocIndex } from './memory.ts';
 import { accountLine, COINS_ID, totalsLine, type AccountSnapshot, type Stack, type Valuer } from './ledger.ts';
 import { aliasOf, nameScrubber, scrubRecord, unlistedAccounts } from './names.ts';
 import { EARNS_COINS, NEEDS, nextFallback, parsePlan, PlanError, planWarnings, roleOptions, SALE_ROUTE, sequenceFor, type AccountPlan, type MethodId, type Plan } from './plan.ts';
@@ -882,7 +882,9 @@ async function main(argv: string[]): Promise<number> {
     const out = a.flags.out ?? join(process.env.TMPDIR ?? '/tmp', `phase2-${new Date().toISOString().replace(/[:.]/g, '')}`);
     if (out === 'true') fail('--out needs a directory');
 
-    (await import('../../sdk/pathfinding')).initPathfinding();
+    // the SDK's collision grid without the JSON it was built from, and one loc index for every login (memory.ts)
+    await initPathfindingAndRelease();
+    await shareLocIndex();
     const workers = await Promise.all(plan.accounts.map(async (p, i) => new Worker(i, aliasOf(i), p, envs[i]!, await openRoleState(join(out, 'role-state', `${aliasOf(i)}.json`)))));
     const runner = new Runner(plan, workers, { host: envs[0]!.SERVER!, out, minutes, runEnded, placeholder: exclusion.source === null, stall: { ms: stallMinutes * 60_000, retries: stallRetries } });
     process.stderr.write(`phase2: ${workers.length} accounts, up to ${plan.maxSessions} sessions; ledger in ${join(out, 'ledger.jsonl')}\n`);
