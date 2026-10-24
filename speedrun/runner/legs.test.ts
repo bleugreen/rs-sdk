@@ -989,7 +989,8 @@ describe("the leg upkeep under poison (attempt 4: T14-15b reached hpMin 1 with 3
             }
             sim.hpMin = Math.min(sim.hpMin, hp);
             if (healed) sim.hpMinAfterEat = Math.min(sim.hpMinAfterEat, hp);
-            return { player, inventory, combatEvents, ...more };
+            // The inventory only when this tick changed it, so FakeSdk's own drops stand.
+            return { player, ...(inventory !== s.inventory ? { inventory } : {}), combatEvents, ...more };
         };
         return { sim, each };
     }
