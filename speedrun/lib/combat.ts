@@ -23,7 +23,7 @@
 
 import type { BotSDK } from '../../sdk/index';
 import { PRAYER_INDICES, type BotWorldState, type InventoryItem, type NearbyNpc, type PrayerName } from '../../sdk/types';
-import { approachInRange, npcTile, type InRangeOptions } from './approach';
+import { approachInRange, npcTile, unroutedReply, type InRangeOptions } from './approach';
 import { clickContinue } from './dialogue';
 import { matchesItem, type ItemPattern } from './items';
 import { levelUpChain } from './levelup';
@@ -223,12 +223,6 @@ export interface FightOptions extends UpkeepOptions {
 }
 
 export type FightEnd = 'killed' | 'gone' | 'done' | 'dialog' | 'died' | 'timeout' | 'no target' | 'unreachable';
-
-/** A send's result that says it reached no tile: the browser's op without a route, lite's refusal. */
-export function unroutedReply(res: unknown): boolean {
-    const r = res as { data?: { routed?: unknown }; reason?: unknown; message?: unknown } | null | undefined;
-    return r?.data?.routed === false || r?.reason === 'cant_reach' || (typeof r?.message === 'string' && /\(unrouted\b/.test(r.message));
-}
 
 const xpTotal = (s: BotWorldState) => (s.skills ?? []).reduce((a, k) => a + (k.experience ?? 0), 0);
 const runesHeld = (s: BotWorldState) => s.inventory.reduce((a, i) => (/ rune$/i.test(i.name) ? a + i.count : a), 0);

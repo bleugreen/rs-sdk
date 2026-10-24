@@ -258,3 +258,9 @@ export async function approachInRange(sdk: TravelSdk, target: NearbyNpc | NamePa
         return done(false, { reason: `approach: ${e instanceof Error ? e.message : String(e)}` });
     }
 }
+
+/** A send's result that says it reached no tile: the browser's op without a route (`routed: false`), lite's cant_reach refusal. */
+export function unroutedReply(res: unknown): boolean {
+    const r = res as { data?: { routed?: unknown }; reason?: unknown; message?: unknown } | null | undefined;
+    return r?.data?.routed === false || r?.reason === 'cant_reach' || (typeof r?.message === 'string' && /\(unrouted\b/.test(r.message));
+}

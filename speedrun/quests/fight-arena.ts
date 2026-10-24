@@ -391,6 +391,42 @@ export function fightOptions(opts: Options | undefined): FightOptions {
 
 const deathRunes = (s: BotWorldState | null) => (s ? invCount(s, ITEM.death) : 0);
 
+/**
+ * A scorpion or Bouncer still in its cage: its tile east of the gate line, the edge between x 2606 and
+ * 2607 (the arena_inactivegate pairs at (2606,3159-3160) and (2606,3162-3163) wall that edge). The
+ * release (quest_arena.rs2 @arena_release_scorp / _bouncer) opens the gates for 6 ticks and teleports
+ * it a tile west; a release whose script never resumed (a session lost with the round's mesbox
+ * open) leaves it there, and nothing can reach it: the live S12:H of 10-24 (rs/693).
+ */
+export const caged = (n: { x: number; tileX?: number }) => (n.tileX ?? n.x) > ARENA.x1;
+
+/** Re-releases tried per fight: the arena door from inside runs the release again. */
+export const MAX_RERELEASES = 2;
+
+/**
+ * Wait (bounded) for `target` to be out of its cage; still caged or not there, run the release again:
+ * the arena door from inside at sent_jail (or defeated_scorpion) gives the guard's line, forcemoves
+ * SCORED 2 tiles in and calls the release (quest_arena.rs2:110-116), which for a caged monster opens
+ * the gates again. Never for one already out: in combat within 8 ticks the release adds a second.
+ * True when it ran the door.
+ */
+export async function released(ctx: Ctx, target: RegExp, what: string, waitTicks = 12): Promise<boolean> {
+    const sdk = sdkOf(ctx);
+    const out = (s: BotWorldState) => {
+        const n = findNpc(s, target);
+        return !!n && !caged(n);
+    };
+    if ((await waitUntil(sdk, out, { maxTicks: waitTicks })).ok) return false;
+    const n = findNpc(sdk, target);
+    const t0 = currentTick(sdk);
+    await go(ctx, TILES.arenaDoorInside, 'to the arena door (the release again)');
+    const l = await findLoc(sdk, { x: TILES.arenaDoor.x, z: TILES.arenaDoor.z, id: LOC.arenaDoor(), radius: 10 });
+    if (!l) throw new Error(`${what}: no arena door to run the release again near ${JSON.stringify(pos(sdk))}`);
+    const r = await actConverse(sdk, () => sdk.sendInteractLoc(l.x, l.z, l.id, opIndex(l, /^open$/i) ?? 1), [], { done: out, idle: 1, maxTicks: 40, interrupts: interrupts() });
+    note(ctx, `${stepId}:release`, { what, caged: n ? { x: n.tileX ?? n.x, z: n.tileZ ?? n.z } : null, ticks: currentTick(sdk) - t0, ok: r.ok });
+    return true;
+}
+
 /** The first page of each monster's death hook (khazard_ogre.rs2 via justin_servil_saved, general_khazard.rs2). */
 export const DEATH_HOOK = {
     ogre: /You saved my life/i,
@@ -403,14 +439,23 @@ export const DEATH_HOOK = {
  * level-up; the death hook's own first page (`hook`) is the kill, any other page (a cutscene's
  * last line still on its way) is answered and the fight goes on, at most 3 times.
  */
-async function arenaFight(ctx: Ctx, opts: Options | undefined, target: RegExp, hook: RegExp, what: string): Promise<void> {
+async function arenaFight(ctx: Ctx, opts: Options | undefined, target: RegExp, hook: RegExp, what: string, caged = false): Promise<void> {
     const sdk = sdkOf(ctx);
     const runes0 = deathRunes(sdk.getState());
     const fights: FightResult[] = [];
     let stray = 0;
+    let rereleases = 0;
+    if (caged && (await released(ctx, target, what))) rereleases++;
     for (;;) {
-        const r = await fight(sdk, target, fightOptions(opts));
+        const r = await fight(sdk, target, { ...fightOptions(opts), approach: { bot: ctx.bot, interrupts: interrupts() } });
         fights.push(r);
+        // A target nothing can reach: still caged, so the release runs again (bounded).
+        if (r.end === 'unreachable' && caged && rereleases < MAX_RERELEASES) {
+            if (await released(ctx, target, what, 0)) {
+                rereleases++;
+                continue;
+            }
+        }
         if (!r.ok) break;
         if (r.end !== 'dialog' || hook.test(pageText(sdk.getState()!.dialog))) break;
         if (++stray > 3) break;
@@ -421,6 +466,8 @@ async function arenaFight(ctx: Ctx, opts: Options | undefined, target: RegExp, h
     note(ctx, `${stepId}:fight`, {
         what, end: last.end, ticks: sum('ticks'), engaged: fights[0]!.engaged, casts: runes0 - deathRunes(sdk.getState()), clicks: sum('attacks'), dealt: sum('dealt'),
         taken: sum('taken'), minHp: Math.min(...fights.map(f => f.minHp)), levelUps: sum('levelUps'), eats: sum('eats'), prayerUsed: sum('prayerUsed'), strayPages: stray,
+        ...(rereleases ? { rereleases } : {}), ...(fights.some(f => f.approaches) ? { approaches: fights.reduce((a, f) => a + f.approaches, 0) } : {}),
+        ...(last.reason ? { reason: last.reason } : {}),
     });
     const hooked = last.end === 'dialog' && hook.test(pageText(sdk.getState()!.dialog));
     if (!last.ok || (last.end !== 'killed' && !hooked)) throw new Error(`${what}: the fight ended '${last.end}' (${JSON.stringify(last)})`);
@@ -528,7 +575,7 @@ async function scorpion(ctx: Ctx, opts: Options | undefined): Promise<void> {
             latch.stop();
         }
     }
-    await arenaFight(ctx, opts, NPC.scorpion, DEATH_HOOK.scorpion, 'Khazard scorpion');
+    await arenaFight(ctx, opts, NPC.scorpion, DEATH_HOOK.scorpion, 'Khazard scorpion', true);
 }
 
 /** I: the General summons Bouncer, Bouncer under the prayer, the General's pages (stage 12, he attacks). */
@@ -536,7 +583,7 @@ async function bouncer(ctx: Ctx, opts: Options | undefined): Promise<void> {
     const sdk = sdkOf(ctx);
     if (!findNpc(sdk, NPC.bouncer)) await pages(ctx, opts, SHAPES.scorpionDead, 'the scorpion\'s death', s => findNpc(s, NPC.bouncer) !== null, PAGE.bouncer, 60);
     await drinkPrayerTo(sdk, ARENA_DRINK_BELOW);
-    await arenaFight(ctx, opts, NPC.bouncer, DEATH_HOOK.bouncer, 'Bouncer');
+    await arenaFight(ctx, opts, NPC.bouncer, DEATH_HOOK.bouncer, 'Bouncer', true);
     await pages(ctx, opts, SHAPES.bouncerDead, 'Bouncer\'s death', () => true, PAGE.killMyself, 60);
 }
 
