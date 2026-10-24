@@ -645,16 +645,6 @@ export async function abandonClient(session: Session, waitMs: number = Math.max(
     };
 }
 
-/** Most logout clicks abandonTab sends: one per LOGOUT_CONFIRM_TICKS over LOGOUT_WAIT_TICKS. */
-export const ABANDON_SENDS = Math.ceil(LOGOUT_WAIT_TICKS / LOGOUT_CONFIRM_TICKS);
-/** Most takeover logins abandonTab makes. */
-export const ABANDON_TAKEOVERS = 2;
-/**
- * abandonTab's wall bound. Wall time, not ticks: the page it works on may be out of the world and
- * publishing nothing. Room for the full re-send window at the demo's 600 ms and two takeover logins.
- */
-export const ABANDON_TIMEOUT_MS = 90_000;
-
 /**
  * Log a browser tab's account out through the page itself and confirm it, for a process giving the
  * tab up (a failed start). Over CDP, so neither our gateway nor the page's gateway socket has to be
@@ -868,6 +858,16 @@ export const LOGOUT_CONFIRM_TICKS = 4;
  * ticks longer.
  */
 const LOGOUT_WAIT_TICKS = 60;
+
+/** Most logout clicks abandonTab sends: one per LOGOUT_CONFIRM_TICKS over LOGOUT_WAIT_TICKS. */
+export const ABANDON_SENDS = Math.ceil(LOGOUT_WAIT_TICKS / LOGOUT_CONFIRM_TICKS);
+/** Most takeover logins abandonTab makes. */
+export const ABANDON_TAKEOVERS = 2;
+/**
+ * abandonTab's wall bound. Wall time, not ticks: the page it works on may be out of the world and
+ * publishing nothing. Room for the full re-send window at the demo's 600 ms and two takeover logins.
+ */
+export const ABANDON_TIMEOUT_MS = 90_000;
 
 /**
  * Log out with the logout button, verified. Waits out the post-combat window
