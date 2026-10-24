@@ -192,6 +192,9 @@ describe('the run owner\'s per-row sequence', () => {
             expect(readMulePreparation(r.dir, MULE)!.seq).toBe(h4.seq + 1);
             // the run's final close does not trip on H1's stood-down session
             expect(() => r.keeper.close({ final: true })).not.toThrow();
+            // a resume skips the served last row again (a kit row recorded served): its final stop stands, nothing reopens
+            expect(() => r.keeper.skip(muleScope('H4k'), { final: true })).not.toThrow();
+            expect(cueIn(r.dir)).toEqual(last);
         } finally {
             r.done();
         }
