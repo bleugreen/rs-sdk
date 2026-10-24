@@ -2035,9 +2035,9 @@ What the operator sees:
   resumes inside it. Past it run.ts does not rely on the page's own reconnect: it closes SCORED's
   tab, waits 10 s for the server to drop the body, and logs in on a fresh tab (rs/744, the host's
   runs D and E: a 60 s block mostly left the page claiming in game on a socket that never resumed).
-  A ~60 s hold is still not free: it costs ~325 ticks and one unplanned relog entry on either path,
-  the stream resuming or the flow dead (m, the host's 60 s runs C / D / E on the run host, the dead
-  path 2 of 3; RUN-ORDER R71).
+  A ~60 s hold is not free: with close-first recovery SCORED is back ~135-165 s after the silence
+  began, ~340-410 ticks at 400 ms, and one unplanned relog entry, whether the stream would have
+  resumed or not (r, the constants at 213e2fba; RUN-ORDER R71).
   The helpers and the fleet drop at the same moment.
 - **The outage from outside:** `/playercount` stops answering for ~30 s, then answers 0; logins are
   refused with code 8 for ~1.5-2.5 min; the count refills over ~10 min (r:
