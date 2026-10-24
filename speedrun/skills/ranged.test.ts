@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import type { BotWorldState, InventoryItem, NearbyLoc, NearbyNpc, PlayerState, SkillState } from '../../sdk/types';
+import { DECAY_TICKS } from '../lib/cannon';
 import { baseState, drive as settle, FakeSdk, simulateWalking } from '../lib/fake-sdk';
 import { chebyshev, pos } from '../lib/world';
 import { legById, SPIDERS_SOUTH } from '../runner/legs';
@@ -10,7 +11,7 @@ import { IF_RETALIATE_OFF, IF_RETALIATE_ON } from '../lib/session';
 import { TickLog } from '../lib/ticks';
 import { Observation, resolveResume } from '../runner/resume';
 import {
-    cannonSessionStep, chooseConsume, combatFinishStep, FINISH, gearClick, IMMUNITY, noteConsume, noteSession, otherItems, phaseFor, pickTarget, resipAt, runSession,
+    CANNON_RESET_AT, cannonSessionOptions, cannonSessionStep, chooseConsume, combatFinishOptions, combatFinishStep, FINISH, gearClick, IMMUNITY, noteConsume, noteSession, otherItems, phaseFor, pickTarget, resipAt, runSession,
     slotNeed, specFor, SPIDERS, type ConsumeMemory, type RangedSdk,
     inSpiderReach, SITE_RADIUS, SPIDER_REACH, SPIDER_REACH_AREA, SPIDER_SPAWNS, spiderRetreat,
 } from './ranged';
@@ -382,6 +383,60 @@ function serveRetaliate(sdk: FakeSdk): Press[] {
     return presses;
 }
 
+/**
+ * The cannon's server side (cannon_setup.rs2), each effect on the tick after its click: Set-up places
+ * the base, the stand, barrels and furnace go on by use-on-loc (the furnace makes the Dwarf
+ * MultiCannon), a ball on it loads 30, and Pick-up returns the four parts and deletes the loc.
+ * `falseDecay` prints "Your cannon has decayed!" as the stand goes on in every set-up after the
+ * first: the old cannon's 5-tick check firing mid re-set.
+ */
+function serveCannon(sdk: FakeSdk, o: { falseDecay?: boolean } = {}) {
+    const srv = { built: [] as number[], pickUps: [] as number[] };
+    let pending: Array<(s: BotWorldState) => Partial<BotWorldState>> = [];
+    const others = (s: BotWorldState) => s.nearbyLocs.filter(l => !/cannon/i.test(l.name));
+    const stage = (name: string): NearbyLoc => ({ ...cannonLoc(), name, optionsWithIndex: [{ text: 'Pick-up', opIndex: 2 }] }) as NearbyLoc;
+    const say = (s: BotWorldState, text: string) => ({ gameMessages: [...(s.gameMessages ?? []), { tick: s.tick + 1, text, type: 0, sender: '' } as never] });
+    const without = (s: BotWorldState, name: string) => s.inventory.filter(i => i.name !== name);
+    const prev = sdk.onSend;
+    sdk.onSend = (a, x) => {
+        prev(a, x);
+        const s = sdk.state!;
+        const held = (slot: unknown) => s.inventory.find(i => i.slot === slot);
+        if (a.method === 'sendUseItem' && held(a.args[0])?.name === 'Cannon base') {
+            pending.push(cur => ({ inventory: without(cur, 'Cannon base'), nearbyLocs: [...others(cur), stage('Cannon base')] }));
+        } else if (a.method === 'sendUseItemOnLoc') {
+            const name = held(a.args[0])?.name;
+            if (name === 'Cannon stand' || name === 'Cannon barrels') {
+                const decay = o.falseDecay && name === 'Cannon stand' && srv.built.length > 0;
+                pending.push(cur => ({ inventory: without(cur, name), nearbyLocs: [...others(cur), stage('Cannon stand')], ...(decay ? say(cur, 'Your cannon has decayed!') : {}) }));
+            } else if (name === 'Cannon furnace') {
+                pending.push(cur => {
+                    srv.built.push(cur.tick + 1);
+                    return { inventory: without(cur, name), nearbyLocs: [...others(cur), cannonLoc()] };
+                });
+            } else if (name === 'Cannonball') {
+                pending.push(cur => ({ inventory: cur.inventory.map(i => (i.name === 'Cannonball' ? { ...i, count: i.count - 30 } : i)), ...say(cur, 'You load the cannon with 30 cannonballs.') }));
+            }
+        } else if (a.method === 'sendInteractLoc' && a.args[3] === 2) {
+            pending.push(cur => {
+                srv.pickUps.push(cur.tick + 1);
+                return { nearbyLocs: others(cur), inventory: [...kit(0).slice(0, 4), ...cur.inventory.filter(i => i.slot > 3)] };
+            });
+        }
+    };
+    const tick = sdk.tick.bind(sdk);
+    sdk.tick = patch => {
+        const fx = pending;
+        pending = [];
+        return tick(cur => {
+            let next = { ...cur, ...(typeof patch === 'function' ? patch(cur) : patch) } as BotWorldState;
+            for (const f of fx) next = { ...next, ...f(next) };
+            return next;
+        });
+    };
+    return srv;
+}
+
 describe('runSession on the fake SDK', () => {
     /** Tick until the session settles (its phaseOf, stop or maxTicks ends it). */
     const drive = <T>(sdk: FakeSdk, p: Promise<T>, ticks: number) => settle(sdk, p, ticks + 20);
@@ -500,6 +555,61 @@ describe('runSession on the fake SDK', () => {
             expect(sdk.sent.filter(a => a.method === 'sendClickComponent')).toHaveLength(want.length);
             expect(sdk.getState()!.autoRetaliateEnabled).toBe(false);
         }
+    });
+
+    const pickUpClicks = (sdk: FakeSdk) => sdk.sent.filter(a => a.method === 'sendInteractLoc' && a.args[3] === 2);
+
+    test('S27 picks its cannon up and sets it again once it has stood CANNON_RESET_AT ticks, and fires on (rs/794)', async () => {
+        const sdk = atCannon({ inventory: kit(5000), nearbyLocs: [], nearbyNpcs: [] });
+        const srv = serveCannon(sdk, { falseDecay: true });
+        const run = CANNON_RESET_AT + 100;
+        const p = runSession(sdk as unknown as RangedSdk, { ...combatFinishOptions(), phaseOf: () => 'cannon', stop: (s, fire) => s.tick - fire >= run, pickUp: false });
+        const res = await drive(sdk, p, run + 40);
+        expect(res.end).toBe('stopped');
+        expect(srv.built).toHaveLength(2);
+        expect(srv.pickUps).toHaveLength(1);
+        expect(res.resets).toHaveLength(1);
+        const r = res.resets[0]!;
+        expect(r.why).toBe('age');
+        expect(r.age).toBeGreaterThanOrEqual(CANNON_RESET_AT);
+        expect(r.age).toBeLessThan(CANNON_RESET_AT + 5);
+        // The old cannon came down before its decay, and the new one stands with a fresh clock.
+        expect(srv.pickUps[0]! - srv.built[0]!).toBeLessThan(DECAY_TICKS);
+        expect(r.ticks).toBeLessThan(15);
+        expect(r.ticks).toBe(r.pickUpTicks + r.setUpTicks);
+        // Firing went on behind it: top-ups on the new cannon, counted with the old one's.
+        const lastBuilt = srv.built[1]!;
+        expect(sdk.sent.some(a => a.method === 'sendUseItemOnLoc' && a.args[0] === 4)).toBe(true);
+        expect(res.reloads).toBeGreaterThan(Math.floor(lastBuilt - srv.built[0]!) / 20 - 2);
+        expect(res.endTick - lastBuilt).toBeGreaterThan(90);
+    });
+
+    test("S14's session never re-sets: no resetAt, and a cannon standing at its start is fired, not picked up", async () => {
+        expect(cannonSessionOptions().resetAt).toBeUndefined();
+        expect(combatFinishOptions().resetAt).toBe(CANNON_RESET_AT);
+        const sdk = atCannon({ inventory: [item(4, 'Cannonball', 500)], nearbyNpcs: [] });
+        const srv = serveCannon(sdk);
+        const o = cannonSessionOptions();
+        const p = runSession(sdk as unknown as RangedSdk, { ...o, phaseOf: () => 'cannon', stop: (s, fire) => s.tick - fire >= o.maxTicks - 5, pickUp: false });
+        const res = await drive(sdk, p, o.maxTicks + 20);
+        expect(res.end).toBe('stopped');
+        expect(sdk.sent[0]).toEqual({ method: 'sendInteractLoc', args: [SPIDERS.x - 1, SPIDERS.z - 1, 6, 1] });
+        expect(pickUpClicks(sdk)).toEqual([]);
+        expect(srv.built).toEqual([]);
+        expect(res.resets).toEqual([]);
+    });
+
+    test('S27 resumed onto a standing cannon of unknown age picks it up and sets it again first', async () => {
+        const sdk = atCannon({ inventory: [item(4, 'Cannonball', 500)], nearbyNpcs: [] });
+        const srv = serveCannon(sdk);
+        const t0 = sdk.state!.tick;
+        const p = runSession(sdk as unknown as RangedSdk, { ...combatFinishOptions(), phaseOf: () => 'cannon', stop: (s, fire) => s.tick - fire >= 30, pickUp: false });
+        const res = await drive(sdk, p, 60);
+        expect(sdk.sent[0]).toEqual({ method: 'sendInteractLoc', args: [SPIDERS.x - 1, SPIDERS.z - 1, 6, 2] });
+        expect(srv.pickUps).toHaveLength(1);
+        expect(srv.built).toHaveLength(1);
+        expect(res.resets).toEqual([expect.objectContaining({ why: 'restart', tick: t0, age: null })]);
+        expect(res.end).toBe('stopped');
     });
 
     test('nothing to do: no sends', async () => {
