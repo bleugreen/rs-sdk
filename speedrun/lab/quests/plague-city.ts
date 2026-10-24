@@ -23,7 +23,7 @@
 import type { TickRow } from '../../lib/ticks';
 import { questStatus } from '../../lib/quests';
 import { teleport, type TravelSdk } from '../../lib/travel';
-import { give as tradeGive, sameName, type GiveResult } from '../../lib/trade';
+import { give as tradeGive, type GiveResult } from '../../lib/trade';
 import { configId, invCount, skillXp, worn } from '../../lib/world';
 import { closeSession, openSession, type Session } from '../../lib/session';
 import { quest, stepId, steps, type Options, type ScrollRead } from '../../quests/plague-city';
