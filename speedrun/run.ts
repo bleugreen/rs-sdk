@@ -83,7 +83,7 @@ import { programStatus } from './lib/programs';
 import { describePreflight, feedUrl, readFeedHello, tickPreflight, type TickPreflight } from './lib/feed-hello';
 import { checkRunFloor, gitIn, type FloorCheck, type TickMsParse } from './lib/run-floor';
 import { abandonClient, abandonFailed, type AbandonResult, type ClientKind, cdpUrl, closeSession, describeAbandon, loadBotEnv, logoutClean, type LogoutResult, openSession, pageWorld, ROOT, type Session, startWatchdog, type TakeoverGate } from './lib/session';
-import { pageInGame, pageLoginState, type PageLoginState } from './lib/tab';
+import { pageLoginState, type PageLoginState } from './lib/tab';
 import { tickMs } from './lib/wait';
 import { returnExtrasFromLedger, serveDrift, serveFromLedger } from './helpers/cannon-receiver';
 import { membersFromLauncher, phaseGates, phasePath, readStatusFile, type LauncherView, type PhaseLine, type PhaseMember } from './runner/phase-gate';
@@ -94,8 +94,7 @@ import { patchMethod } from './runner/fence';
 import { buildChain, CENSUS_STEP, censusAtStop, chainPartners, chainProbes, chainSeams, ledgerRows, missingOnPath, muleCueDir, resolveFrom, sliceUntil, STOP_CENSUS_LABEL, type ChainOptions, type ChainStep, type CueSink, type RunConfig } from './runner/chain';
 import { exitStopIsFinal, prepareCueDir, RunCues } from './runner/cue-keeper';
 import { deliveryOwnerFor } from './runner/delivery-owner';
-import { dropRecovery } from './runner/drop-relog';
-import { pageHoldStandDown } from './runner/page-hold';
+import { dropRecovery, linkPage, readPage, recoveryStandDown } from './runner/drop-relog';
 import { awaitPlayer, LOST_AFTER_TICKS, sessionLink } from './runner/resume';
 import { BOUNDARY_STEP, type StepRecord } from './runner/step';
 import { formatCensus, lastCensus, runeCensus, runePlan, runesHeld, type RuneCensus, type RunePlan } from './runner/rune-census';
@@ -695,11 +694,12 @@ export async function runChainOnSession(session: Session, o: ChainRunOptions): P
     });
     const unCues = o.cues?.attach(session.sdk);
     // With the drop recovery on, a browser page's own in-game flag decides a drop: the link asks it
-    // (a dropped page publishes nothing), and while a recovery runs the watchdog stands down for an
-    // out page (drop-relog relogs it in page). With no recovery running nothing would, so it does not.
+    // (a dropped page publishes nothing), and a page that cannot answer (a crashed or hung renderer, a
+    // closed tab) reads out. The watchdog stands down for a gone page, and for an out page while a
+    // recovery runs (drop-relog.ts recoveryStandDown); every read is bounded (PAGE_READ_TIMEOUT_MS).
     const cdp = o.relogs && session.client === 'browser' ? cdpUrl(session.env) : undefined;
-    const page = cdp ? () => pageInGame(cdp, session.name).catch(() => null) : undefined;
-    const link = sessionLink(session, page ? { pageInGame: page } : {});
+    const read = cdp ? () => readPage(cdp, session.name) : undefined;
+    const link = sessionLink(session, read ? { pageInGame: linkPage(read) } : {});
     const recovery = o.relogs ? dropRecovery(session, o.relogs, link, line => console.log(line)) : null;
     const wd = startWatchdog(session, {
         onEvent: e => console.log(`[watchdog] ${e.verdict}: ${e.reason}`),
@@ -707,15 +707,8 @@ export async function runChainOnSession(session: Session, o: ChainRunOptions): P
         // same bound the watchdog's logout and relaunch won the race on the lab (rs/511).
         ...(o.relogs ? { staleTicks: LOST_AFTER_TICKS + WATCHDOG_AFTER_LINK_TICKS } : {}),
         // A page that still says in game inside its hold window is never logged out or relaunched
-        // (runner/page-hold.ts): its original socket may resume.
-        ...(page && recovery
-            ? {
-                  standDown: async at => {
-                      if (recovery.acting() && (await page()) === false) return 'the page is out of the world: the running drop recovery relogs it in page';
-                      return pageHoldStandDown(at, page);
-                  },
-              }
-            : {}),
+        // (runner/page-hold.ts): its original socket may resume. A gone page is never logged out.
+        ...(read && recovery ? { standDown: at => recoveryStandDown(at, read, recovery.acting) } : {}),
     });
     const tabMem = startRunTabMemory(session, log, o.tabMemory);
 

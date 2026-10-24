@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { loginTokenProof } from '../../server/webclient/login-token';
 import { fakeCdp } from './fake-cdp';
 import {
-    botTabs, closeBotTabs, evaluateInTab, frontTab, pageLabel, pageLogin, pageLoginExpression, pageLoginState, raiseTabWindow, screenshotTab, stageBotTab, type CdpTarget,
+    botTabs, closeBotTabs, evaluateInTab, frontTab, pageInGame, pageLabel, pageLogin, pageLoginExpression, pageLoginState, probePage, raiseTabWindow, screenshotTab, stageBotTab, type CdpTarget,
 } from './tab';
 
 test('botTabs finds this bot\'s client pages and nothing else', () => {
@@ -16,6 +16,54 @@ test('botTabs finds this bot\'s client pages and nothing else', () => {
     ];
     expect(botTabs(targets, 'runner1').map(t => t.id)).toEqual(['a', 'e']);
     expect(botTabs(targets, 'nobody')).toEqual([]);
+});
+
+describe('probePage: a bounded page read that tells a page that cannot answer from its answer', () => {
+    test('in game, out of game, and no tab for the bot (absent; pageInGame null as before)', async () => {
+        const cdp = fakeCdp('scored');
+        try {
+            expect(await probePage(cdp.origin, 'scored')).toEqual({ inGame: true });
+            cdp.client.ingame = false;
+            expect(await probePage(cdp.origin, 'scored')).toEqual({ inGame: false });
+            expect(await pageInGame(cdp.origin, 'scored')).toBe(false);
+            cdp.page.tab = false;
+            expect(await probePage(cdp.origin, 'scored')).toEqual({ gone: "no tab for the bot in Chrome's targets", absent: true });
+            expect(await pageInGame(cdp.origin, 'scored')).toBeNull();
+        } finally {
+            cdp.stop();
+        }
+    });
+
+    test("a crashed renderer: its target still listed, the evaluate rejected; gone, and pageInGame throws as before", async () => {
+        const cdp = fakeCdp('scored');
+        try {
+            cdp.page.renderer = 'crashed';
+            expect(await probePage(cdp.origin, 'scored')).toEqual({ gone: 'its renderer did not answer (CDP Runtime.evaluate: Target crashed)' });
+            await expect(pageInGame(cdp.origin, 'scored')).rejects.toThrow('Target crashed');
+        } finally {
+            cdp.stop();
+        }
+    });
+
+    test('a hung renderer: gone at the bound, not later', async () => {
+        const cdp = fakeCdp('scored');
+        try {
+            cdp.page.renderer = 'hung';
+            const t0 = Date.now();
+            expect(await probePage(cdp.origin, 'scored', 150)).toEqual({ gone: 'its renderer did not answer (CDP Runtime.evaluate: no reply in 150 ms)' });
+            expect(Date.now() - t0).toBeLessThan(1_000);
+        } finally {
+            cdp.stop();
+        }
+    });
+
+    test('a DevTools port that does not answer: gone, never a throw', async () => {
+        const cdp = fakeCdp('scored');
+        cdp.stop();
+        const p = await probePage(cdp.origin, 'scored', 500);
+        expect('gone' in p && p.gone).toMatch(/^Chrome's DevTools port did not answer \/json\/list/);
+        await expect(pageInGame(cdp.origin, 'scored', 500)).rejects.toThrow("Chrome's DevTools port did not answer");
+    });
 });
 
 describe('pageLogin: the tab logs itself back in, no navigation', () => {

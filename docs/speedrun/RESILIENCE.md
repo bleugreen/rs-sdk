@@ -174,17 +174,50 @@ while the world goes on. With `run.ts`'s relog budget on, the browser session
 handles it itself:
 
 - **Seen.** The link asks the page (`window.gameClient.ingame` over DevTools,
-  `tab.ts` `pageInGame`) once the tick has stood 3 ticks; an out page is lost at
-  once. A page whose socket died says it is in game for about 17 more ticks (7 s)
-  before it notices, so the drop is usually seen at the stale bound; the
-  watchdog acts 10 ticks after the link, and stands down for an out page only
-  while a recovery is running (`dropRecovery` `acting`): with none running,
-  nothing would relog it.
+  `tab.ts` `probePage`, every request bounded by `PAGE_READ_TIMEOUT_MS`, 3 s)
+  once the tick has stood 3 ticks; an out page is lost at once, and so is a page
+  that cannot answer (below). A page whose socket died says it is in game for
+  about 17 more ticks (7 s) before it notices, so the drop is usually seen at the
+  stale bound; the watchdog acts 10 ticks after the link, and stands down for an
+  out page only while a recovery is running (`dropRecovery` `acting`): with none
+  running, nothing would relog it. Its stand-down (`drop-relog.ts`
+  `recoveryStandDown`) is one bounded read.
 - **Relogged in page.** `recoverDrop` gives a page still claiming in-game 40
   ticks to settle (it reconnects itself: adopted; it falls to the title screen:
   relogged), then logs it in with `session.ts` `login({ inPage: true })`, the
-  path planned relogs take, never a relaunch. No page to ask goes to the
-  watchdog's path unchanged.
+  path planned relogs take, never a relaunch. Only a session with no page to ask
+  at all (a lite client, or no DevTools port configured) goes to the watchdog's
+  path unchanged.
+- **A gone page closes first (rs/752).** A browser page that cannot answer: its
+  tab gone from Chrome's targets, or its renderer crashed or hangs, or a silent
+  DevTools port. A crashed renderer's target stays listed, so only the evaluate
+  tells it apart, and the evaluate need not fail fast: Chrome may reject it
+  'Target crashed', but on fedora's chrome-headless-shell 148 a `kill -9`ed
+  renderer's evaluate never answered, exactly as a SIGSTOPped one's. The 3 s
+  bound is what catches an OOM kill there, not the rejection.
+  Once a second read 3 ticks later agrees (one read can fail on a page
+  mid-navigation), the recovery treats it as out after a long silence: whatever
+  is left of its tab closed (a blank page first if it is Chrome's last window),
+  `CLOSE_SETTLE_MS`, a fresh tab, in the same 20 s / 8 min retry loop, one
+  unplanned entry (`meta.pageGone` says why). It used to read as no page at all
+  and go to the watchdog, whose logout cannot land on a dead page. That logout
+  was the worse half. A dead renderer's gateway socket closes with it, so our
+  gateway reads the bot `dead` at once and the watchdog's verdict is a logout
+  without waiting for the stale bound. The logout clears `expectInWorld`, which
+  hides the drop from the link. On fedora's lab (2026-10-24, a renderer
+  `kill -9` 30 ticks into T23-24) the logout went out 5.4 s after the kill (its
+  stand-down had waited the old unbounded 5 s CDP read), the step's walk then
+  failed 'no tick', and the run stopped 'already logged out', exit 4, with no
+  `(drop)` row. So on run.ts the link reads a gone page as out of the world
+  (`linkPage`), and the watchdog never logs out a gone page (a relaunch, reached
+  only after a failed logout, is held for the hold window and is the backstop
+  past it). With both in, the same lab (`drop-accept.ts --renderer=kill`, and
+  `--renderer=stop` for a hung renderer, SIGCONTed after the relog) ends each
+  case exit 0: the watchdog's logout held on one 3 s read with the gateway
+  reading `dead`, the `(drop)` row at tick 54 (46 for the hang), the old tab
+  closed, a fresh tab in game about 24 s after the drop, one unplanned entry
+  with `freshTabs: 1` and `meta.pageGone`, and the leg finished on the new
+  session.
 - **Every wait keeps asking the page** (rs/659). The adopt's wait for an
   advancing tick, the watchdog's path and a world or gateway outage all re-read
   the page every 3 ticks; a page out of the world with the account meant to be
