@@ -212,11 +212,13 @@ export class CueKeeper implements CueSink {
      * A row the chain skips without its cue (an H4m load at Prayer 99): nothing opens, so nothing waits
      * on its carrier. A delivery carrier's carry-ahead moves to its next row as after a served stop;
      * with `final` (the carrier's last row) the row's session is written as a final stop, the
-     * launcher's logout trigger, so the carrier never stands until the launcher ends.
+     * launcher's logout trigger, so the carrier never stands until the launcher ends. A session already
+     * stopped final on disk (a kit row served and stopped before a resume skips it) is left as it is: a
+     * final session never reopens, and its logout trigger is already written.
      */
     skip(scope: CueScope, o: { final: boolean }): void {
         const owner = this.ownerOf(scope);
-        if (o.final) {
+        if (o.final && !this.finalOnDisk(scope, owner)) {
             this.endCurrent(!this.current || !sameScope(this.current.scope, scope));
             const writer = this.newWriter(scope, owner);
             writer.stop(this.lastBeacons(writer), { final: true });
@@ -224,6 +226,13 @@ export class CueKeeper implements CueSink {
             this.stood = null;
         }
         owner?.served(scope.step);
+    }
+
+    /** Whether the cue file holds `scope`'s own delivery session, stopped final. */
+    private finalOnDisk(scope: CueScope, owner: DeliveryOwner | null): boolean {
+        if (!owner) return false;
+        const disk = readJson<Cue>(join(this.dir, CUE_FILE));
+        return !!disk?.final && disk.session === owner.session(scope.step);
     }
 
     private endCurrent(final: boolean): void {
