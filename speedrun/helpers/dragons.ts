@@ -33,41 +33,18 @@ import { crossFromKandarin, crossToKandarin, type Traveller, westOfTaverley } fr
 import { IF_RUN_ON } from '../lib/run-mode';
 import type { Role, RoleContext } from './role';
 import { runStandalone } from './role';
+import { leashHolds, ROOM, type Spawn, TAVERLEY_ROOM_NPCS } from './taverley-dragons';
 
 export interface Tile { x: number; z: number }
 
-/** An NPC spawn: its SW tile, footprint and leash as the engine applies it. */
-export interface Spawn extends Tile {
-    name: string;
-    size: number;
-    /** NpcType maxrange: wanderrange + 2 unless set. */
-    maxrange: number;
-}
-
-const adult = (x: number, z: number): Spawn => ({ name: 'Blue dragon', x, z, size: 4, maxrange: 6 });
-const baby = (x: number, z: number): Spawn => ({ name: 'Baby blue dragon', x, z, size: 2, maxrange: 6 });
-
-/** Taverley dungeon dragon room spawns (server/content/maps/m45_153.jm2: npc 55 blue_dragon, 52 babybluedragon). */
-export const TAVERLEY_ADULTS: Spawn[] = [adult(2897, 9797), adult(2899, 9802), adult(2904, 9802)];
-export const TAVERLEY_BABIES: Spawn[] = [
-    baby(2892, 9799), baby(2904, 9796), baby(2909, 9806), baby(2911, 9797), baby(2911, 9808), baby(2917, 9801)
-];
-export const TAVERLEY_ROOM_NPCS: Spawn[] = [...TAVERLEY_ADULTS, ...TAVERLEY_BABIES];
+// The room's spawns, bounds and leash rule live in taverley-dragons.ts, shared with bones.ts.
+export { leashHolds, ROOM, TAVERLEY_ADULTS, TAVERLEY_BABIES, TAVERLEY_ROOM_NPCS, type Spawn } from './taverley-dragons';
 
 /**
  * The one tile in the room outside every adult's and every baby's leash, with line of
  * sight to most of the adults' wander area within 10 tiles (spell range, longbows).
  */
 export const SAFE_TILE: Tile = { x: 2901, z: 9810 };
-
-/** Npc.targetWithinMaxRange for an op-trigger NPC: true while `p` is a target the NPC keeps. */
-export function leashHolds(spawn: Spawn, p: Tile): boolean {
-    const dx = Math.abs(p.x - spawn.x);
-    const dz = Math.abs(p.z - spawn.z);
-    const r = spawn.maxrange + 1;
-    if (Math.max(dx, dz) > r) return false;
-    return !(dx === r && dz === r);
-}
 
 /** True when no listed NPC can keep `p` as a target, so none of them can ever hit it. */
 export function outsideEveryLeash(p: Tile, spawns: Spawn[] = TAVERLEY_ROOM_NPCS): boolean {
@@ -170,9 +147,6 @@ export const SAFE_ROUTE: Tile[] = [
     [2909, 9810], [2908, 9810], [2907, 9810], [2906, 9810], [2905, 9810], [2904, 9810], [2903, 9810],
     [2902, 9810], [2901, 9810]
 ].map(([x, z]) => ({ x: x!, z: z! }));
-
-/** The dragon room, west of the dusty-key door; inRoom also checks the door side. */
-export const ROOM: { x1: number; z1: number; x2: number; z2: number } = { x1: 2876, z1: 9786, x2: 2923, z2: 9816 };
 
 /**
  * Magic Guild, Yanille (server/content/maps/m40_48.jm2). The east double door (magicguild_door_l/r at
