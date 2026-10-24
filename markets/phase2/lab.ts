@@ -185,11 +185,27 @@ const availableMb = (): number | null => {
         return null;
     }
 };
+/** A process's resident memory in MB (Linux), null when unreadable. */
+const rssMb = (pid: number | undefined): number | null => {
+    try {
+        const m = /^VmRSS:\s+(\d+) kB/m.exec(readFileSync(`/proc/${pid}/status`, 'utf8'));
+        return m ? Math.round(Number(m[1]) / 1024) : null;
+    } catch {
+        return null;
+    }
+};
+const enginePid = (() => {
+    try {
+        return Number(readFileSync(join(process.env.LAB_LOG ?? '', 'engine.pid'), 'utf8').trim());
+    } catch {
+        return undefined;
+    }
+})();
 let memStopped = false;
 const memWatch = setInterval(() => {
     const mb = availableMb();
     if (mb === null) return;
-    log('memory', { availableMb: mb });
+    log('memory', { availableMb: mb, runnerMb: rssMb(child.pid), engineMb: rssMb(enginePid) });
     if (mb < minFreeMb && !memStopped) {
         memStopped = true;
         log('sending SIGINT: available memory below the floor', { availableMb: mb, floorMb: minFreeMb });
