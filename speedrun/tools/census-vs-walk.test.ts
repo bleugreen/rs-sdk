@@ -38,8 +38,8 @@ const LOG = [
     // S02's boundary is before its sub-row: air 10, not 5. An empty vial is never allowed.
     census('S02:A-start', 'S02', 20, [...KIT, ['Law rune', 1], ['Prayer potion(2)', 1], ['Vial', 1]], ['Staff of water']),
     // Mid-step: the quest's own item, and the vial again, are the step's business (rule C).
-    census('S02:B-key', 'S02', 30, [...KIT, ['Law rune', 1], ['Quest key', 1], ['Vial', 1]], ['Staff of water']),
-    census('S02:B-key', 'S02', 31, [...KIT, ['Law rune', 1], ['Quest key', 1], ['Vial', 1]], ['Staff of water']),
+    census('S02:B-key', 'S02', 30, [...KIT, ['Law rune', 1], ['Quest key', 1], ['Picture', 1], ['Vial', 1]], ['Staff of water']),
+    census('S02:B-key', 'S02', 31, [...KIT, ['Law rune', 1], ['Quest key', 1], ['Picture', 1], ['Vial', 1]], ['Staff of water']),
     // The vial outlives S02 (FAIL); air 7 against the walk's 5 compares by name (rule A); the potion is drunk (info).
     census('T02-03a run', 'T02-03a', 40, [['Knife', 1], ['Air rune', 7], ['Law rune', 1], ['Vial', 1]], ['Staff of water']),
     census('H9 hand-off', 'H9', 50, [['Knife', 1], ['Air rune', 7], ['Law rune', 1], ['Vial', 1]], ['Staff of water']),
@@ -84,10 +84,10 @@ describe('censusVsWalk: the allow-list', () => {
     const of = (item: string) => r.findings.filter(g => g.item === item).map(g => ({ verdict: g.verdict, kind: g.kind, rule: g.rule, first: g.first.before, rows: g.rows }));
 
     test('the defect class: live past a boundary, not in the walk', () => {
+        // One unbroken run: its FAIL rows (S02's boundary and the leg's three) and its mid-step rows.
         expect(of('Vial')).toEqual([
-            { verdict: 'FAIL', kind: 'not in walk', rule: undefined, first: 'S02:A-start', rows: 1 },
+            { verdict: 'FAIL', kind: 'not in walk', rule: undefined, first: 'S02:A-start', rows: 4 },
             { verdict: 'allowed', kind: 'not in walk', rule: 'C', first: 'S02:B-key', rows: 2 },
-            { verdict: 'FAIL', kind: 'not in walk', rule: undefined, first: 'T02-03a run', rows: 3 },
         ]);
         expect(of('Arrow shaft')).toEqual([{ verdict: 'FAIL', kind: 'not in walk', rule: undefined, first: 'T02-03b run', rows: 1 }]);
     });
@@ -102,7 +102,9 @@ describe('censusVsWalk: the allow-list', () => {
         expect(of('Air rune')).toEqual([]);
         expect(of('Shark')).toEqual([]);
         expect(of('Prayer potion(2)')).toEqual([]);
-        expect(of('Quest key')).toEqual([{ verdict: 'allowed', kind: 'not in walk', rule: 'C', first: 'S02:B-key', rows: 2 }]);
+        // In S02's own `in`: matched mid-step. Not in the ledger at all: the step's business (rule C).
+        expect(of('Quest key')).toEqual([]);
+        expect(of('Picture')).toEqual([{ verdict: 'allowed', kind: 'not in walk', rule: 'C', first: 'S02:B-key', rows: 2 }]);
         expect(baseName('Superantipoison(4)')).toBe('superantipoison');
     });
 
@@ -113,7 +115,7 @@ describe('censusVsWalk: the allow-list', () => {
 
     test('in the walk but not live is informational, boundary rows only', () => {
         expect(r.missing.map(g => [g.item, g.first.before, g.rows])).toEqual([['prayer potion(4)', 'T02-03a run', 3]]);
-        expect(r.failed).toBe(4);
+        expect(r.failed).toBe(3);
     });
 });
 

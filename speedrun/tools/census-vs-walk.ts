@@ -381,26 +381,42 @@ export interface Group {
     walk: Set<number | null>;
 }
 
-function groupOf(list: readonly (Finding | (Missing & { kind: 'walk not live' }))[]): Group[] {
-    const out = new Map<string, Group>();
-    for (const f of list) {
-        const verdict = 'verdict' in f ? f.verdict : 'info';
-        const rule = 'rule' in f ? f.rule : undefined;
-        const key = [f.placed.census.log, f.item, f.where, f.kind, verdict, rule ?? ''].join('|');
-        const g = out.get(key);
-        if (!g) {
-            out.set(key, {
-                log: f.placed.census.log, item: f.item, where: f.where, kind: f.kind, verdict, ...(rule ? { rule } : {}), ...('note' in f && f.note ? { note: f.note } : {}),
-                first: f.placed.census, last: f.placed.census, rows: 1, live: new Set('live' in f ? [f.live] : []), walk: new Set([f.walk]),
-            });
-            continue;
+/**
+ * The rows' entries grouped by item and class over each unbroken run of rows holding the item: a
+ * run's FAIL rows are one group and its allowed rows another, and an item that leaves and comes
+ * back starts a new run.
+ */
+function groupOf(perRow: readonly (readonly (Finding | (Missing & { kind: 'walk not live' }))[])[]): Group[] {
+    const out: Group[] = [];
+    const open = new Map<string, Map<string, Group>>();
+    for (const list of perRow) {
+        const held = new Set<string>();
+        for (const f of list) {
+            const verdict = 'verdict' in f ? f.verdict : 'info';
+            const rule = 'rule' in f ? f.rule : undefined;
+            const run = [f.placed.census.log, f.item, f.where].join('|');
+            held.add(run);
+            const classes = open.get(run) ?? new Map<string, Group>();
+            open.set(run, classes);
+            const key = [f.kind, verdict, rule ?? ''].join('|');
+            const g = classes.get(key);
+            if (!g) {
+                const fresh: Group = {
+                    log: f.placed.census.log, item: f.item, where: f.where, kind: f.kind, verdict, ...(rule ? { rule } : {}), ...('note' in f && f.note ? { note: f.note } : {}),
+                    first: f.placed.census, last: f.placed.census, rows: 1, live: new Set('live' in f ? [f.live] : []), walk: new Set([f.walk]),
+                };
+                classes.set(key, fresh);
+                out.push(fresh);
+                continue;
+            }
+            g.last = f.placed.census;
+            g.rows++;
+            if ('live' in f) g.live.add(f.live);
+            g.walk.add(f.walk);
         }
-        g.last = f.placed.census;
-        g.rows++;
-        if ('live' in f) g.live.add(f.live);
-        g.walk.add(f.walk);
+        for (const run of [...open.keys()]) if (!held.has(run)) open.delete(run);
     }
-    return [...out.values()];
+    return out;
 }
 
 const counts = (s: Set<number | null>) => {
@@ -463,8 +479,8 @@ export function censusVsWalk(logs: readonly { name: string; text: string }[], ro
         unplaced.push(...p.unplaced);
         for (const x of p.placed) results.push(compareRow(x, rows, entries, o));
     }
-    const findings = groupOf(results.flatMap(r => r.findings));
-    const missing = groupOf(results.flatMap(r => r.missing.map(m => ({ ...m, kind: 'walk not live' as const }))));
+    const findings = groupOf(results.map(r => r.findings));
+    const missing = groupOf(results.filter(r => r.placed.phase === 'boundary').map(r => r.missing.map(m => ({ ...m, kind: 'walk not live' as const }))));
     return { results, unplaced, findings, missing, failed: findings.filter(g => g.verdict === 'FAIL').length };
 }
 
