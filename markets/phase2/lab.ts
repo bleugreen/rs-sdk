@@ -45,6 +45,15 @@
  *
  *   . markets/methods/lab/block.sh M20 && LAB_RUNNERS=0 LAB_TIMEOUT=3600 speedrun/lab/lab.sh p2t00 \
  *     'markets/phase2/lab.ts:--prefix=p2t:--knights=0:--guards=0:--iron=4:--bare=1:--away=1:--sell=1:--iron-bid=3000:--sigint=40:--out=/tmp/rs732'
+ *
+ * Reaching a stage from anywhere (rs/754): `--at=P1,P2,...` leaves the staged knights, in order, at a named place
+ * instead of Lumbridge (`stronghold` inside the Gnome Stronghold's wall by the Grand Tree, `karamja` at Brimhaven,
+ * `pocket` in a fenced yard north-east of Varrock that the long-path map cannot leave and no passage covers,
+ * `lumbridge`), each carrying `--carry=N1,N2,...` coins (default 0). `--stage-stall=N` and `--stall-retries=N` pass
+ * `--stage-stall-minutes` and `--stall-retries` to the runner.
+ *
+ *   . markets/methods/lab/block.sh M23 && LAB_RUNNERS=0 LAB_TIMEOUT=3000 speedrun/lab/lab.sh p2w00 \
+ *     'markets/phase2/lab.ts:--prefix=p2w:--exchange=0:--knights=3:--hungry=0:--guards=0:--sharks=3:--coins=500:--trained=1:--legacy-sharks=1:--buy=1:--ramp=0:--at=stronghold,karamja,pocket:--carry=0,150,0:--stage-stall=2:--stall-retries=1:--sigint=40:--out=/tmp/rs754'
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -67,6 +76,16 @@ import { aliasOf } from './names.ts';
 const DRAYNOR_BANK = { x: 3092, z: 3245 };
 const LUMBRIDGE = { x: 3222, z: 3218 };
 const ARDOUGNE_MARKET = { x: 2665, z: 3290 };
+/** Where `--at` leaves a staged knight (rs/754). */
+const PLACES: Record<string, { x: number; z: number }> = {
+    lumbridge: LUMBRIDGE,
+    // the Grand Tree doors' south side: inside the wall, where run3 a02 stood
+    stronghold: { x: 2465, z: 3490 },
+    // Brimhaven, where the Ardougne ship lands: the far end of Karamja from Musa Point
+    karamja: { x: 2772, z: 3232 },
+    // a fenced yard north-east of Varrock: walkable, but no long-path route out and no passage in passages.ts
+    pocket: { x: 3302, z: 3498 }
+};
 const IRON_ORE = { id: 440, name: 'Iron ore' };
 
 const labBot = process.argv[2] ?? '';
@@ -102,6 +121,11 @@ const dropPct = count('drop-pct', 10);
 const bankAt = arg('bank-at', '');
 /** Sharks the Exchange check's maker offers at 600, for the purchases and rebuys to fill. */
 const sharkAsk = count('shark-ask', 300);
+const places = arg('at', '').split(',').filter(Boolean);
+const carries = arg('carry', '').split(',').filter(Boolean).map(Number);
+const stageStall = arg('stage-stall', '');
+const stallRetries = arg('stall-retries', '');
+for (const p of places) if (!PLACES[p]) throw new Error(`--at: unknown place ${p} (${Object.keys(PLACES).join(', ')})`);
 
 const server = loadBotEnv(labBot).SERVER ?? '';
 if (!/^(localhost|127\.)/.test(server)) {
@@ -146,7 +170,7 @@ async function bankGive(sdk: BotSDK, obj: string, n: number, matches: RegExp): P
     await depositMatching(sdk, [matches]);
 }
 
-async function stageKnight(name: string): Promise<void> {
+async function stageKnight(name: string, i: number): Promise<void> {
     await withSession(name, async (sdk, bot) => {
         await mustTele(sdk, DRAYNOR_BANK.x, DRAYNOR_BANK.z);
         const opened = await bot.openBank();
@@ -157,8 +181,15 @@ async function stageKnight(name: string): Promise<void> {
         const banked = sdk.getBankItems().find(i => /^shark$/i.test(i.name))?.count ?? 0;
         await bot.closeBank();
         if (trained) await setStats(sdk, { thieving: 99, hitpoints: 40 });
-        await mustTele(sdk, LUMBRIDGE.x, LUMBRIDGE.z);
-        log('staged', { name, sharks: banked, trained });
+        const carry = carries[i] ?? 0;
+        if (carry > 0) {
+            await cheat(sdk, `give coins ${carry}`);
+            await waitUntil(sdk, s => s.inventory.some(it => /^coins$/i.test(it.name)), { maxTicks: 10 });
+        }
+        const place = places[i] ?? 'lumbridge';
+        await mustTele(sdk, PLACES[place]!.x, PLACES[place]!.z);
+        const p = sdk.getState()!.player!;
+        log('staged', { name, sharks: banked, trained, place, at: { x: p.worldX, z: p.worldZ }, carried: sdk.getState()!.inventory.filter(it => /^coins$/i.test(it.name)).reduce((n, it) => n + it.count, 0) });
     });
 }
 
@@ -255,7 +286,7 @@ if (exchange) await exchangeCheck();
 
 // four at a time, the last `hungry` knights left fresh
 const staged = fresh ? [] : knightNames.slice(0, Math.max(0, knights - hungry));
-for (let i = 0; i < staged.length; i += 4) await Promise.all(staged.slice(i, i + 4).map(n => stageKnight(n)));
+for (let i = 0; i < staged.length; i += 4) await Promise.all(staged.slice(i, i + 4).map((n, j) => stageKnight(n, i + j)));
 const bareNames = ironNames.slice(0, bare);
 const awayNames = ironNames.slice(bare, bare + away);
 for (const n of bareNames) await stageWithoutPickaxe(n, 'lumbridge');
@@ -288,27 +319,19 @@ writeFileSync(planPath, JSON.stringify(plan, null, 2));
 const heap = arg('heap', '0') === '1';
 const smol = arg('smol', '0') === '1';
 const gcSeconds = arg('gc-seconds', '');
+const runnerFlags = [
+    ...(buy ? ['--run-ended'] : []),
+    ...(stageStall !== '' ? ['--stage-stall-minutes', stageStall] : []),
+    ...(stallRetries !== '' ? ['--stall-retries', stallRetries] : []),
+    ...(gcSeconds !== '' ? ['--gc-seconds', gcSeconds] : [])
+];
 const spawnRunner = () =>
-    Bun.spawn(
-        [
-            'bun',
-            ...(smol ? ['--smol'] : []),
-            ...(heap ? ['--preload', './markets/phase2/heap-probe.ts'] : []),
-            'markets/phase2/run.ts',
-            planPath,
-            '--out',
-            out,
-            '--placeholder-data',
-            ...(buy ? ['--run-ended'] : []),
-            ...(gcSeconds !== '' ? ['--gc-seconds', gcSeconds] : [])
-        ],
-        {
+    Bun.spawn(['bun', ...(smol ? ['--smol'] : []), ...(heap ? ['--preload', './markets/phase2/heap-probe.ts'] : []), 'markets/phase2/run.ts', planPath, '--out', out, '--placeholder-data', ...runnerFlags], {
         cwd: ROOT,
         stdout: 'inherit',
         stderr: 'inherit',
-            env: heap ? { ...process.env, PHASE2_HEAP_DIR: out } : process.env
-        }
-    );
+        env: heap ? { ...process.env, PHASE2_HEAP_DIR: out } : process.env
+    });
 let child = spawnRunner();
 // --restart=M: stop the runner after M minutes and start it again on the same --out (its role-state), as markets does
 const restart = count('restart', 0);
