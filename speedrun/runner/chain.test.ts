@@ -31,7 +31,7 @@ import { ScopeSessions } from '../helpers/standalone';
 import { FencedError } from './fence';
 import { leg, legsFor, netTotal, type LegStep } from './legs';
 import { Observation, resolveResume, type Link } from './resume';
-import type { RunnerSession, Step, StepContext } from './step';
+import { runSteps, type RunnerSession, type Step, type StepContext } from './step';
 
 const prevTick = process.env.SPEEDRUN_TICK_MS;
 beforeAll(() => { process.env.SPEEDRUN_TICK_MS = '5'; });
