@@ -398,7 +398,7 @@ export function formatBoundary(b: Boundary): string {
 export function args(argv: readonly string[]): Record<string, string> {
     const out: Record<string, string> = {};
     argv.forEach((a, i) => {
-        const m = /^--([a-z-]+)=(.*)$/.exec(a);
+        const m = /^--([a-z0-9-]+)=(.*)$/.exec(a);
         if (m) out[m[1]!] = m[2]!;
         else if (i === 0 && !a.startsWith('-')) out.bot = a;
         else throw new Error(`unexpected argument ${a}`);

@@ -6,7 +6,7 @@ import { resolveOptions as magicOptions, ROUTE_LOADS } from '../skills/magic';
 import { STAND_IN_STEP } from '../runner/run-report';
 import { MANIFEST } from '../tools/slot-ledger';
 import { baseState } from '../lib/fake-sdk';
-import { giverGaps, hooked, KIT_PLANS, LANDING_HELPER_TILE, labChain, meetingTile, ringerTile, ringLoads, rowOf, STAFF, withRingers } from './dress-rehearsal';
+import { args, giverGaps, hooked, KIT_PLANS, LANDING_HELPER_TILE, labChain, meetingTile, ringerTile, ringLoads, rowOf, STAFF, withRingers } from './dress-rehearsal';
 import type { LabWorld } from './stand-ins';
 
 // without attempt 4's H4m row: these harnesses stage the chain before it
@@ -16,6 +16,13 @@ const partners = (name: string) => Object.fromEntries([...Object.keys(PLACEMENT)
 const cfg = (name: string) => ({ partners: partners(name), firemakingTiles: '3240,3296', rings: { giver: 'r' }, bones: { giver: 'b' }, courier: { giver: 'c', below: 3 }, anvil: { giver: 'a' }, cueDir: '/tmp/x' });
 const cues = { open: async () => {}, stop: () => {} };
 const tileOf = (lab: ReturnType<typeof labChain>, row: string) => lab.stubRows.find(r => r.row === row)!.tile;
+
+describe('args', () => {
+    test('flag names with digits (--s21-givers, --h12o) parse; the bare first argument is the bot', () => {
+        expect(args(['labscored', '--s21-givers=cairn_ds01,cairn_ds02', '--h12o=cairn_d45', '--until=S01'])).toEqual({ bot: 'labscored', 's21-givers': 'cairn_ds01,cairn_ds02', h12o: 'cairn_d45', until: 'S01' });
+        expect(() => args(['labscored', '--Bad=1'])).toThrow('unexpected argument');
+    });
+});
 
 describe('labChain', () => {
     test('no group is missing (S15 is Monkey Madness\'s own steps), so there is no STAND-IN step, and nothing refuses as unbuilt', () => {
