@@ -233,9 +233,12 @@ export const H4M_ROW = 'H4m';
 export const H4M_MIN_PRAYER = 94;
 /** Where S09's bury steps take Prayer: the chain's Prayer 99, once S07 closes below it. */
 export const S09_PRAYER_TO = 99;
-/** A big bone's bury in base xp (bones.obj big_bones, bone_exp 150 tenths). */
-export const BIG_BONE_BASE = 15;
-const BIG_BONES_ID = 532;
+/**
+ * The bones an H4m row may carry, by obj id, with a bury's base xp (bones.obj bone_exp / 10): prayer.ts's
+ * BONE_TYPES (dragon 72, babydragon 30) and big bones (15). The row's bone sets the guard's price and the
+ * bury steps' pattern; a row with any other bone refuses.
+ */
+export const H4M_BONES: readonly prayer.BoneType[] = [...prayer.BONE_TYPES, { obj: 'big_bones', name: 'Big bones', id: 532, note: 533, base: 15 }];
 
 export interface H4mPlan {
     /** The loads' hand-off ids, H4m.1 to H4m.N in order: each its own delivery row, since a carrier serves a delivery session once. */
@@ -243,6 +246,10 @@ export interface H4mPlan {
     /** The ledger row's trade; each load's hand-off is it under the load's id. */
     plan: HandOffPlan;
     perLoad: number;
+    /** The row's bone, from H4M_BONES. */
+    bone: prayer.BoneType;
+    /** Its name as the bury steps' pattern (mining.ts `bury`). */
+    pattern: string;
 }
 
 /**
@@ -265,16 +272,18 @@ export function h4mPlan(cfg: Pick<RunConfig, 's07PrayerTo' | 'partners'>, manife
     // h4mLoadRows has checked it is the one row H4m.1-H4m.N
     const plan = planHandOff(parseFallbacks(manifest).find(r => r.row.startsWith(`${H4M_ROW}.`))!);
     const bones = plan.receive[0];
-    if (plan.receive.length !== 1 || !bones || !bones.ids?.includes(BIG_BONES_ID) || bones.kind !== 'u' || bones.topUp || plan.give.length || plan.drop.length || plan.wield.length || plan.unwield.length) {
-        throw new Error(`${H4M_ROW} (line ${plan.line}) must receive only big bones @${BIG_BONES_ID}, unnoted and a fixed count: S09's bury steps and the Prayer check read nothing else`);
+    const bone = H4M_BONES.find(b => bones?.ids?.length === 1 && bones.ids[0] === b.id);
+    if (plan.receive.length !== 1 || !bones || !bone || bones.kind !== 'u' || bones.topUp || plan.give.length || plan.drop.length || plan.wield.length || plan.unwield.length) {
+        throw new Error(`${H4M_ROW} (line ${plan.line}) must receive one bone by id, unnoted and a fixed count, of ${H4M_BONES.map(b => `${b.obj} @${b.id}`).join(', ')}: S09's bury steps and the Prayer check read nothing else`);
     }
+    const name = bone.name.toLowerCase();
     const need = xpForLevel(S09_PRAYER_TO) - xpForLevel(p);
-    const brings = rows.length * bones.count * BIG_BONE_BASE * XP_RATE;
+    const brings = rows.length * bones.count * bone.base * XP_RATE;
     if (brings < need) {
         const base = (xp: number) => (xp / XP_RATE).toFixed(2);
-        throw new Error(`H4m: ${rows.length} loads of ${bones.count} big bones bring ${base(brings)} base, and from Prayer ${p}'s floor (${base(xpForLevel(p))} base) to ${S09_PRAYER_TO} (${base(xpForLevel(S09_PRAYER_TO))}) needs ${base(need)}: ${Math.ceil(need / (BIG_BONE_BASE * XP_RATE))} bones`);
+        throw new Error(`H4m: ${rows.length} loads of ${bones.count} ${name} bring ${base(brings)} base, and from Prayer ${p}'s floor (${base(xpForLevel(p))} base) to ${S09_PRAYER_TO} (${base(xpForLevel(S09_PRAYER_TO))}) needs ${base(need)}: ${Math.ceil(need / (bone.base * XP_RATE))} ${name}`);
     }
-    return { rows, plan, perLoad: bones.count };
+    return { rows, plan, perLoad: bones.count, bone, pattern: `^${name}$` };
 }
 
 /**
@@ -836,9 +845,9 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
      * also supersedes the loads left; the last carries the chain's Prayer 99.
      */
     const s09WithH4m = (h: H4mPlan): Entry[] => {
-        const all = mining.steps({ ...S09_MINING, bury: mining.BIG_BONES, buryLoads: h.rows.length, buryPrayerTo: S09_PRAYER_TO });
+        const all = mining.steps({ ...S09_MINING, bury: h.pattern, buryLoads: h.rows.length, buryPrayerTo: S09_PRAYER_TO });
         const record = o.handOffs!;
-        const bones = new RegExp(mining.BIG_BONES, 'i');
+        const bones = new RegExp(h.pattern, 'i');
         // the level, not the points (skillLevel's current level)
         const prayerAt = (st: BotWorldState) => st.skills.find(k => k.name.toLowerCase() === 'prayer')?.baseLevel ?? 0;
         const reached = (st: BotWorldState) => prayerAt(st) >= S09_PRAYER_TO;

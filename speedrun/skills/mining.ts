@@ -101,8 +101,8 @@ export interface MiningOpts {
      */
     acceptHazards?: boolean | string;
     /**
-     * Bones to bury on the `stay2` lap (BURY_LAP, knife-mine's `bury`): true for big bones
-     * (BIG_BONES), or a pattern. Adds `buryLoads` steps `mining.bury: load k` before the last iron band.
+     * Bones to bury on the `stay2` lap (BURY_LAP, knife-mine's `bury`): true for any bones (BURY_BONES,
+     * as S07's), or a pattern. Adds `buryLoads` steps `mining.bury: load k` before the last iron band.
      */
     bury?: boolean | string;
     /** Bury steps with `bury` (default 1): one per load the chain trades in before it. */
@@ -168,8 +168,8 @@ export const BURY_ROTATION = 'stay2';
 export const BURY_TRADE_TILE: readonly [number, number] = [2605, 3234];
 /** knife-mine's stay takes its bone only while the lap holds 3 ticks an ore: iron respawn 13 or less (rs/182). */
 export const BURY_MAX_RESPAWN = 13;
-/** H4m's bones (bones.obj big_bones, bone_exp 150: 15 base each). */
-export const BIG_BONES = '^big bones$';
+/** `bury: true`'s pattern: any bones, as knife-mine's and S07's default. The run passes its row's own (chain.ts h4mPlan). */
+export const BURY_BONES = 'bones$';
 
 /**
  * Plain (adjacent-rock) ticks per ore at respawn D, the gate's switch-off reference: measured at
@@ -537,7 +537,7 @@ function buryOf(raw: MiningOpts): BuryOpts | null {
         if (raw.buryLoads !== undefined || raw.buryPrayerTo !== undefined) throw new Error('mining: buryLoads and buryPrayerTo need bury');
         return null;
     }
-    const source = raw.bury === true || raw.bury === 'true' ? BIG_BONES : raw.bury;
+    const source = raw.bury === true || raw.bury === 'true' ? BURY_BONES : raw.bury;
     if (typeof source !== 'string' || !source.trim()) throw new Error(`mining: bury must be true or a bone pattern, not ${JSON.stringify(raw.bury)}`);
     let re: RegExp;
     try {
