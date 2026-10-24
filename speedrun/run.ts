@@ -1096,42 +1096,42 @@ async function main(argv: string[]): Promise<number> {
             unalias = aliasAccount(log, session.name);
             const upkeep = loginUpkeep(session, log);
             try {
-            // The census on the live pack, before any step: a shortfall logs SCORED out here.
-            const refused = await liveRuneCheck(session, { plan, ...(planError ? { planError } : {}), from: censusStart(chain, from, earlier), served, log }, {
-                logout: () => {
-                    upkeep.stop();
-                    return logoutClean(session);
-                },
-            });
-            if (refused !== null) return refused;
-            log.append(annotation(log, session.name, 'gate', '(gate) start', { meta: { gates, fresh, cueDir: cfg.cueDir, removed, until: a.until ?? null, steps: chain.length, s21Relog: a.s21Relog } }));
-            console.log(`[run] ${LOG_ACCOUNT} on ${a.client}; ${chain.length} steps${a.until ? ` to ${a.until}` : ''}; log ${log.path}`);
-            // A signal: SCORED is out, then closeSession still closes the browser before the exit.
-            const ran = await runChainOnSession(session, { log, chain: enteringEnds(chain, upkeep), reservation, cues: keeper, relogs, record: record.steps, wholeRun: a.until === undefined, ...(from !== undefined ? { from } : {}) }).catch(e => {
-                if (!(e instanceof Terminated)) throw e;
-                term = e;
-                return null;
-            });
-            if (!ran) {
-                const t = term as unknown as Terminated;
-                console.log(`[run] ${t.message}`);
-                return t.exitCode;
-            }
-            const { result, lastState } = ran;
-            let rc = result.code;
-            console.log(`[run] ${result.outcome}`);
-            if (rc === 0 && a.until === undefined) {
-                const total = lastState ? totalLevel(lastState) : null;
-                const ok = total === TARGET_TOTAL && !session.expectInWorld;
-                log.append(annotation(log, session.name, 'note', '(run) total', { ok, meta: { total, target: TARGET_TOTAL, loggedOut: !session.expectInWorld } }));
-                console.log(`[run] total ${total ?? '?'} of ${TARGET_TOTAL}; ${session.expectInWorld ? 'NOT logged out' : 'logged out'}`);
-                if (!ok) rc = 1;
-                if (owner && !session.expectInWorld) console.log(`[run] ${await releaseClaim(owner)}`);
-            }
-            const again = resumeLine(chain, result.resumeAt);
-            if (rc === EXIT_HOST_RESERVED) console.log(`[run] resume: once ${reservation.path} is gone or expired, run the same command again${again}`);
-            if (rc === 4) console.log(`[run] resume: run the same command again (the walk starts from game state)${again}`);
-            return rc;
+                // The census on the live pack, before any step: a shortfall logs SCORED out here.
+                const refused = await liveRuneCheck(session, { plan, ...(planError ? { planError } : {}), from: censusStart(chain, from, earlier), served, log }, {
+                    logout: () => {
+                        upkeep.stop();
+                        return logoutClean(session);
+                    },
+                });
+                if (refused !== null) return refused;
+                log.append(annotation(log, session.name, 'gate', '(gate) start', { meta: { gates, fresh, cueDir: cfg.cueDir, removed, until: a.until ?? null, steps: chain.length, s21Relog: a.s21Relog } }));
+                console.log(`[run] ${LOG_ACCOUNT} on ${a.client}; ${chain.length} steps${a.until ? ` to ${a.until}` : ''}; log ${log.path}`);
+                // A signal: SCORED is out, then closeSession still closes the browser before the exit.
+                const ran = await runChainOnSession(session, { log, chain: enteringEnds(chain, upkeep), reservation, cues: keeper, relogs, record: record.steps, wholeRun: a.until === undefined, ...(from !== undefined ? { from } : {}) }).catch(e => {
+                    if (!(e instanceof Terminated)) throw e;
+                    term = e;
+                    return null;
+                });
+                if (!ran) {
+                    const t = term as unknown as Terminated;
+                    console.log(`[run] ${t.message}`);
+                    return t.exitCode;
+                }
+                const { result, lastState } = ran;
+                let rc = result.code;
+                console.log(`[run] ${result.outcome}`);
+                if (rc === 0 && a.until === undefined) {
+                    const total = lastState ? totalLevel(lastState) : null;
+                    const ok = total === TARGET_TOTAL && !session.expectInWorld;
+                    log.append(annotation(log, session.name, 'note', '(run) total', { ok, meta: { total, target: TARGET_TOTAL, loggedOut: !session.expectInWorld } }));
+                    console.log(`[run] total ${total ?? '?'} of ${TARGET_TOTAL}; ${session.expectInWorld ? 'NOT logged out' : 'logged out'}`);
+                    if (!ok) rc = 1;
+                    if (owner && !session.expectInWorld) console.log(`[run] ${await releaseClaim(owner)}`);
+                }
+                const again = resumeLine(chain, result.resumeAt);
+                if (rc === EXIT_HOST_RESERVED) console.log(`[run] resume: once ${reservation.path} is gone or expired, run the same command again${again}`);
+                if (rc === 4) console.log(`[run] resume: run the same command again (the walk starts from game state)${again}`);
+                return rc;
             } finally {
                 upkeep.stop();
             }
