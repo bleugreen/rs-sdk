@@ -1645,6 +1645,36 @@ describe('H4m: S07 closes below 99 and S09 buries the rest', () => {
         expect(walks).toEqual([]);
     });
 
+    test('a load is skipped when Prayer is already 99 at its cue: no cue opened, no walk, no trade; the carrier\'s last load stops final through the sink (attempt 4: all five traded after S07 reached 99)', async () => {
+        const r = recorder();
+        const skipped: { scope: CueScope; final: boolean }[] = [];
+        const cues: CueSink = { ...r.cues, skip: (scope, o) => void skipped.push({ scope, final: o.final }) };
+        const c = buildChain(H4M, { cues, manifest: WITH_H4M, record: record() });
+        const at99 = zoo({ prayer: 99, x: 2620, z: 3234, extra: 5 });
+        const walks: unknown[] = [];
+        for (const row of LOADS) {
+            const load = c.find(s => s.id === row)!;
+            // Off the meeting and without room for 20: at 99 neither refuses, nor does the empty pack after.
+            expect([load.preconditions(at99, {}), load.postconditions(at99, {})]).toEqual([true, true]);
+            const sdk = new FakeSdk(at99);
+            const log = TickLog.memory('h4m-skip');
+            const ctx = { ...ctxFor(sdk, log), bot: { walkTo: async (...a: unknown[]) => void walks.push(a) } } as unknown as StepContext<unknown>;
+            await load.run(ctx);
+            expect(log.rows.filter(x => x.step !== CENSUS_STEP).map(x => [x.step, x.ticks, x.kind, x.meta])).toEqual([[`${row} hand-off (skipped)`, 0, 'note', { id: row, why: 'Prayer 99 at its cue: no trade, the carrier keeps the load' }]]);
+            expect(sdk.sent).toEqual([]);
+        }
+        expect([r.opened, r.stopped, walks]).toEqual([[], [], []]);
+        // one carrier for H4m only: its last load is its final stop
+        expect(skipped).toEqual(LOADS.map((row, i) => ({ scope: { step: row, family: 'mule' }, final: i === LOADS.length - 1 })));
+        // below 99 the load runs as built: its cue opens
+        const below = new FakeSdk(zoo());
+        await expect(c.find(s => s.id === 'H4m.1')!.run({ ...ctxFor(below), bot: { walkTo: async () => ({ success: true, message: '' }) } } as unknown as StepContext<unknown>)).rejects.toThrow('did not come into sight');
+        expect(r.opened).toEqual([{ scope: { step: 'H4m.1', family: 'mule' }, fresh: true }]);
+        // a sink without `skip` (record-only) still skips the trade
+        const plain = buildChain(H4M, { cues: recorder().cues, manifest: WITH_H4M, record: record() }).find(s => s.id === 'H4m.5')!;
+        await plain.run(ctxFor(new FakeSdk(at99)));
+    });
+
     test("the last bury step carries the chain's Prayer 99; the booth fallback stays behind it", () => {
         const c = build();
         const last = c.find(s => s.name === 'mining.bury: load 5')!;

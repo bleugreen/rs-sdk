@@ -171,6 +171,32 @@ describe('the run owner\'s per-row sequence', () => {
         }
     });
 
+    test('a skipped row (CueKeeper.skip) opens nothing and moves the carry-ahead on; the carrier\'s last row writes its session\'s final stop', async () => {
+        const r = rig('skip');
+        try {
+            await r.keeper.open(muleScope('H1'), r.ctx, { fresh: true });
+            r.keeper.stop(muleScope('H1'), undefined, { final: false });
+            const h4 = readMulePreparation(r.dir, MULE)!;
+            expect(h4.row).toBe('H4');
+            const before = cueIn(r.dir);
+            // H4 skipped: the cue file is untouched (H1's plain stop), H4k is prepared next
+            r.keeper.skip(muleScope('H4'), { final: false });
+            expect(cueIn(r.dir)).toEqual(before);
+            expect(r.keeper.isOpen(muleScope('H4'))).toBe(false);
+            expect([readMulePreparation(r.dir, MULE)!.row, readMulePreparation(r.dir, MULE)!.seq]).toEqual(['H4k', h4.seq + 1]);
+            // H4k, the carrier's last, skipped: its own session's final stop, nothing prepared after
+            r.keeper.skip(muleScope('H4k'), { final: true });
+            const last = cueIn(r.dir);
+            expect([last.session, last.scope, last.stop, last.final]).toEqual([`${RUN}:H4k`, muleScope('H4k'), true, true]);
+            expect(authorizes(r.dir, 'H4k')).toBe(false);
+            expect(readMulePreparation(r.dir, MULE)!.seq).toBe(h4.seq + 1);
+            // the run's final close does not trip on H1's stood-down session
+            expect(() => r.keeper.close({ final: true })).not.toThrow();
+        } finally {
+            r.done();
+        }
+    });
+
     test('a matching live prepare is reused, not re-written; a failed step\'s stop prepares no next row', async () => {
         const r = rig('reuse');
         try {
