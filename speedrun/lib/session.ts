@@ -173,6 +173,27 @@ export function runnerEnvFor(botName: string, explicit: BotEnv | undefined, env:
     return { file: join(botsDir, botName, 'bot.env'), env, gatewayUrl };
 }
 
+/**
+ * Refuse a session from bots/<login>/bot.env while this process exports LITE_BOT_ENV. Its SDK would
+ * read that bot.env, and a lite runner on the account would read the exported file: the runner
+ * launchClient spawns inherits the export, as does one a wrapper started on it. That puts the two
+ * sides on two gateways, the reverse of RunnerEnv's trap. A session with an explicit env or from an
+ * alias dir carries its own RunnerEnv and is never refused; with LITE_BOT_ENV unset nothing changes.
+ */
+export function refuseInheritedRunnerEnv(
+    botName: string,
+    runnerEnv: RunnerEnv | undefined,
+    inherited: string | undefined = process.env.LITE_BOT_ENV,
+    botsDir: string = join(ROOT, 'bots')
+): void {
+    if (runnerEnv || !inherited) return;
+    throw new Error(
+        `refusing to open ${botName}: its SDK reads ${join(botsDir, botName, 'bot.env')}, but this process exports LITE_BOT_ENV=${inherited}, ` +
+            `which its lite runner reads instead, so the two could be on different gateways; pass that environment to openSession ` +
+            `({ env: loadBotEnv(<alias>) }), open the alias dir, or unset LITE_BOT_ENV. Nothing was sent to the account`
+    );
+}
+
 /** Directories of env files written for launched runners: each goes when its runner exits, all of them when this process does. */
 const runnerEnvDirs = new Set<string>();
 let runnerEnvExitHook = false;
@@ -418,6 +439,7 @@ export async function openSession(botName: string, opts: OpenOptions = {}): Prom
     const client = opts.client ?? 'lite';
     const gatewayUrl = sessionGateway(env, client === 'browser' ? pageWorld(env) : env.SERVER || 'localhost', { allowRelay: opts.allowRelay });
     const runnerEnv = runnerEnvFor(botName, opts.env, env, gatewayUrl);
+    refuseInheritedRunnerEnv(botName, runnerEnv);
     const { BotActions } = await import('../../sdk/actions');
     if (opts.pathfinding !== false) (await import('../../sdk/pathfinding')).initPathfinding();
     const sdk = new BotSDK({
