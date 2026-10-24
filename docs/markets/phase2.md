@@ -231,7 +231,7 @@ bun markets/phase2/report.ts DIR/ledger.jsonl     # rates per account and method
 method (`knights`, `heroes`, `guards`, `iron`, `shilo`; steel, runite and battlestaves are refused with the reason
 above) and optionally its own `hp` and role `options`. It names accounts, so it lives outside the checkout like the
 names list. Everything else has a default: `maxSessions` (the account count, at most 45), `loginSpacingMs` 2,000,
-`hp` 40, `sharks`, `ramp`, `foodFallbackMix`, `ledger`, `sell`. Parsing lists every problem at once.
+`hp` 40, `hpSites`, `sharks`, `ramp`, `foodFallbackMix`, `ledger`, `sell`. Parsing lists every problem at once.
 
 **Each account** logs in with its own in-process lite client (`speedrun/lib/direct.ts`, credentials from
 `bots/<account>/bot.env`; every account must share one SERVER), then works through its sequence. A stage whose goal
@@ -248,6 +248,15 @@ in the market respawns in Lumbridge without the ship's coins, so the account ear
 
 A stage that fails three times in a row, or three sessions that end in an error within two minutes of login, give
 the account up; the rest carry on.
+
+**Hitpoints sites** (`hp-sites.ts`, rs/632). One site feeds only one or two bots at full pace (`hp-training.md`
+'2b'), so the HP stage spreads the accounts over the seven low sites: each account goes to the open site whose supply
+per bot stays highest with it added, and no site takes more than its `hpSites` cap (default: its supply over 0.25 hp a
+tick, 21 places in all). An account that finds every site full earns on the coins earner (Thieving, which knights
+and guards need anyway) until one has room, and the ledger says so (`hp-queue`, then `hp-site` with the minutes it
+waited). Every account of the process shares one npc claim table, so no two of ours fight one npc. When an account
+reaches its target the ledger gets an `hp` line: the site, minutes and ticks from its first login, minutes training
+and minutes queued; `report.ts` summarises them and checks events.jsonl for collisions.
 
 **Logins** (`gate.ts`): never a second login for an account whose first has not answered (the demo's code 16 was a
 same-account retry, rs/519); a login that ended with no answer holds the account 60 s. Sessions, logins in flight
@@ -321,12 +330,11 @@ between bank trips: coins are the measure for a carrying method.
 
 **What it means for the plan:**
 
-- **The cow pen is the setup bottleneck.** `hp-train.ts` has one low-level site, the Lumbridge pen. With 20 accounts
-  on it at once the first two reached HP 40 at 3,389 and 4,430 ticks (rs/553: 1,707-1,972 with 2), and most were
-  still under 30 after 5,300 ticks: each bot counted ~150 kills, mostly shared. The knights reached the market
-  60-108 minutes after logging in, not the ~18 minutes (0.3 login-hours) of the setup table above, and 43 at once
-  would be slower still. More low-level sites in `hp-train.ts`, or a cap on how many accounts train at once, is the
-  fix; neither is built.
+- **The cow pen was the setup bottleneck.** `hp-train.ts` had one low-level site, the Lumbridge pen. With 20
+  accounts on it at once the first two reached HP 40 at 3,389 and 4,430 ticks (rs/553: 1,707-1,972 with 2), and most
+  were still under 30 after 5,300 ticks: each bot counted ~150 kills, mostly shared. The knights reached the market
+  60-108 minutes after logging in. Fixed by rs/632: seven sites with caps and npc claims (section 'Hitpoints sites in
+  the lab' below).
 - **Sharks: 40 an hour a knight at HP 40, not 30.** 43 knights over 72 hours eat ~124k, which is what the supply
   check (`sharks.perLoginHour`, now 40 by default) bounds against the asks.
 
@@ -351,6 +359,49 @@ between bank trips: coins are the measure for a carrying method.
 . markets/methods/lab/block.sh M11 && LAB_RUNNERS=0 LAB_TIMEOUT=12000 speedrun/lab/lab.sh p2f00 \
   'markets/phase2/lab.ts:--prefix=p2f:--knights=16:--hungry=1:--guards=4:--iron=2:--steps=8,16:--hold=10:--sigint=150:--out=/tmp/rs544-run2'
 bun markets/phase2/report.ts /tmp/rs544-run2/ledger.jsonl
+```
+
+### Hitpoints sites in the lab (rs/632)
+
+fedora, `NODE_TICKRATE=400`, block M17, one runner process, **22 fresh accounts** (14 knights, 8 guards; none
+staged, every account left Tutorial Island through the runner's own stage), default `hpSites` caps (21 places), 30-32
+minutes each, stopped by SIGINT. Two runs: run 3 had the claims without the kill hold, run 4 the final code.
+
+| What | Run 3 | Run 4 (final) |
+|---|---|---|
+| Accounts at HP 40 within 25 min of login | **22 of 22** | **22 of 22** |
+| Minutes from login to HP 40 | 11.4-24.3, median 15.9 | 11.9-24.3, median 16.2 |
+| Queued for a site | 1 account, 10.7 min (HP 40 at 23.3 min) | 1 account, 11.2 min |
+| Target picks / collisions between our accounts (`hpCollisions`) | 1,665 / 11 | **1,654 / 0** |
+| Logouts at SIGINT | 22 out | 22 out |
+
+Median minutes from login by site (run 4): chickens 13.1 (2 accounts), sarim 14.7 (2), champions 15.7 (2), cows 16.1
+(4), crafting 17.2 (5), goblins 17.5 (3), farm 18.3 (4). Against rs/553's 1,707-1,972 ticks alone (11.4-13.1 min),
+the spread costs a few minutes a fresh account, against 60-108 with everyone on the pen. In a 7-account trial (one
+per site, bgsrv-ub) every site reached HP 40 in 8-13.4 min.
+
+What the collision check found on the way, each fixed in `hp-train.ts` and covered by tests: a released kill was
+clicked by another bot 0.1-0.75 s later while its state still showed the npc (kills now stay claimed for 5 s); a bot
+took back a chicken it had dropped because the chicken had hit it within 8 ticks (an npc another bot holds no longer
+counts as hitting us); and an account reaching its target mid-fight hands its npc to a neighbour, which is a
+hand-off, not a collision (now logged as `released target`).
+
+**Memory, per machine:** at 22 accounts the runner held 0.75-0.94 GB resident and the engine 0.6-1.6 GB (fedora; the
+engine grows during logins and settles near 0.67 GB). On bgsrv-ub (12 GB, ~3-4 GB available beside its other tenants)
+the runner held 0.8-1.0 GB and the engine ~0.6 GB, and the host's available memory fell to 391-497 MB twice from
+other load, so `lab.ts`'s 1.2 GB floor stopped both runs early: run a 20-account lab on fedora. `lab.ts` logs both
+processes' memory every 30 s.
+
+**Found, not fixed here:** a lab knight with no sharks goes to the food fallback's iron, and the iron sequence
+assumes the tutorial's bronze pickaxe is still carried; a knight that died while thieving at HP 10 (in the queue, or
+on the men) had lost it, so its `mining` stage failed three times and the account was given up (one account in each
+run). Iron needs a pickaxe stage (buy or bank) before `mining`.
+
+```sh
+# block M17 on fedora, inside the build slot (dependencies untracked), all fresh
+. markets/methods/lab/block.sh M17 && LAB_RUNNERS=0 LAB_TIMEOUT=3600 speedrun/lab/lab.sh p2k00 \
+  'markets/phase2/lab.ts:--prefix=p2k:--fresh=1:--knights=14:--guards=8:--exchange=0:--steps=8,14:--hold=10:--sigint=30:--out=/tmp/rs632-r4'
+bun markets/phase2/report.ts /tmp/rs632-r4/ledger.jsonl
 ```
 
 ## Horizons

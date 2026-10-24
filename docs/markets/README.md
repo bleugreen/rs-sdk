@@ -73,9 +73,11 @@ settings: 45 logins took 2.3 s in the lab, and code 16 comes only from retrying 
 still pending (`scaling-limits.md`). `markets/phase2/run.ts` (rs/544) runs the allocation from one command,
 adding knights in steps of 8, 20 and 43 and stopping if the median rate falls more than 10%.
 
-**Two lab findings the runner leaves open.** The cow pen is the setup bottleneck: with 20 accounts training there,
-knights reached the market 60-108 minutes after login, against about 18 for one. And sales work only for accounts
-that can walk to the Varrock Exchange (guards today), because nothing brings an iron or Shilo account back.
+**Hitpoints setup scales** (rs/632): the runner spreads fresh accounts over seven low Hitpoints sites with caps and
+shares one npc claim table, and in the lab 22 fresh accounts all reached HP 40 within 25 minutes of login (median
+16), with no two of ours on one npc. With everyone on the Lumbridge pen the knights had reached the market 60-108
+minutes after login. **Open:** sales work only for accounts that can walk to the Varrock Exchange (guards today),
+because nothing brings an iron or Shilo account back.
 
 ### 3. The code
 
