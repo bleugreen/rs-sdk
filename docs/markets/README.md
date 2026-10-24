@@ -73,9 +73,11 @@ settings: 45 logins took 2.3 s in the lab, and code 16 comes only from retrying 
 still pending (`scaling-limits.md`). `markets/phase2/run.ts` (rs/544) runs the allocation from one command,
 adding knights in steps of 8, 20 and 43 and stopping if the median rate falls more than 10%.
 
-**Two lab findings the runner leaves open.** The cow pen is the setup bottleneck: with 20 accounts training there,
-knights reached the market 60-108 minutes after login, against about 18 for one. And sales work only for accounts
-that can walk to the Varrock Exchange (guards today), because nothing brings an iron or Shilo account back.
+**Hitpoints setup scales** (rs/632): the runner spreads fresh accounts over seven low Hitpoints sites with caps and
+shares one npc claim table, and in the lab 22 fresh accounts all reached HP 40 within 25 minutes of login (median
+16), with no two of ours on one npc. With everyone on the Lumbridge pen the knights had reached the market 60-108
+minutes after login. **Open:** sales work only for accounts that can walk to the Varrock Exchange (guards today),
+because nothing brings an iron or Shilo account back.
 
 ### 3. The code
 
@@ -142,10 +144,19 @@ Labs run on fedora or bgsrv-ub with `NODE_TICKRATE=400`. Check all ports with `l
 | M9 | second phase-2 lab (rs/543; LOGIN 43980, LOGGER 43981) | 9980 / 9981 / 9982 | 44980 | 7980 | 45980 |
 | M10 | Hitpoints trainer (rs/553; LOGIN 43990, LOGGER 43991) | 9990 / 9991 / 9992 | 44990 | 7990 | 45990 |
 | M11 | phase-2 runner (rs/544; LOGIN 44000, LOGGER 44001) | 10000 / 10001 / 10002 | 45000 | 8000 | 46000 |
-| M18 | phase-2 deaths (rs/706; LOGIN 44075, LOGGER 44076) | 10070 / 10071 / 10072 | 45070 | 8075 | 46070 |
+| M12 | Shilo gem site: miners, mules, fresh-account runs (rs/685; LOGIN 44010, LOGGER 44011) | 10010 / 10011 / 10012 | 45010 | 8010 | 46010 |
+| M13-M16 | Shilo quest and stage labs (rs/685; LOGIN 44025/35/45/55, LOGGER 44026/36/46/56) | 10020-10050 / +1 / +2 | 45020-45050 | 8025 / 8035 / 8045 / 8055 | 46020-46050 |
+| M17 | phase-2 Hitpoints sites and return trip (rs/632; LOGIN 44065, LOGGER 44066) | 10060 / 10061 / 10062 | 45060 | 8065 | 46060 |
+| M18 | coins deaths and coins driver (rs/706; LOGIN 44075, LOGGER 44076) | 10070 / 10071 / 10072 | 45070 | 8075 | 46070 |
+| M19 | knights ramp measure and contention (rs/731; LOGIN 44085, LOGGER 44086) | 10080 / 10081 / 10082 | 45080 | 8085 | 46080 |
+| M20 | phase-2 sale round trip and pickaxe stage (rs/732; LOGIN 44095, LOGGER 44096) | 10090 / 10091 / 10092 | 45090 | 8095 | 46090 |
+| M21 | pickpocket door recovery (rs/736; LOGIN 44105, LOGGER 44106) | 10100 / 10101 / 10102 | 45100 | 8105 | 46100 |
+| M22 | phase-2 shark resupply (rs/743; LOGIN 44115, LOGGER 44116) | 10110 / 10111 / 10112 | 45110 | 8115 | 46110 |
 
-`. markets/methods/lab/block.sh M8` (or M9, M10, M11, M18) exports a block's ports and refuses if any is listening
-(`ss -ltn` where it exists, else `lsof`). The
-next free block for follow-ups starts at 10010 (NODE 45010); check the AGENT, FRIEND, LOGIN and LOGGER ports first. A
+`. markets/methods/lab/block.sh M8` (any of M8 to M22) exports a block's ports and refuses if any is listening; every
+port is M8's plus 10 a block, and from M13 the AGENT, LOGIN and LOGGER ports are 5 higher again (8020, 44040,
+44050, 8060 and 44060 belong to other labs). The next free block for follow-ups is M23 (WEB 10120, NODE 45120,
+AGENT 8125, FRIEND 46120, LOGIN 44125, LOGGER 44126); add it to `block.sh`'s list when you claim it, and check the
+AGENT, FRIEND, LOGIN and LOGGER ports first. A
 long lab on fedora runs from a copy outside the build slot (`/tmp/<name>-lab`, kept between batches so the content
 pack is built once) inside a named tmux server; `hp-training.md` gives the commands.

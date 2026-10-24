@@ -5,6 +5,9 @@
  * A plan names accounts, so the plan file lives outside the checkout like the accounts list; the committed
  * example (`plan.example.json`) uses placeholder names.
  */
+import { FARE } from '../../speedrun/lib/ships';
+import { LOW_SITES } from '../methods/hp-train.ts';
+import { defaultCaps, type HpSiteCaps } from './hp-sites.ts';
 
 /** Methods the runner can bring a fresh account to and run (docs/markets/phase2.md 'Per-login rates'). */
 export const METHODS = ['knights', 'heroes', 'guards', 'iron', 'shilo'] as const;
@@ -43,6 +46,9 @@ export const NEEDS: Readonly<Record<MethodId, MethodNeeds>> = {
     shilo: { mining: 40, hp: false, sharks: false, ardougne: false, staged: 'Shilo Village complete and the account at the Shilo gem rocks; no quest bot exists for Jungle Potion or Shilo Village' }
 };
 
+/** Methods whose earnings are coins. A food-redirected shark eater earns its rebuy only on one of these. */
+export const EARNS_COINS: Readonly<Record<MethodId, boolean>> = { knights: true, heroes: true, guards: true, iron: false, shilo: false };
+
 export type Mix = Partial<Record<MethodId, number>>;
 
 export interface AccountPlan {
@@ -69,6 +75,11 @@ export interface SharkPlan {
     ceiling: number;
     /** Fewer sharks than this after a purchase (or none left in the bank) sends the account to the food fallback. */
     minimum: number;
+    /**
+     * A food-redirected shark eater goes back to buy sharks and its method once its coins cover this many at the
+     * ceiling (sharks.ts rebuyDecision; source 'buy' only). Defaults to `perAccount`.
+     */
+    rebuyMinSharks: number;
     /** Minutes the buy offer waits for its fill before the remainder is cancelled. */
     fillMinutes: number;
 }
@@ -105,18 +116,32 @@ export interface Plan {
     /** Wall ms between two login starts from this address. */
     loginSpacingMs: number;
     hp: number;
+    /** Accounts each low Hitpoints site takes at once (hp-sites.ts); 0 closes a site. */
+    hpSites: HpSiteCaps;
     sharks: SharkPlan;
     ramp: RampPlan | null;
     /** Where an account goes when the sharks run out: plan B's lower-food methods. */
     foodFallbackMix: Mix;
+    /**
+     * 'mix' (default): the food fallback sends the account to `foodFallbackMix`. 'park': it logs out where it stands
+     * (a `parked` ledger line), is not logged in again this run and is not given up: for the scored run's attempt
+     * windows, when a knight must not walk overland past the speedrun's sites. A parked account earns nothing, so no
+     * rebuy follows.
+     */
+    foodFallback: 'mix' | 'park';
     ledger: { everyTicks: number; bookMinutes: number };
     sell: SellPlan;
     /** Role options per method, merged over the defaults. */
     options: Partial<Record<MethodId, Record<string, unknown>>>;
 }
 
-/** Methods worked within walking distance of the Exchange (Varrock west bank): the only ones a sale can run from. */
-export const SALE_ROUTE: readonly MethodId[] = ['guards'];
+/**
+ * How a method's account reaches the Exchange (the Varrock west bank) to sell: on foot from its work, or by ship from
+ * the Ardougne side and back (errands.ts `sellByShip`, 120 coins of fares). A method without one cannot sell: the
+ * knights and heroes earn coins, and a trip would cost their pickpocketing for nothing a floor should name (their
+ * banks hold the sharks they eat); no code yet takes a Shilo account out through the Shilo gate.
+ */
+export const SALE_ROUTE: Readonly<Partial<Record<MethodId, 'walk' | 'ship'>>> = { guards: 'walk', iron: 'ship' };
 
 export const PLAN_B_MIX: Mix = { iron: 12, heroes: 8, guards: 23 };
 export const LOW_FOOD_MIX: Mix = { iron: 12, guards: 23 };
@@ -124,7 +149,7 @@ export const LOW_FOOD_MIX: Mix = { iron: 12, guards: 23 };
 export const DEFAULTS = {
     loginSpacingMs: 2_000,
     hp: 40,
-    sharks: { source: 'bank', perAccount: 200, perLoginHour: 40, hours: 72, ceiling: 701, minimum: 28, fillMinutes: 10 } satisfies SharkPlan,
+    sharks: { source: 'bank', perAccount: 200, perLoginHour: 40, hours: 72, ceiling: 701, minimum: 28, fillMinutes: 10 } satisfies Omit<SharkPlan, 'rebuyMinSharks'>,
     ramp: { steps: [8, 20, 43], holdMinutes: 15, dropPct: 10, admitTimeoutMinutes: 30, fallbackMix: PLAN_B_MIX } satisfies RampPlan,
     ledger: { everyTicks: 50, bookMinutes: 15 },
     sell: { enabled: false, cap: 500, everyMinutes: 120, floors: {}, fillMinutes: 10 } satisfies SellPlan
@@ -154,7 +179,7 @@ const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 
 export function parsePlan(raw: unknown): Plan {
     const problems: string[] = [];
     if (!isObj(raw)) throw new PlanError(['the plan must be a JSON object']);
-    const known = ['accounts', 'maxSessions', 'loginSpacingMs', 'hp', 'sharks', 'ramp', 'foodFallbackMix', 'ledger', 'sell', 'options'];
+    const known = ['accounts', 'maxSessions', 'loginSpacingMs', 'hp', 'hpSites', 'sharks', 'ramp', 'foodFallbackMix', 'foodFallback', 'ledger', 'sell', 'options'];
     for (const k of Object.keys(raw)) if (!known.includes(k)) problems.push(`unknown key '${k}'`);
 
     const num = (where: string, v: unknown, def: number, o: { min?: number; max?: number; integer?: boolean } = {}): number => {
@@ -221,15 +246,18 @@ export function parsePlan(raw: unknown): Plan {
     const s = isObj(sk) ? sk : {};
     const source = s.source ?? DEFAULTS.sharks.source;
     if (source !== 'bank' && source !== 'buy') problems.push("sharks.source must be 'bank' or 'buy'");
+    const perAccount = num('sharks.perAccount', s.perAccount, DEFAULTS.sharks.perAccount, { min: 1, max: 20_000, integer: true });
     const sharks: SharkPlan = {
         source: source === 'buy' ? 'buy' : 'bank',
-        perAccount: num('sharks.perAccount', s.perAccount, DEFAULTS.sharks.perAccount, { min: 1, max: 20_000, integer: true }),
+        perAccount,
         perLoginHour: num('sharks.perLoginHour', s.perLoginHour, DEFAULTS.sharks.perLoginHour, { min: 0 }),
         hours: num('sharks.hours', s.hours, DEFAULTS.sharks.hours, { min: 0 }),
         ceiling: num('sharks.ceiling', s.ceiling, DEFAULTS.sharks.ceiling, { min: 1, integer: true }),
         minimum: num('sharks.minimum', s.minimum, DEFAULTS.sharks.minimum, { min: 1, integer: true }),
-        fillMinutes: num('sharks.fillMinutes', s.fillMinutes, DEFAULTS.sharks.fillMinutes, { min: 0, max: 30 })
+        fillMinutes: num('sharks.fillMinutes', s.fillMinutes, DEFAULTS.sharks.fillMinutes, { min: 0, max: 30 }),
+        rebuyMinSharks: num('sharks.rebuyMinSharks', s.rebuyMinSharks, perAccount, { min: 1, max: perAccount, integer: true })
     };
+    if (sharks.source === 'buy' && sharks.rebuyMinSharks < sharks.minimum) problems.push(`sharks.rebuyMinSharks ${sharks.rebuyMinSharks} is below sharks.minimum ${sharks.minimum}: a rebuy that small sends the account straight back to the food fallback`);
 
     // ramp: null turns it off (every knights login is admitted at once)
     let ramp: RampPlan | null = null;
@@ -252,6 +280,8 @@ export function parsePlan(raw: unknown): Plan {
         };
     }
     const foodFallbackMix = mix('foodFallbackMix', raw.foodFallbackMix, LOW_FOOD_MIX);
+    if (raw.foodFallback !== undefined && raw.foodFallback !== 'mix' && raw.foodFallback !== 'park') problems.push("foodFallback must be 'mix' or 'park'");
+    const foodFallback = raw.foodFallback === 'park' ? 'park' : 'mix';
     for (const [where, m] of [['foodFallbackMix', foodFallbackMix], ['ramp.fallbackMix', ramp?.fallbackMix ?? {}]] as const) {
         if ((m.knights ?? 0) > 0) problems.push(`${where} cannot send logins to the knights`);
     }
@@ -285,8 +315,21 @@ export function parsePlan(raw: unknown): Plan {
         const knights = accounts.some(a => a.method === 'knights');
         const eaters = accounts.some(a => NEEDS[a.method].sharks) || (knights && Object.keys(ramp?.fallbackMix ?? {}).some(m => NEEDS[m as MethodId].sharks));
         const methods = [...accounts.map(a => a.method), ...(knights ? Object.keys(ramp?.fallbackMix ?? {}) : []), ...(eaters ? Object.keys(foodFallbackMix) : [])] as MethodId[];
-        const away = [...new Set(methods)].filter(m => !SALE_ROUTE.includes(m));
-        if (away.length) problems.push(`sell.enabled: ${away.join(', ')} accounts cannot reach the Exchange (no return trip from Ardougne or Shilo exists yet); enable sales in a plan without them`);
+        const away = [...new Set(methods)].filter(m => !SALE_ROUTE[m]);
+        if (away.length) problems.push(`sell.enabled: ${away.join(', ')} accounts have no sale route to the Exchange (guards walk, iron sails); enable sales in a plan without them`);
+    }
+
+    let hpSites = defaultCaps();
+    if (raw.hpSites !== undefined) {
+        if (!isObj(raw.hpSites)) problems.push('hpSites must map Hitpoints sites to the accounts each takes at once');
+        else {
+            hpSites = {};
+            for (const [k, v] of Object.entries(raw.hpSites)) {
+                if (!(LOW_SITES as string[]).includes(k)) problems.push(`hpSites.${k}: not a low Hitpoints site (${LOW_SITES.join(', ')})`);
+                else hpSites[k as keyof HpSiteCaps] = num(`hpSites.${k}`, v, 0, { min: 0, max: MAX_LOGINS, integer: true });
+            }
+            if (!Object.values(hpSites).some(n => (n ?? 0) > 0) && accounts.some(a => NEEDS[a.method].hp)) problems.push('hpSites closes every site, so no account could train Hitpoints');
+        }
     }
 
     const options: Plan['options'] = {};
@@ -306,13 +349,36 @@ export function parsePlan(raw: unknown): Plan {
         maxSessions,
         loginSpacingMs: num('loginSpacingMs', raw.loginSpacingMs, DEFAULTS.loginSpacingMs, { min: 0 }),
         hp: num('hp', raw.hp, DEFAULTS.hp, { min: 10, max: 99, integer: true }),
+        hpSites,
         sharks,
         ramp,
         foodFallbackMix,
+        foodFallback,
         ledger,
         sell,
         options
     };
+}
+
+/**
+ * What a valid plan may still get wrong, for the runner to say loudly at startup. A buying plan whose food fallback
+ * includes a method that banks no coins (iron, shilo) strands the shark eaters sent there: they never reach the
+ * rebuy threshold, and nothing else would say why.
+ */
+export function planWarnings(plan: Pick<Plan, 'accounts' | 'sharks' | 'ramp' | 'foodFallbackMix' | 'foodFallback'>): string[] {
+    const out: string[] = [];
+    // parking is the plan's choice: the mix is not used
+    if (plan.foodFallback === 'park') return out;
+    const knights = plan.accounts.some(a => a.method === 'knights');
+    const eaters = plan.accounts.some(a => NEEDS[a.method].sharks) || (knights && Object.entries(plan.ramp?.fallbackMix ?? {}).some(([m, n]) => (n ?? 0) > 0 && NEEDS[m as MethodId].sharks));
+    if (plan.sharks.source === 'buy' && eaters) {
+        const dry = (Object.entries(plan.foodFallbackMix) as [MethodId, number][]).filter(([m, n]) => n > 0 && !EARNS_COINS[m]).map(([m]) => m);
+        if (dry.length)
+            out.push(
+                `foodFallbackMix sends shark eaters to ${dry.join(', ')}, which bank${dry.length === 1 ? 's' : ''} no coins: an account sent there never earns its rebuy and stays. For a buying plan use foodFallbackMix: { guards: 1 }`
+            );
+    }
+    return out;
 }
 
 /** The ramp's steps for `knights` logins: those below the count, then the count itself. */
@@ -331,6 +397,8 @@ export type Stage =
     | { do: 'thieving'; to: number }
     /** At least `n` coins in the pack: from the bank, else earned on the Lumbridge men. */
     | { do: 'coins'; n: number }
+    /** A pickaxe usable at the account's Mining level: from the bank when last seen there, else bought (pickaxe.ts). */
+    | { do: 'pickaxe' }
     /** Mining to `to` with speedrun/skills/mining.ts's lite-client steps (copper at Rimmington, to 15 at most). */
     | { do: 'mining'; to: number }
     | { do: 'wield'; item: string }
@@ -341,9 +409,11 @@ export type Stage =
     | { do: 'method'; method: MethodId };
 
 export const SHIP_COINS = 100;
+/** A sale by ship from the Ardougne side: four voyages (speedrun/lib/ships.ts FARE). */
+export const ROUND_TRIP_FARES = 4 * FARE;
 
 /** Everything an account does from a fresh login to its method, in order. Each stage is skipped once its goal holds. */
-export function sequenceFor(a: Pick<AccountPlan, 'method' | 'hp'>, plan: Pick<Plan, 'hp' | 'sharks' | 'ramp'>): Stage[] {
+export function sequenceFor(a: Pick<AccountPlan, 'method' | 'hp'>, plan: Pick<Plan, 'hp' | 'sharks' | 'ramp' | 'sell'>): Stage[] {
     const n = NEEDS[a.method];
     if (n.staged) return [{ do: 'method', method: a.method }];
     const out: Stage[] = [{ do: 'tutorial' }];
@@ -353,7 +423,13 @@ export function sequenceFor(a: Pick<AccountPlan, 'method' | 'hp'>, plan: Pick<Pl
     if (a.method === 'knights' && plan.ramp) out.push({ do: 'admission' });
     if (n.sharks && plan.sharks.source === 'buy') out.push({ do: 'buy-sharks' });
     if (n.mining) {
-        out.push({ do: 'coins', n: SHIP_COINS });
+        // Before the coins, whose earner lets an HP-10 account die to the Lumbridge men (coins.ts: cheaper than
+        // banking) and so drops the pickaxe: the runner recomputes the first unmet stage, and the pickaxe stage buys
+        // another (1 coin at Bob's, beside the men) once the coins are in. Placed after them, its coin would put the
+        // coins stage one short and send the account back to the men.
+        out.push({ do: 'pickaxe' });
+        // a selling account carries its first round trip's fares over: mine.ts banks them in Ardougne with the ore
+        out.push({ do: 'coins', n: SHIP_COINS + (plan.sell.enabled && SALE_ROUTE[a.method] === 'ship' ? ROUND_TRIP_FARES : 0) });
         out.push({ do: 'mining', to: Math.min(n.mining, 15) });
         out.push({ do: 'wield', item: 'pickaxe' });
     }

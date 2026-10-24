@@ -13,13 +13,19 @@
  * - The knights come online in the ramp's steps (ramp.ts); a step whose median rate per login falls more than
  *   `dropPct` below the first's stops the ramp and sends the knights not yet admitted to `ramp.fallbackMix`.
  * - An account with no sharks to eat (none left in its bank, or a purchase that came up short) goes to
- *   `foodFallbackMix`: plan B's low-food methods, guards and iron.
+ *   `foodFallbackMix`: plan B's low-food methods, guards and iron. With bought sharks it goes back (a `rebuy`
+ *   redirect) at the first bank visit where its coins cover `sharks.rebuyMinSharks` at the ceiling: buy-sharks
+ *   again, the ship, its method (sharks.ts). A purchase refused for a transient reason is retried with backoff.
+ *   With `foodFallback: 'park'` the account logs out where it stands instead (a `parked` ledger line).
  * - The ledger (ledger.ts) gets a line per account every `ledger.everyTicks` of its ticks and a totals line on the
  *   same cadence, plus the ramp's decisions, redirects, purchases and sales. Accounts appear as aliases
  *   (names.ts); the names file guard (lib/accounts.ts) refuses to start without it, and a run on real accounts
  *   needs every account on it. `--placeholder-data` is for lab accounts only.
  * - `--run-ended` confirms main has announced the scored run's end: without it a plan that buys sharks refuses to
  *   start (sharks are a fleet input, docs/speedrun/SUPPLIES.md).
+ * - An account in its method stage whose coins (carried plus banked) have not moved for `--stall-minutes` (default 10,
+ *   0 off) has its method aborted so its stages run again, at most `--stall-retries` (default 3) times while the coins
+ *   stay put; then it is flagged once and left (stall.ts).
  * - SIGINT or SIGTERM stops every account at its next safe point and logs it out; a second signal exits at once.
  *   `--minutes N` stops the same way after N minutes.
  *
@@ -41,19 +47,25 @@ import { tickMs } from '../../speedrun/lib/wait';
 import { writerExclusion } from '../lib/accounts.ts';
 import { Gentle } from '../lib/demo.ts';
 import { DemoMarket, type MarketQuote } from '../lib/market.ts';
+import { role as coinsRole } from '../../speedrun/helpers/coins';
+import { chooseSite } from '../methods/hp-model.ts';
+import { TargetClaims, type SiteId } from '../methods/hp-train.ts';
 import { numberFlag, parseArgs } from '../methods/probe-sampler.ts';
 import { debugNameOf } from '../methods/trips.ts';
 import { costOf } from '../methods/value.ts';
 import { DeathWatch, type DeathRecord } from './deaths.ts';
-import { buySharks, sellAtExchange, type BookReader } from './errands.ts';
+import { buySharks, sellAtExchange, sellByShip, type BookReader } from './errands.ts';
 import { DEFAULT_POLICY, LoginGate } from './gate.ts';
+import { HpSites } from './hp-sites.ts';
 import { accountLine, COINS_ID, totalsLine, type AccountSnapshot, type Stack, type Valuer } from './ledger.ts';
 import { aliasOf, nameScrubber, scrubRecord, unlistedAccounts } from './names.ts';
-import { NEEDS, nextFallback, parsePlan, PlanError, roleOptions, SALE_ROUTE, sequenceFor, type AccountPlan, type MethodId, type Plan } from './plan.ts';
+import { EARNS_COINS, NEEDS, nextFallback, parsePlan, PlanError, planWarnings, roleOptions, SALE_ROUTE, sequenceFor, type AccountPlan, type MethodId, type Plan } from './plan.ts';
 import { KnightsRamp, rateBetween } from './ramp.ts';
-import { runStage, stageDone, type StageCtx, type StageHooks } from './stages.ts';
+import { afterAttempt, loadSharks, rebuyDecision, requestRebuy, retryDelayMs, SHARKS_KEY, shortfall, shortForVoyage, type SharkAttempt } from './sharks.ts';
+import { carriedCoins, runRoleUntil, runStage, stageDone, type StageCtx, type StageHooks } from './stages.ts';
+import { DEFAULT_STALL, StallWatch, type StallPolicy } from './stall.ts';
 
-const USAGE = 'usage: bun markets/phase2/run.ts <plan.json> [--out DIR] [--minutes N] [--run-ended] [--placeholder-data]';
+const USAGE = 'usage: bun markets/phase2/run.ts <plan.json> [--out DIR] [--minutes N] [--stall-minutes N] [--stall-retries N] [--run-ended] [--placeholder-data]';
 const BOOLEAN_FLAGS = ['--run-ended', '--placeholder-data'];
 
 /** Wall-clock bound on one account's logout (direct.ts logoutDirect re-clicks through the post-combat window). */
@@ -81,6 +93,23 @@ interface Reading {
 
 class GiveUp extends Error {}
 
+/** Resolve after `ms`, or reject with the signal's reason when it aborts first. */
+const pause = (ms: number, signal: AbortSignal): Promise<void> =>
+    new Promise((resolve, reject) => {
+        if (signal.aborted) return reject(signal.reason);
+        const onAbort = () => {
+            clearTimeout(t);
+            reject(signal.reason);
+        };
+        const t = setTimeout(() => {
+            signal.removeEventListener('abort', onAbort);
+            resolve();
+        }, ms);
+        signal.addEventListener('abort', onAbort, { once: true });
+    });
+
+const countOf = (items: readonly Stack[] | null, re: RegExp): number => (items ?? []).filter(i => re.test(i.name)).reduce((n, i) => n + i.count, 0);
+
 class Worker {
     method: MethodId;
     stage = 'waiting';
@@ -97,6 +126,10 @@ class Worker {
     arrivedAdmission: number | null = null;
     admittedAt: number | null = null;
     redirect: { method: MethodId; reason: string } | null = null;
+    /** The shark-eating method the food fallback took this account from, until a rebuy sends it back. */
+    foodFrom: MethodId | null = null;
+    /** Why the food fallback parked it (plan `foodFallback: 'park'`): logged out, not logged in again this run. */
+    parked: string | null = null;
     saleDue: { item: { id: number; name: string }; floor: number } | null = null;
     lastSaleAt = Date.now();
     shortSessions = 0;
@@ -106,6 +139,14 @@ class Worker {
     watch = new DeathWatch();
     /** The pickpocket target the account's role last switched to (its 'phase' log line), for the death lines. */
     target: string | null = null;
+    /** The first login of this run and the first tick seen after it: the Hitpoints line counts from here. */
+    firstLoginAt: number | null = null;
+    firstTick: number | null = null;
+    hpSite: SiteId | null = null;
+    hpStartAt: number | null = null;
+    hpQueuedAt: number | null = null;
+    hpLogged = false;
+    readonly stall = new StallWatch();
     /** First tick of this session and when it was seen: the session's observed ms a tick. */
     private tick0: { tick: number; at: number } | null = null;
 
@@ -124,6 +165,7 @@ class Worker {
         this.nextLedgerTick = -1;
         this.tick0 = null;
         this.watch = new DeathWatch();
+        this.stall.pause();
     }
 
     msPerTick(s: BotWorldState): number | null {
@@ -144,6 +186,7 @@ export interface RunOptions {
     minutes: number;
     runEnded: boolean;
     placeholder: boolean;
+    stall: StallPolicy;
 }
 
 export class Runner {
@@ -166,6 +209,9 @@ export class Runner {
     private readonly valuer: Valuer;
     private readonly scrub: (text: string) => string;
     private readonly tickMs = tickMs();
+    private readonly hpSites: HpSites;
+    /** One npc per bot at the Hitpoints sites, across every account of this process. */
+    private readonly claims = new TargetClaims();
 
     constructor(
         readonly plan: Plan,
@@ -179,6 +225,7 @@ export class Runner {
         this.book = { item: id => this.market.item(id).then(q => (this.quotes.set(id, q), q)) };
         this.valuer = { cost: s => costOf(debugNameOf(s.id)), quote: id => this.quotes.get(id) };
         this.scrub = nameScrubber(workers.map(w => w.plan.account));
+        this.hpSites = new HpSites(plan.hpSites);
         mkdirSync(o.out, { recursive: true });
     }
 
@@ -201,18 +248,23 @@ export class Runner {
     // ------------------------------------------------------------ the loop
 
     start(): void {
+        const warnings = planWarnings(this.plan);
+        for (const m of warnings) this.event(null, `plan warning: ${m}`, {}, true);
         this.ledger({
             kind: 'start',
             placeholder: this.o.placeholder,
             accounts: Object.fromEntries(this.workers.map(w => [w.alias, w.method])),
             maxSessions: this.plan.maxSessions,
+            hp: this.plan.hp,
+            hpSites: this.plan.hpSites,
             ramp: this.plan.ramp,
             sharks: this.plan.sharks,
             sell: { ...this.plan.sell, enabled: this.plan.sell.enabled },
             ledgerEveryTicks: this.plan.ledger.everyTicks,
             tickMs: this.tickMs,
             runEnded: this.o.runEnded,
-            minutes: this.o.minutes
+            minutes: this.o.minutes,
+            warnings
         });
         this.timer = setInterval(() => this.pump(), 500);
     }
@@ -233,6 +285,7 @@ export class Runner {
             }
             this.pumpRamp(now);
             this.pumpSales(now);
+            this.pumpStalls(now);
             if (this.o.minutes > 0 && now - this.startedAt >= this.o.minutes * 60_000) void this.stop(`${this.o.minutes} minutes`);
         }
         if (now - this.lastTotalsAt >= this.plan.ledger.everyTicks * this.tickMs) {
@@ -269,6 +322,7 @@ export class Runner {
         const acct = w.plan.account;
         w.newSession();
         const t0 = Date.now();
+        w.firstLoginAt ??= t0;
         this.event(w, 'login', { session: w.sessionNo }, true);
         let session: DirectSession;
         try {
@@ -348,14 +402,84 @@ export class Runner {
         return {
             admitted: () => !this.rampOn || w.method !== 'knights' || w.admittedAt !== null,
             foodOut: reason => this.foodOut(w, reason),
-            buySharks: async () => {
-                const s = this.plan.sharks;
-                const r = await buySharks(x(), { perAccount: s.perAccount, ceiling: s.ceiling, runEnded: this.o.runEnded, fillMinutes: s.fillMinutes }, this.book);
-                this.ledger({ account: w.alias, ...r.record });
-                if (r.record.result === 'refused' && !this.o.runEnded) throw new Error(String(r.record.reason));
-                if (r.banked < s.minimum) this.foodOut(w, `${r.banked} sharks banked after the purchase, below the minimum of ${s.minimum}`);
-            }
+            buySharks: () => this.buySharks(w, x()),
+            banked: () => this.rebuyCheck(w, x())
         };
+    }
+
+    /**
+     * The shark purchase, its outcome recorded in RoleState (sharks.ts): a transient refusal is tried again after a
+     * backoff, at most SHARK_RETRY.tries times in a row; anything else settles it, and fewer than `minimum` sharks
+     * banked then sends the account to the food fallback.
+     */
+    private async buySharks(w: Worker, x: StageCtx): Promise<void> {
+        const s = this.plan.sharks;
+        if (!this.o.runEnded) throw new Error("main has not announced the scored run's end: no shark is bought");
+        for (;;) {
+            let attempt: SharkAttempt;
+            let banked: number | null = null;
+            try {
+                const r = await buySharks(x, { perAccount: s.perAccount, ceiling: s.ceiling, runEnded: true, fillMinutes: s.fillMinutes }, this.book);
+                attempt = { record: r.record };
+                banked = r.banked;
+            } catch (e) {
+                if (x.signal.aborted) throw e;
+                attempt = { error: e instanceof Error ? e.message : String(e) };
+            }
+            const next = afterAttempt(loadSharks(w.roleState.get(SHARKS_KEY)), attempt, new Date());
+            const short = next.status === 'done' ? shortfall(next.last, s.minimum) : null;
+            if (short) next.short = short;
+            await w.roleState.set(SHARKS_KEY, next);
+            this.ledger({ account: w.alias, ...next.last, status: next.status, tries: next.tries, ...(next.note ? { note: next.note } : {}), ...(short ? { short } : {}) });
+            if (next.status === 'retry') {
+                const ms = retryDelayMs(next.tries);
+                this.event(w, 'shark purchase refused for a transient reason: retrying', { reason: next.last?.withdraw ?? next.last?.reason, tries: next.tries, inSeconds: ms / 1000 }, true);
+                await pause(ms, x.signal);
+                continue;
+            }
+            banked ??= countOf(w.bank, /^shark$/i);
+            if (banked < s.minimum) this.foodOut(w, `${banked} sharks banked after the purchase, below the minimum of ${s.minimum}`);
+            return;
+        }
+    }
+
+    /**
+     * Before the voyage: a shark eater on a buying plan with fewer than `minimum` sharks goes to the food fallback
+     * instead of sailing (sharks.ts shortForVoyage), which a rebuy brings back from. A restart after a short first
+     * purchase lands here, with only the recorded purchase to go on. Returns whether it was redirected.
+     */
+    private sailShort(w: Worker, s: BotWorldState): boolean {
+        if (!NEEDS[w.method].sharks || this.plan.sharks.source !== 'buy') return false;
+        const reason = shortForVoyage({
+            bankSharks: w.bank === null ? null : countOf(w.bank, /^shark$/i),
+            carriedSharks: countOf(s.inventory, /^shark$/i),
+            sharks: loadSharks(w.roleState.get(SHARKS_KEY)),
+            minimum: this.plan.sharks.minimum
+        });
+        if (!reason) return false;
+        this.foodOut(w, reason);
+        return w.redirect !== null || w.parked !== null;
+    }
+
+    /**
+     * At a bank visit (the bank just closed): an account the food fallback moved goes back to buy sharks and its
+     * method once its coins cover `rebuyMinSharks` at the ceiling (sharks.ts rebuyDecision), as a `rebuy` redirect.
+     */
+    private rebuyCheck(w: Worker, x: StageCtx): void {
+        if (w.redirect || w.foodFrom === null) return;
+        const s = this.plan.sharks;
+        const st = x.sdk.getState();
+        const coins = countOf(w.bank, /^coins$/i) + (st?.player ? carriedCoins(st) : 0);
+        const sharks = loadSharks(w.roleState.get(SHARKS_KEY));
+        const d = rebuyDecision({ foodFrom: w.foodFrom, method: w.method, source: s.source, runEnded: this.o.runEnded, coins, ceiling: s.ceiling, minSharks: s.rebuyMinSharks, sharks, nowMs: Date.now() });
+        this.event(w, 'rebuy check', { rebuy: d.rebuy, reason: d.reason });
+        if (!d.rebuy) return;
+        const back = w.foodFrom;
+        w.foodFrom = null;
+        this.foodFallback.set(w.method, Math.max(0, (this.foodFallback.get(w.method) ?? 0) - 1));
+        // the in-memory state changes at once, so the stage loop sees buy-sharks due; the file write follows
+        void w.roleState.set(SHARKS_KEY, requestRebuy(sharks, new Date(), d.reason)).catch(e => this.event(w, 'role-state write failed', { error: String(e) }, true));
+        this.redirectTo(w, back, d.reason, 'rebuy');
     }
 
     private async stages(w: Worker, sdk: BotSDK, bot: BotActions, signal: AbortSignal): Promise<void> {
@@ -388,6 +512,7 @@ export class Runner {
                     w.bank = items;
                     w.bankTick = sdk.getState()?.tick ?? w.bankTick;
                 },
+                bank: w.bank,
                 hooks: this.hooks(w, () => x)
             };
             const st = sequenceFor({ method: w.method, hp: w.plan.hp }, this.plan).find(s => !stageDone(s, sdk.getState()!, x.hooks, w.roleState))!;
@@ -397,7 +522,10 @@ export class Runner {
             if (st.do === 'admission') w.arrivedAdmission ??= Date.now();
             w.stageCtl = stageCtl;
             try {
-                if (st.do === 'method' && w.saleDue) await this.sale(w, x);
+                if (st.do === 'to-ardougne' && this.sailShort(w, sdk.getState()!)) {
+                    // redirected to the food fallback instead of sailing: the loop applies it
+                } else if (st.do === 'method' && w.saleDue) await this.sale(w, x);
+                else if (st.do === 'hp' && !this.hpSite(w, x, st.to)) await this.hpQueue(w, x);
                 else {
                     await runStage(st, x, w.method);
                     if (st.do === 'method') await sdk.waitForTicks(5).catch(() => undefined);
@@ -412,14 +540,46 @@ export class Runner {
             } finally {
                 signal.removeEventListener('abort', onAbort);
                 w.stageCtl = null;
+                if (st.do === 'hp') this.hpSites.release(w.plan.account);
             }
         }
     }
 
+    // ------------------------------------------------------------ Hitpoints sites
+
+    /**
+     * The account's Hitpoints site for this stage, into `x.hp`; false when every low site is at its cap. A target
+     * above the cows' range trains on the crabs route (hp-model chooseSite), which the caps do not cover.
+     */
+    private hpSite(w: Worker, x: StageCtx, to: number): boolean {
+        const site = chooseSite(to) === 'cows' ? this.hpSites.take(w.plan.account) : 'crabs';
+        if (!site) return false;
+        x.hp = { site, claims: this.claims };
+        if (w.hpSite !== site) {
+            w.hpSite = site;
+            w.hpStartAt ??= Date.now();
+            const queuedMinutes = w.hpQueuedAt === null ? 0 : Math.round((Date.now() - w.hpQueuedAt) / 6_000) / 10;
+            this.ledger({ kind: 'hp-site', account: w.alias, site, queuedMinutes, occupancy: this.hpSites.occupancy() });
+            this.event(w, `Hitpoints on ${site}`, { occupancy: this.hpSites.occupancy() }, true);
+        }
+        return true;
+    }
+
+    /** Every low site is full: earn on the coins earner (Thieving, which knights and guards need anyway) until one has room. */
+    private async hpQueue(w: Worker, x: StageCtx): Promise<void> {
+        w.stage = 'hp-queue';
+        if (w.hpQueuedAt === null) {
+            w.hpQueuedAt = Date.now();
+            this.ledger({ kind: 'hp-queue', account: w.alias, occupancy: this.hpSites.occupancy(), capacity: this.hpSites.capacity() });
+            this.event(w, 'every Hitpoints site is full: earning until one has room', {}, true);
+        }
+        await runRoleUntil(x, coinsRole, { target: 'auto', guardLevel: 40 }, () => (this.hpSites.hasRoom() ? 'a Hitpoints site has room' : null));
+    }
+
     // ------------------------------------------------------------ redirects
 
-    private redirectTo(w: Worker, method: MethodId, reason: string, kind: string): void {
-        this.ledger({ kind: 'redirect', account: w.alias, from: w.method, to: method, why: kind, reason });
+    private redirectTo(w: Worker, method: MethodId, reason: string, kind: string, extra: Record<string, unknown> = {}): void {
+        this.ledger({ kind: 'redirect', account: w.alias, from: w.method, to: method, why: kind, reason, ...extra });
         this.event(w, `redirect to ${method}`, { reason }, true);
         w.redirect = { method, reason };
         if (w.stageCtl) w.stageCtl.abort(new Error(`redirect to ${method}`));
@@ -434,11 +594,26 @@ export class Runner {
     }
 
     private foodOut(w: Worker, reason: string): void {
-        if (w.redirect || !NEEDS[w.method].sharks) return;
+        if (w.redirect || w.parked !== null || !NEEDS[w.method].sharks) return;
+        if (this.plan.foodFallback === 'park') return this.park(w, reason);
         const m = nextFallback(this.foodFallback, this.plan.foodFallbackMix);
         if (!m) return;
         this.foodFallback.set(m, (this.foodFallback.get(m) ?? 0) + 1);
-        this.redirectTo(w, m, reason, 'food');
+        w.foodFrom = w.method;
+        this.redirectTo(w, m, reason, 'food', this.plan.sharks.source === 'buy' && !EARNS_COINS[m] ? { rebuy: 'no rebuy: the fallback earns no coins' } : {});
+    }
+
+    /**
+     * Log the account out where it stands and keep it out for the rest of the run, not given up. Every food fallback
+     * but the voyage check comes straight after a bank visit (the method's bank errand, the purchase's), so what it
+     * earned is banked; it walks nowhere to bank.
+     */
+    private park(w: Worker, reason: string): void {
+        w.parked = reason;
+        w.done = true;
+        this.ledger({ kind: 'parked', account: w.alias, method: w.method, reason });
+        this.event(w, `parked: ${reason}`, {}, true);
+        w.ctl?.abort(new Error(`parked: ${reason}`));
     }
 
     // ------------------------------------------------------------ the knights ramp
@@ -495,7 +670,7 @@ export class Runner {
         const sell = this.plan.sell;
         if (!sell.enabled) return;
         for (const w of this.workers) {
-            if (w.stage !== 'method' || w.saleDue || !SALE_ROUTE.includes(w.method) || now - w.lastSaleAt < sell.everyMinutes * 60_000) continue;
+            if (w.stage !== 'method' || w.saleDue || !SALE_ROUTE[w.method] || now - w.lastSaleAt < sell.everyMinutes * 60_000) continue;
             const item = (w.bank ?? []).find(i => sell.floors[i.name] !== undefined && i.count > 0);
             if (!item) continue;
             w.saleDue = { item: { id: item.id, name: item.name }, floor: sell.floors[item.name]! };
@@ -508,8 +683,25 @@ export class Runner {
         w.saleDue = null;
         w.lastSaleAt = Date.now();
         w.stage = 'sale';
-        const rec = await sellAtExchange(x, { item: due.item, floor: due.floor, cap: this.plan.sell.cap, fillMinutes: this.plan.sell.fillMinutes }, this.book);
+        const errand = SALE_ROUTE[w.method] === 'ship' ? sellByShip : sellAtExchange;
+        const rec = await errand(x, { item: due.item, floor: due.floor, cap: this.plan.sell.cap, fillMinutes: this.plan.sell.fillMinutes }, this.book);
         this.ledger({ account: w.alias, ...rec });
+    }
+
+    // ------------------------------------------------------------ stalls
+
+    /** Abort the method of an account whose coins have stood still (stall.ts); the stage loop runs its stages again. */
+    private pumpStalls(now: number): void {
+        for (const w of this.workers) {
+            if (w.stage !== 'method' || !w.stageCtl) continue;
+            const v = w.stall.check(now, this.o.stall);
+            if (!v) continue;
+            const data = { coins: v.coins, stalledMinutes: Math.round(v.stalledMs / 6_000) / 10, retry: v.retry, retries: this.o.stall.retries };
+            if (v.action === 'abort') {
+                this.event(w, 'stalled', data, true);
+                w.stageCtl.abort(new Error('stalled'));
+            } else this.event(w, 'stalled: retries used up, leaving it running; look at it', data, true);
+        }
     }
 
     // ------------------------------------------------------------ the ledger
@@ -531,6 +723,25 @@ export class Runner {
             w.bankTick = s.tick;
         }
         w.thieving = s.skills.find(k => k.name === 'Thieving')?.baseLevel ?? w.thieving;
+        w.firstTick ??= s.tick;
+        if (w.hpStartAt !== null && !w.hpLogged) {
+            const level = s.skills.find(k => k.name === 'Hitpoints')?.baseLevel ?? 0;
+            if (level >= (w.plan.hp ?? this.plan.hp)) {
+                w.hpLogged = true;
+                const now = Date.now();
+                const min = (ms: number) => Math.round(ms / 6_000) / 10;
+                this.ledger({
+                    kind: 'hp',
+                    account: w.alias,
+                    level,
+                    site: w.hpSite,
+                    minutesFromLogin: min(now - (w.firstLoginAt ?? now)),
+                    ticksFromLogin: s.tick - w.firstTick,
+                    minutesTraining: min(now - w.hpStartAt),
+                    queuedMinutes: w.hpQueuedAt === null ? 0 : min(w.hpStartAt - w.hpQueuedAt)
+                });
+            }
+        }
         const msPerTick = w.msPerTick(s);
         if (w.nextLedgerTick >= 0 && s.tick < w.nextLedgerTick) return;
         w.nextLedgerTick = s.tick + this.plan.ledger.everyTicks;
@@ -538,6 +749,7 @@ export class Runner {
         w.latest = snap;
         const line = accountLine(snap, this.valuer, new Date());
         this.ledger(line as unknown as Record<string, unknown>);
+        w.stall.observe(w.stage === 'method', line.coins.total, Date.now());
         // A ramp reading needs the bank: its coins count as 0 until it is first seen, and a hold that took in that
         // first sighting would book everything banked before the method as earnings. No reading, no 'working'.
         if (w.stage === 'method' && w.bank !== null) {
@@ -580,7 +792,7 @@ async function main(argv: string[]): Promise<number> {
     // writerExclusion exits 2 without the names file, unless --placeholder-data
     const exclusion = writerExclusion(argv);
     const a = parseArgs(argv.filter(x => !BOOLEAN_FLAGS.includes(x)));
-    const unknown = Object.keys(a.flags).filter(k => !['out', 'minutes'].includes(k));
+    const unknown = Object.keys(a.flags).filter(k => !['out', 'minutes', 'stall-minutes', 'stall-retries'].includes(k));
     if (unknown.length) fail(`unknown option ${unknown.map(k => `--${k}`).join(' ')}`);
     if (a.positional.length !== 1) fail('one plan file is required');
     let plan: Plan;
@@ -606,9 +818,13 @@ async function main(argv: string[]): Promise<number> {
     if (missing.length) fail(`no bots/<account>/bot.env for ${missing.join(', ')}`);
     const hosts = new Set(envs.map(e => e.SERVER));
     if (hosts.size !== 1 || !envs[0]!.SERVER) fail('every account must have the same SERVER in its bot.env: the plan is for one address on one world');
-    const minutes = (() => {
+    const [minutes, stallMinutes, stallRetries] = (() => {
         try {
-            return numberFlag(a, 'minutes', 0, { min: 0 });
+            return [
+                numberFlag(a, 'minutes', 0, { min: 0 }),
+                numberFlag(a, 'stall-minutes', DEFAULT_STALL.ms / 60_000, { min: 0 }),
+                numberFlag(a, 'stall-retries', DEFAULT_STALL.retries, { min: 0, integer: true })
+            ];
         } catch (e) {
             fail(e instanceof Error ? e.message : String(e));
         }
@@ -618,7 +834,7 @@ async function main(argv: string[]): Promise<number> {
 
     (await import('../../sdk/pathfinding')).initPathfinding();
     const workers = await Promise.all(plan.accounts.map(async (p, i) => new Worker(i, aliasOf(i), p, envs[i]!, await openRoleState(join(out, 'role-state', `${aliasOf(i)}.json`)))));
-    const runner = new Runner(plan, workers, { host: envs[0]!.SERVER!, out, minutes, runEnded, placeholder: exclusion.source === null });
+    const runner = new Runner(plan, workers, { host: envs[0]!.SERVER!, out, minutes, runEnded, placeholder: exclusion.source === null, stall: { ms: stallMinutes * 60_000, retries: stallRetries } });
     process.stderr.write(`phase2: ${workers.length} accounts, up to ${plan.maxSessions} sessions; ledger in ${join(out, 'ledger.jsonl')}\n`);
 
     let signals = 0;

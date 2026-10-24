@@ -48,3 +48,45 @@ describe('report', () => {
         expect(r.end).toEqual({ kind: 'end', clean: true });
     });
 });
+
+import { hpCollisions, hpSummary } from './report.ts';
+
+describe('Hitpoints in the report', () => {
+    const ev = (t: number, account: string, message: string, index: number) => ({ t: new Date(t).toISOString(), account, message, index });
+    test('a second account on a live npc within the window is a collision; after a drop, a respawn or another npc it is not', () => {
+        const r = hpCollisions([
+            ev(0, 'a01', 'hp-train: target', 7),
+            ev(800, 'a02', 'hp-train: target', 7), // collision
+            ev(1_000, 'a03', 'hp-train: target', 8),
+            ev(6_000, 'a03', 'hp-train: dropped target', 8),
+            ev(7_000, 'a04', 'hp-train: target', 8), // after a03 dropped it
+            ev(40_000, 'a05', 'hp-train: target', 7), // the cow has respawned
+            ev(50_000, 'a06', 'hp-train: target', 9),
+            ev(50_400, 'a06', 'hp-train: switched target', 9),
+            ev(53_000, 'a07', 'hp-train: target', 9), // a06 switched away from it
+            ev(53_100, 'a07', 'hp-train: released target', 9),
+            ev(54_000, 'a08', 'hp-train: target', 9) // a07 reached its target and left it
+        ]);
+        expect(r.targets).toBe(8);
+        expect(r.collisions).toEqual([{ index: 7, accounts: ['a01', 'a02'], gapMs: 800, at: new Date(800).toISOString() }]);
+    });
+    test('times from login, per site, and the queue', () => {
+        const s = hpSummary([
+            { kind: 'hp-site', account: 'a01', site: 'cows', queuedMinutes: 0 },
+            { kind: 'hp-site', account: 'a03', site: 'cows', queuedMinutes: 12.5 },
+            { kind: 'hp', account: 'a01', site: 'cows', minutesFromLogin: 20, minutesTraining: 17 },
+            { kind: 'hp', account: 'a02', site: 'farm', minutesFromLogin: 24, minutesTraining: 19 },
+            { kind: 'hp', account: 'a03', site: 'cows', minutesFromLogin: 40, minutesTraining: 22 }
+        ]);
+        expect(s).toEqual({
+            n: 3,
+            within: 2,
+            withinMinutes: 25,
+            minutesFromLogin: { min: 20, median: 24, max: 40 },
+            bySite: { cows: { n: 2, medianFromLogin: 30, medianTraining: 19.5 }, farm: { n: 1, medianFromLogin: 24, medianTraining: 19 } },
+            queued: 1,
+            longestQueueMinutes: 12.5
+        });
+        expect(hpSummary([])).toBeNull();
+    });
+});

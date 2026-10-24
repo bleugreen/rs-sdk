@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fallbackMix, nextFallback, parsePlan, PlanError, rampSteps, roleOptions, sequenceFor, type MethodId } from './plan.ts';
+import { fallbackMix, nextFallback, parsePlan, PlanError, planWarnings, rampSteps, roleOptions, ROUND_TRIP_FARES, SALE_ROUTE, sequenceFor, type MethodId } from './plan.ts';
 
 const accounts = (n: number, method: string, prefix = 'acct') => Array.from({ length: n }, (_, i) => ({ account: `${prefix}${String(i + 1).padStart(2, '0')}`, method }));
 const problems = (raw: unknown): string[] => {
@@ -19,7 +19,7 @@ describe('parsePlan', () => {
         const p = parsePlan({ accounts: accounts(3, 'knights') });
         expect(p.maxSessions).toBe(3);
         expect(p.hp).toBe(40);
-        expect(p.sharks).toEqual({ source: 'bank', perAccount: 200, perLoginHour: 40, hours: 72, ceiling: 701, minimum: 28, fillMinutes: 10 });
+        expect(p.sharks).toEqual({ source: 'bank', perAccount: 200, perLoginHour: 40, hours: 72, ceiling: 701, minimum: 28, fillMinutes: 10, rebuyMinSharks: 200 });
         expect(p.ramp?.steps).toEqual([3]);
         expect(p.ramp?.dropPct).toBe(10);
         expect(p.ramp?.fallbackMix).toEqual({ iron: 12, heroes: 8, guards: 23 });
@@ -65,13 +65,18 @@ describe('parsePlan', () => {
         expect(ps).toContain('sell.enabled needs sell.floors: nothing is sold without a floor');
     });
 
-    test('sales run only from methods that can reach the Exchange', () => {
+    test('sales run only from methods with a route to the Exchange: guards on foot, iron by ship', () => {
         const sell = { enabled: true, floors: { 'Iron ore': 80 } };
-        const ps = problems({ accounts: accounts(2, 'iron'), sell });
-        expect(ps.some(p => /sell.enabled: iron accounts cannot reach the Exchange/.test(p))).toBe(true);
+        expect(SALE_ROUTE).toEqual({ guards: 'walk', iron: 'ship' });
+        expect(problems({ accounts: accounts(2, 'iron'), sell })).toEqual([]);
         expect(problems({ accounts: accounts(2, 'guards'), sell })).toEqual([]);
-        // knights bring the ramp's fallback mix in, and with it the heroes and iron
-        expect(problems({ accounts: [...accounts(1, 'guards'), ...accounts(1, 'knights', 'k')], sell }).some(p => /knights, iron, heroes accounts cannot/.test(p))).toBe(true);
+        expect(problems({ accounts: [...accounts(2, 'guards'), ...accounts(2, 'iron', 'i')], sell })).toEqual([]);
+        expect(problems({ accounts: accounts(1, 'shilo'), sell })).toEqual(['sell.enabled: shilo accounts have no sale route to the Exchange (guards walk, iron sails); enable sales in a plan without them']);
+        // knights bring the ramp's fallback mix in, and with it the heroes
+        expect(problems({ accounts: [...accounts(1, 'guards'), ...accounts(1, 'knights', 'k')], sell }).some(p => /sell.enabled: knights, heroes accounts have no sale route/.test(p))).toBe(true);
+        // a ramp whose fallback leaves the heroes out still has the knights themselves
+        const ps = problems({ accounts: accounts(1, 'knights', 'k'), ramp: { fallbackMix: { iron: 1, guards: 1 } }, sell });
+        expect(ps.filter(p => p.startsWith('sell.enabled'))).toEqual(['sell.enabled: knights accounts have no sale route to the Exchange (guards walk, iron sails); enable sales in a plan without them']);
     });
 
     test('refuses more accounts than one address holds, or than its sessions', () => {
@@ -98,6 +103,32 @@ describe('sequenceFor', () => {
     test('knights: Hitpoints, Thieving 55, the ramp, then ship coins and the voyage', () => {
         expect(dos('knights')).toEqual(['tutorial', 'hp:40', 'thieving:55', 'admission', 'coins:100', 'to-ardougne', 'method']);
     });
+    test('the rebuy minimum defaults to perAccount and stays between the minimum and perAccount', () => {
+        const one = accounts(1, 'knights');
+        expect(parsePlan({ accounts: one, sharks: { source: 'buy', perAccount: 160 } }).sharks.rebuyMinSharks).toBe(160);
+        expect(parsePlan({ accounts: one, sharks: { source: 'buy', perAccount: 160, rebuyMinSharks: 60 } }).sharks.rebuyMinSharks).toBe(60);
+        expect(problems({ accounts: one, sharks: { source: 'buy', perAccount: 160, rebuyMinSharks: 200 } })).toContain('sharks.rebuyMinSharks must be at most 160');
+        expect(problems({ accounts: one, sharks: { source: 'buy', perAccount: 160, rebuyMinSharks: 10 } })[0]).toMatch(/rebuyMinSharks 10 is below sharks.minimum 28/);
+        // banked sharks never rebuy
+        expect(problems({ accounts: one, sharks: { source: 'bank', perAccount: 10 } })).toEqual([]);
+    });
+    test('a buying plan whose food fallback earns no coins is warned about', () => {
+        const knights = accounts(2, 'knights');
+        expect(planWarnings(parsePlan({ accounts: knights, sharks: { source: 'buy' } }))).toEqual([
+            'foodFallbackMix sends shark eaters to iron, which banks no coins: an account sent there never earns its rebuy and stays. For a buying plan use foodFallbackMix: { guards: 1 }'
+        ]);
+        expect(planWarnings(parsePlan({ accounts: knights, sharks: { source: 'buy' }, foodFallbackMix: { guards: 1 } }))).toEqual([]);
+        // banked sharks never rebuy, and a plan with no shark eaters has none to strand
+        expect(planWarnings(parsePlan({ accounts: knights }))).toEqual([]);
+        expect(planWarnings(parsePlan({ accounts: accounts(2, 'guards'), sharks: { source: 'buy' } }))).toEqual([]);
+        // parking is intentional: the iron in the default mix is never used
+        expect(planWarnings(parsePlan({ accounts: knights, sharks: { source: 'buy' }, foodFallback: 'park' }))).toEqual([]);
+    });
+    test('foodFallback is mix by default, or park', () => {
+        expect(parsePlan({ accounts: accounts(1, 'knights') }).foodFallback).toBe('mix');
+        expect(parsePlan({ accounts: accounts(1, 'knights'), foodFallback: 'park' }).foodFallback).toBe('park');
+        expect(problems({ accounts: accounts(1, 'knights'), foodFallback: 'logout' })).toContain("foodFallback must be 'mix' or 'park'");
+    });
     test('a bought shark supply adds the purchase before the voyage', () => {
         const buy = parsePlan({ accounts: accounts(1, 'knights'), sharks: { source: 'buy' }, ramp: null });
         expect(dos('knights', buy)).toEqual(['tutorial', 'hp:40', 'thieving:55', 'buy-sharks', 'coins:100', 'to-ardougne', 'method']);
@@ -107,8 +138,15 @@ describe('sequenceFor', () => {
         expect(dos('guards')).toEqual(['tutorial', 'hp:40', 'method']);
         expect(dos('guards', plan, 10)).toEqual(['tutorial', 'method']);
     });
-    test('iron: ship coins, Mining 15, a wielded pickaxe, the voyage', () => {
-        expect(dos('iron')).toEqual(['tutorial', 'coins:100', 'mining:15', 'wield', 'to-ardougne', 'method']);
+    test('iron: a pickaxe, ship coins, Mining 15, the pickaxe wielded, the voyage', () => {
+        expect(dos('iron')).toEqual(['tutorial', 'pickaxe', 'coins:100', 'mining:15', 'wield', 'to-ardougne', 'method']);
+    });
+    test('a selling iron account also carries its first round trip to the Exchange (four voyages)', () => {
+        expect(ROUND_TRIP_FARES).toBe(120);
+        const selling = parsePlan({ accounts: accounts(1, 'iron'), sell: { enabled: true, floors: { 'Iron ore': 80 } } });
+        expect(dos('iron', selling)).toEqual(['tutorial', 'pickaxe', 'coins:220', 'mining:15', 'wield', 'to-ardougne', 'method']);
+        // a guard walks to the Exchange: no fares
+        expect(dos('guards', selling)).toEqual(['tutorial', 'hp:40', 'method']);
     });
     test('shilo needs a staged account', () => {
         expect(dos('shilo')).toEqual(['method']);
@@ -138,5 +176,15 @@ describe('fallback split', () => {
             assigned.set(m, (assigned.get(m) ?? 0) + 1);
         }
         expect(Object.fromEntries(assigned)).toEqual(Object.fromEntries([...fallbackMix(20, mix)].filter(([, n]) => n > 0)));
+    });
+});
+
+describe('hpSites', () => {
+    test('default caps from the sites, overridden per site, refused when unknown or all closed', () => {
+        expect(parsePlan({ accounts: accounts(2, 'knights') }).hpSites).toMatchObject({ cows: 4, farm: 4 });
+        expect(parsePlan({ accounts: accounts(2, 'knights'), hpSites: { cows: 1, goblins: 0 } }).hpSites).toEqual({ cows: 1, goblins: 0 });
+        expect(problems({ accounts: accounts(2, 'knights'), hpSites: { crabs: 3, cows: 1.5 } })).toEqual(['hpSites.crabs: not a low Hitpoints site (cows, goblins, chickens, farm, champions, crafting, sarim)', 'hpSites.cows must be a whole number']);
+        expect(problems({ accounts: accounts(2, 'knights'), hpSites: { cows: 0 } })).toEqual(['hpSites closes every site, so no account could train Hitpoints']);
+        expect(problems({ accounts: accounts(2, 'iron'), hpSites: { cows: 0 } })).toEqual([]);
     });
 });

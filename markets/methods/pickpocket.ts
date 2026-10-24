@@ -20,7 +20,8 @@
 
 import type { BotWorldState, InventoryItem, NearbyNpc } from '../../sdk/types';
 import { depositAll, withdrawMany } from '../../speedrun/lib/bank';
-import { walkTo } from '../../speedrun/lib/act';
+import { findLongPath } from '../../sdk/pathfinding';
+import { clickWalk, walkTo } from '../../speedrun/lib/act';
 import { nextTick, waitTicks } from '../../speedrun/lib/wait';
 import { runStandalone, type Role, type RoleContext } from '../../speedrun/helpers/role';
 
@@ -81,6 +82,137 @@ export function roamTo(spawns: readonly Tile[], from: Tile, tried: ReadonlySet<n
     return order.find(i => !tried.has(i)) ?? order[0]!;
 }
 
+/**
+ * `bot.walkTo` failures a shut door can cause: the router found no way from where the player stands (sdk/actions.ts
+ * `_walkToRoute`). Neither it nor speedrun/lib/act.ts `walkTo` gives these a structured reason, so this matches the
+ * message; a death en route, a timeout or a blocked destination tile is not a door's doing.
+ */
+export const UNROUTABLE = /stops \d+ tiles short|: no waypoints$|^Stuck at \(|^Could not reach \(/;
+
+export const unroutable = (message: string): boolean => UNROUTABLE.test(message);
+
+export class WalkFailed extends Error {}
+
+export interface FoodWithdraw {
+    /** speedrun/lib/bank.ts `withdrawMany` of the food. */
+    withdraw(): Promise<{ ok: boolean; reason?: 'bank_not_open' | 'missing' | 'timeout' }>;
+    /** Food carried now. */
+    carried(): number;
+    /** Food in the bank as published now; null when the bank is closed or its items have not loaded. */
+    inBank(): number | null;
+    wait(ticks: number): Promise<void>;
+    log(message: string, data?: Record<string, unknown>): void;
+}
+
+export type FoodOutcome = { ok: true } | { ok: false; absent: boolean; reason: string };
+
+/**
+ * Withdraw the trip's food, telling a bank with no food from a withdraw that failed. Only 'missing' with the loaded
+ * bank showing none, twice two ticks apart, is an absence (`absent`: the runner's food fallback acts on it). A
+ * timeout, a closed bank or a bank list not yet loaded is retried, `tries` attempts in all; the demo's knights had a
+ * withdraw time out with 125 sharks banked and were sent to the fallback for it. Food that arrives late counts.
+ */
+export async function withdrawFood(d: FoodWithdraw, tries = 3): Promise<FoodOutcome> {
+    let reason = 'not tried';
+    for (let attempt = 1; attempt <= tries; attempt++) {
+        const r = await d.withdraw();
+        if (r.ok || d.carried() > 0) return { ok: true };
+        reason = r.reason ?? 'failed';
+        if (r.reason === 'missing' && d.inBank() === 0) {
+            await d.wait(2);
+            if (d.carried() > 0) return { ok: true };
+            if (d.inBank() === 0) return { ok: false, absent: true, reason: 'none in the bank' };
+        }
+        d.log('food withdraw failed', { attempt, tries, reason, inBank: d.inBank() });
+        if (attempt < tries) await d.wait(3);
+    }
+    return { ok: false, absent: false, reason };
+}
+
+export interface DoorWalk {
+    /** speedrun/lib/act.ts `walkTo`: bot.walkTo, planned on the SDK's precomputed long-path map. */
+    walk(t: Tile): Promise<{ ok: boolean; message: string }>;
+    /** Open the nearest shut door. */
+    openDoor(): Promise<{ success: boolean; message: string; reason?: string }>;
+    /** act.ts `clickWalk`: the client's own router, over the live collision (an opened door is open to it). */
+    clickWalk(t: Tile): Promise<{ ok: boolean; message: string; at: Tile }>;
+    wait(ticks: number): Promise<void>;
+    log(message: string, data?: Record<string, unknown>): void;
+}
+
+/** Furthest a recovery click aims: well inside the client's 104-tile build area from the player. */
+export const CLICK_REACH = 30;
+
+/** The tile `reach` tiles (Chebyshev) from `from` on the way to `to`, or `to` when it is nearer. */
+export function toward(from: Tile, to: Tile, reach = CLICK_REACH): Tile {
+    const dx = to.x - from.x;
+    const dz = to.z - from.z;
+    const d = Math.max(Math.abs(dx), Math.abs(dz));
+    if (d <= reach) return to;
+    return { x: from.x + Math.round((dx * reach) / d), z: from.z + Math.round((dz * reach) / d) };
+}
+
+/**
+ * Walk to `t`. A walk that fails as unroutable opens the nearest shut door, clicks a walk through it toward `t` and
+ * walks again; then all of that once more after `waitTicks` (another player may have shut the door again). Throws
+ * WalkFailed when the walk still fails, so nothing that needs the destination (the bank booth) runs from the wrong place.
+ *
+ * The click is what gets out. bot.walkTo plans on the SDK's long-path map, where a door it does not index (the
+ * diagonal door of the East Ardougne market building, docs/markets/phase2.md 'Stuck behind a door') is a solid tile
+ * open or shut, so it fails from inside however often the door is opened; the client's router sees the door open.
+ */
+export async function walkThroughDoors(d: DoorWalk, t: Tile, waitTicks = 5): Promise<void> {
+    let r = await d.walk(t);
+    if (r.ok) return;
+    const first = r.message;
+    if (unroutable(first)) {
+        for (let attempt = 1; attempt <= 2 && !r.ok; attempt++) {
+            if (attempt > 1) await d.wait(waitTicks);
+            const door = await d.openDoor();
+            const click = await d.clickWalk(t);
+            d.log('walk unroutable: opened a door and clicked through', { to: t, attempt, walk: r.message, door: door.reason ?? (door.success ? 'opened' : 'failed'), doorMessage: door.message, click: click.ok ? 'arrived' : click.message, clickAt: click.at });
+            r = await d.walk(t);
+        }
+        if (r.ok) {
+            d.log('through the door', { to: t, walk: first });
+            return;
+        }
+    }
+    throw new WalkFailed(`walk to (${t.x},${t.z}) failed: ${r.message}`);
+}
+
+type PathFinder = (from: Tile, to: Tile) => readonly Tile[];
+const longPath: PathFinder = (a, b) => findLongPath(0, a.x, a.z, b.x, b.z, 500);
+const routableCache = new Map<string, boolean>();
+
+/**
+ * Whether the SDK's long-path map routes from `from` to exactly `to`: whether bot.walkTo could bring the player back
+ * from a target there. The map is static, so the answer is cached for the process.
+ */
+export function routable(from: Tile, to: Tile, find: PathFinder = longPath, cache: Map<string, boolean> = routableCache): boolean {
+    if (from.x === to.x && from.z === to.z) return true;
+    const key = `${from.x},${from.z}>${to.x},${to.z}`;
+    let v = cache.get(key);
+    if (v === undefined) {
+        const end = find(from, to).at(-1);
+        v = !!end && end.x === to.x && end.z === to.z;
+        cache.set(key, v);
+    }
+    return v;
+}
+
+/** Consecutive errand failures; `fail` says when they reach `max`, after which the role gives up. */
+export class FailureRun {
+    n = 0;
+    constructor(readonly max: number) {}
+    ok(): void {
+        this.n = 0;
+    }
+    fail(): boolean {
+        return ++this.n >= this.max;
+    }
+}
+
 export type Errand = 'bank' | 'go' | 'thieve';
 
 /** The next errand from a snapshot: bank when out of food or carrying `bankAt` coins, else thieve at the station. */
@@ -98,13 +230,15 @@ interface Options {
     /** Carried coins that end a trip early (bounds what a death costs). */
     bankAt: number;
     reportTicks: number;
+    /** Errands failing this many times in a row end the role with an error (the runner's stage retries take over). */
+    maxErrandFailures: number;
 }
 
 function readOptions(raw: Record<string, unknown>): Options {
     const target = String(raw.target ?? 'knight') as Options['target'];
     if (!(target in SPOTS)) throw new Error(`pickpocket: unknown target ${target}`);
     const num = (k: string, d: number) => (typeof raw[k] === 'number' ? (raw[k] as number) : d);
-    return { target, food: String(raw.food ?? 'Shark'), foodPerTrip: num('foodPerTrip', 0), bankAt: num('bankAt', 50_000), reportTicks: num('reportTicks', 1000) };
+    return { target, food: String(raw.food ?? 'Shark'), foodPerTrip: num('foodPerTrip', 0), bankAt: num('bankAt', 50_000), reportTicks: num('reportTicks', 1000), maxErrandFailures: num('maxErrandFailures', 10) };
 }
 
 const coinsIn = (s: BotWorldState) => s.inventory.filter(i => i.name === 'Coins').reduce((a, i) => a + i.count, 0);
@@ -143,6 +277,7 @@ export class Pickpocketer {
     async run(): Promise<void> {
         this.startTick = this.lastReport = this.s.tick;
         this.ctx.log('start', { options: this.o, thieving: this.s.skills.find(k => k.name === 'Thieving')?.baseLevel, hp: this.s.player!.maxHp });
+        const failures = new FailureRun(this.o.maxErrandFailures);
         while (!this.ctx.signal.aborted) {
             const s = this.s;
             if (s.dialog.isOpen) await this.ctx.sdk.sendClickDialog(0);
@@ -151,17 +286,34 @@ export class Pickpocketer {
                 if (e === 'bank') await this.bank();
                 else if (e === 'go') await this.walk(this.spot.anchor);
                 else await this.thieve();
+                failures.ok();
             } catch (err) {
-                this.ctx.log('errand error', { errand: e, error: String(err) });
+                if (this.ctx.signal.aborted) break;
+                this.ctx.log('errand error', { errand: e, error: String(err), inARow: failures.n + 1 });
+                if (failures.fail()) {
+                    const p = this.s.player!;
+                    this.ctx.log('errands keep failing: ending the role', { errand: e, inARow: failures.n, at: { x: p.worldX, z: p.worldZ }, error: String(err) });
+                    this.report('stop');
+                    throw new Error(`pickpocket: ${failures.n} errands failed in a row at (${p.worldX},${p.worldZ}), last: ${String(err)}`);
+                }
                 await waitTicks(this.ctx.sdk, 5);
             }
         }
         this.report('stop');
     }
 
-    private async walk(t: Tile): Promise<void> {
-        const r = await walkTo(this.ctx.bot, this.ctx.sdk, t.x, t.z, 2);
-        if (!r.ok) this.ctx.log('walk failed', { to: t, message: r.message });
+    /** Throws WalkFailed when the walk fails, after a door retry if it was unroutable. */
+    private walk(t: Tile): Promise<void> {
+        const { bot, sdk, log } = this.ctx;
+        // the nearest shut one: bot.openDoor() alone takes the nearest door by name, which may be an open one
+        const shut = () => sdk.getNearbyLocs().filter(l => /door|gate/i.test(l.name) && l.optionsWithIndex.some(o => /^open$/i.test(o.text))).sort((a, b) => a.distance - b.distance)[0];
+        const clickThrough = async (to: Tile) => {
+            const p = this.s.player!;
+            const dest = toward({ x: p.worldX, z: p.worldZ }, to);
+            const r = await clickWalk(sdk, dest.x, dest.z, { tol: 2, maxTicks: 60 });
+            return { ok: r.ok, message: r.reason ?? '', at: r.at };
+        };
+        return walkThroughDoors({ walk: to => walkTo(bot, sdk, to.x, to.z, 2), openDoor: () => bot.openDoor(shut()), clickWalk: clickThrough, wait: async n => void (await waitTicks(sdk, n)), log }, t);
     }
 
     private async bank(): Promise<void> {
@@ -171,13 +323,28 @@ export class Pickpocketer {
         const d = await depositAll(this.ctx.sdk);
         if (!d.ok) this.ctx.log('deposit incomplete', { reason: d.reason, remaining: d.remaining.map(i => i.name) });
         const food = new RegExp(`^${this.o.food.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
-        const w = await withdrawMany(this.ctx.sdk, [{ item: food, n: this.o.foodPerTrip > 0 ? this.o.foodPerTrip : 'fill' }]);
+        const sdk = this.ctx.sdk;
+        const count = (items: readonly { name: string; count: number }[]) => items.filter(i => food.test(i.name)).reduce((n, i) => n + i.count, 0);
+        const w = await withdrawFood({
+            withdraw: () => withdrawMany(sdk, [{ item: food, n: this.o.foodPerTrip > 0 ? this.o.foodPerTrip : 'fill' }]),
+            carried: () => count(sdk.getState()?.inventory ?? []),
+            inBank: () => {
+                const b = sdk.getState()?.bank;
+                return b?.isOpen && b.items.length > 0 ? count(b.items) : null;
+            },
+            wait: async n => void (await waitTicks(sdk, n)),
+            log: (m, d) => this.ctx.log(m, d)
+        });
         this.banks++;
-        this.ctx.reportBank({ items: this.ctx.sdk.getBankItems().map(i => ({ id: i.id, name: i.name, count: i.count })) });
+        this.ctx.reportBank({ items: sdk.getBankItems().map(i => ({ id: i.id, name: i.name, count: i.count })) });
         await this.ctx.bot.closeBank();
         if (!w.ok) {
-            this.ctx.log('out of food in the bank', { food: this.o.food, reason: w.reason });
-            throw new Error('no food');
+            // only a confirmed absence is 'out of food': the runner sends the account to its food fallback on it
+            if (w.absent) {
+                this.ctx.log('out of food in the bank', { food: this.o.food, reason: w.reason });
+                throw new Error('no food');
+            }
+            throw new Error(`food withdraw failed: ${w.reason}`);
         }
         this.report('banked');
     }
@@ -234,12 +401,17 @@ export class Pickpocketer {
                 target = undefined;
                 lastProgress = t;
             }
-            if (!target || !s.nearbyNpcs.some(n => n.index === target!.index)) {
+            // a target the long-path map cannot reach from the anchor (inside a building) is not followed: its door
+            // can shut behind the player, and bot.walkTo has no way back out
+            const routes = (n: NearbyNpc) => routable(this.spot.anchor, { x: n.tileX ?? n.x, z: n.tileZ ?? n.z });
+            if (target) target = s.nearbyNpcs.find(n => n.index === target!.index && routes(n));
+            if (!target) {
                 target = s.nearbyNpcs
                     .filter(n => this.spot.npc.test(n.name) && n.reachable !== false && (skip.get(n.index) ?? 0) < t)
                     .filter(n => Math.max(Math.abs((n.tileX ?? n.x) - this.spot.anchor.x), Math.abs((n.tileZ ?? n.z) - this.spot.anchor.z)) <= this.spot.radius)
+                    .filter(routes)
                     .sort((a, b) => a.distance - b.distance)[0];
-            } else target = s.nearbyNpcs.find(n => n.index === target!.index);
+            }
             if (target) {
                 unseenSince = t;
                 tried.clear();

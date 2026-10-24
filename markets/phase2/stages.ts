@@ -3,8 +3,9 @@
  * already holds. Every stage reuses the code that owns the skill: Tutorial Island through S00's `tutorialSkip`,
  * Hitpoints through hp-train.ts, Thieving and coins through speedrun/helpers/coins.ts (the lite-client earner; the
  * thieving.ts bands need the browser's page programs) under markets' coins-driver.ts, which owns its target switch
- * and keeps a phase-2 account's Hitpoints off coins.ts's death paths, Mining through speedrun/skills/mining.ts's lite-client steps,
- * the ship to Ardougne through thieving.ts's `thieving:to-ardougne` leg, and each method through its Role.
+ * and keeps a phase-2 account's Hitpoints off coins.ts's death paths, Mining through speedrun/skills/mining.ts's
+ * lite-client steps, the ship to Ardougne through thieving.ts's `thieving:to-ardougne` leg, any other sea crossing
+ * through lib/sea-route.ts, a missing pickaxe through pickaxe.ts's steps, and each method through its Role.
  *
  * A stage whose goal holds is skipped, so the runner recomputes the first unmet stage after anything that can undo
  * one (a death in the market loses the ship coins and the place; a redirect changes the method).
@@ -24,20 +25,26 @@ import { onTutorialIsland } from '../../speedrun/lib/world';
 import { runRoleUntil as runRole } from '../lib/role-until.ts';
 import { role as coinsRole } from '../methods/coins-driver.ts';
 import { driveSteps, pickSteps } from '../methods/drive-steps.ts';
-import { parseOptions as hpOptions, spec as hpTrain } from '../methods/hp-train.ts';
+import { parseOptions as hpOptions, spec as hpTrain, type SiteId, type TargetClaims } from '../methods/hp-train.ts';
 import { role as mineRole } from '../methods/mine.ts';
 import { role as pickpocketRole } from '../methods/pickpocket.ts';
 import { parseArgs, Sampler } from '../methods/probe-sampler.ts';
+import { regionOf } from '../../speedrun/lib/ships';
+import { hereOf, travel, walk } from '../lib/sea-route.ts';
 import type { Stack } from './ledger.ts';
+import { bestPickaxe, BRONZE_PICKAXE, hasPickaxe, PICKAXE_COINS, pickaxeSteps, type PickaxeStep } from './pickaxe.ts';
 import { NEEDS, type MethodId, type Stage } from './plan.ts';
+import { SHARKS_KEY, sharksSettled } from './sharks.ts';
 
 export interface StageHooks {
     /** The knights ramp has admitted this login (always true off the ramp). */
     admitted(): boolean;
     /** The account has no sharks to eat: the runner sends it to the low-food fallback. */
     foodOut(reason: string): void;
-    /** The shark purchase errand (errands.ts) with the plan's settings. */
+    /** The shark purchase errand (errands.ts) with the plan's settings, its outcome recorded (sharks.ts). */
     buySharks(): Promise<void>;
+    /** The method finished a bank errand (its bank closed): the runner may redirect it here (a rebuy). */
+    banked(): void;
 }
 
 export interface StageCtx {
@@ -54,7 +61,11 @@ export interface StageCtx {
     options: Record<string, unknown>;
     event(message: string, data?: Record<string, unknown>): void;
     reportBank(items: Stack[]): void;
+    /** The bank at the runner's last sight of it this run (null when not seen). */
+    bank?: Stack[] | null;
     hooks: StageHooks;
+    /** The Hitpoints stage's site (hp-sites.ts) and the npc claims every account of the process shares. */
+    hp?: { site: SiteId | 'auto'; claims: TargetClaims };
 }
 
 export const level = (s: BotWorldState, skill: string): number => s.skills.find(k => k.name.toLowerCase() === skill)?.baseLevel ?? 1;
@@ -82,6 +93,8 @@ export function stageDone(st: Stage, s: BotWorldState, hooks: Pick<StageHooks, '
         // on the Ardougne side the ship's coins are spent and not needed again
         case 'coins':
             return carriedCoins(s) >= st.n || onArdougneSide(s);
+        case 'pickaxe':
+            return hasPickaxe(s, level(s, 'mining'));
         case 'mining':
             return level(s, 'mining') >= st.to;
         case 'wield':
@@ -89,16 +102,13 @@ export function stageDone(st: Stage, s: BotWorldState, hooks: Pick<StageHooks, '
         case 'admission':
             return hooks.admitted();
         case 'buy-sharks':
-            return roleState.get(SHARKS_KEY) !== undefined;
+            return sharksSettled(roleState.get(SHARKS_KEY));
         case 'to-ardougne':
             return onArdougneSide(s);
         case 'method':
             return false;
     }
 }
-
-/** RoleState key the shark errand records its outcome under (once per account). */
-export const SHARKS_KEY = 'phase2.sharks';
 
 export const ROLES: Readonly<Record<MethodId, Role>> = {
     knights: pickpocketRole,
@@ -132,7 +142,11 @@ export async function runStage(st: Stage, x: StageCtx, method: MethodId): Promis
             // the Lumbridge men: 3 gp a success at any level, on the way to Port Sarim
             await runRoleUntil(x, coinsRole, { target: 'man' }, s => (carriedCoins(s) >= st.n ? `${st.n} coins` : null));
             return;
+        case 'pickaxe':
+            return getPickaxe(x);
         case 'mining':
+            // a knight sent to iron from the market starts on the Ardougne side; the copper is at Rimmington
+            if (regionOf(hereOf(x.sdk.getState()!)) !== 'mainland') await travel(x, RIMMINGTON_COPPER);
             await leaveAlKharid(x);
             await driveSteps(stepSession(x), miningSteps({ to: st.to, travel: 'none' }), { c: {}, signal: x.signal });
             return;
@@ -151,6 +165,61 @@ export async function runStage(st: Stage, x: StageCtx, method: MethodId): Promis
             return;
         case 'method':
             return runMethod(x, method);
+    }
+}
+
+/** mining.ts COPPER_SITES.rimmington's stand: where the mining stage's copper steps start. */
+const RIMMINGTON_COPPER = { x: 2977, z: 3246 };
+
+/** Walk pickaxe.ts's steps until a usable pickaxe is held. Throws when they end without one. */
+async function getPickaxe(x: StageCtx): Promise<void> {
+    const s0 = x.sdk.getState()!;
+    const mining = level(s0, 'mining');
+    const steps = pickaxeSteps({ at: hereOf(s0), bank: x.bank ?? null, coins: carriedCoins(s0), mining });
+    x.event('pickaxe errand', { steps: steps.map(st => (st.do === 'bank' ? `bank:${st.take}` : st.do)) });
+    for (const st of steps) {
+        if (hasPickaxe(x.sdk.getState()!, mining)) break;
+        await pickaxeStep(x, st, mining);
+    }
+    const s = x.sdk.getState()!;
+    if (!hasPickaxe(s, mining)) throw new Error(`no pickaxe after the errand (${carriedCoins(s)} coins carried)`);
+    x.event('pickaxe', { held: bestPickaxe([...s.inventory, ...s.equipment], mining)?.name });
+}
+
+async function pickaxeStep(x: StageCtx, st: PickaxeStep, mining: number): Promise<void> {
+    switch (st.do) {
+        case 'sail':
+            await travel(x, st.to);
+            return;
+        case 'earn':
+            await runRoleUntil(x, coinsRole, { target: 'man' }, s => (carriedCoins(s) >= st.until ? `${st.until} coins` : null));
+            return;
+        case 'bank': {
+            const bank = await openBankAt(x, st.at);
+            const want = st.take === 'pickaxe' ? bestPickaxe(bank, mining) : bank.find(i => /^coins$/i.test(i.name));
+            if (want) {
+                const w = await x.bot.withdrawItem(want, st.take === 'pickaxe' ? 1 : Math.min(want.count, PICKAXE_COINS));
+                if (!w.success) x.event('withdraw failed', { item: want.name, message: w.message });
+                await waitUntil(x.sdk, s => s.inventory.some(i => i.name === want.name), { maxTicks: 5 });
+            } else x.event(`no ${st.take} in the bank`);
+            x.reportBank(x.sdk.getBankItems().map(i => ({ id: i.id, name: i.name, count: i.count })));
+            await x.bot.closeBank();
+            return;
+        }
+        case 'buy': {
+            await walk(x, st.shop.stand, 3);
+            const opened = await x.bot.openShop(st.shop.npc);
+            if (!opened.success) throw new Error(`openShop: ${opened.message}`);
+            const ware = x.sdk.getState()!.shop.shopItems.find(i => BRONZE_PICKAXE.test(i.name));
+            if (!ware || ware.count <= 0) {
+                await x.bot.closeShop();
+                throw new Error('the shop has no bronze pickaxe in stock');
+            }
+            const r = await x.bot.buyFromShop(ware, 1);
+            await x.bot.closeShop();
+            if (!r.success) throw new Error(`buy a bronze pickaxe: ${r.message}`);
+            return;
+        }
     }
 }
 
@@ -175,6 +244,9 @@ async function runMethod(x: StageCtx, method: MethodId): Promise<void> {
         },
         message => {
             if (needs.sharks && message === 'out of food in the bank') x.hooks.foodOut('the bank has no sharks left');
+            // bank visits, logged once the bank has closed (between errands): pickpocket.ts and coins.ts 'banked',
+            // coins.ts 'withdrew coins' (its kebab money)
+            if (message === 'banked' || message === 'withdrew coins') x.hooks.banked();
         }
     );
     x.event('method stopped', { method, why });
@@ -210,9 +282,13 @@ export async function runRoleUntil(
     );
 }
 
-/** hp-train.ts's trainer to `to`, its events into the account's events; its 50-tick samples are the ledger's job. */
+/**
+ * hp-train.ts's trainer to `to` on the stage's site, its events into the account's events; its 50-tick samples are
+ * the ledger's job. No final bank walk: the next stage starts from the site.
+ */
 async function trainHp(x: StageCtx, to: number): Promise<void> {
-    const options = hpOptions(parseArgs([x.account, '--to', String(to)]));
+    const options = hpOptions(parseArgs([x.account, '--to', String(to), '--site', x.hp?.site ?? 'auto', '--final-bank', 'false']));
+    if (x.hp) options.claims = { table: x.hp.claims, owner: x.account };
     const sampler = new Sampler(x.sdk, () => undefined, hpTrain.name, hpTrain.items);
     sampler.start();
     const totals: Record<string, unknown> = {};
@@ -242,6 +318,23 @@ async function wield(x: StageCtx, item: RegExp): Promise<void> {
     if (!it || !op) throw new Error(`nothing matching ${item} to wield`);
     await x.sdk.sendUseItem(it.slot, op.opIndex);
     await waitUntil(x.sdk, st => st.equipment.some(e => item.test(e.name)), { maxTicks: 10 });
+}
+
+/**
+ * Walk to the bank at `at` and open it afresh, waiting for its items. A sale falls due when the method reports its
+ * bank, so the method is stopped with that bank still open or closing, and reading it then gave no items (lab, rs/732).
+ */
+export async function openBankAt(x: Pick<StageCtx, 'sdk' | 'bot' | 'signal' | 'event'>, at: { x: number; z: number }): Promise<ReturnType<BotSDK['getBankItems']>> {
+    await walk(x, at, 3);
+    if (x.sdk.getState()?.bank?.isOpen) {
+        await x.bot.closeBank();
+        await waitUntil(x.sdk, s => !s.bank?.isOpen, { maxTicks: 5 });
+    }
+    const opened = await x.bot.openBank();
+    if (!opened.success) throw new Error(`openBank: ${opened.message}`);
+    // an empty bank never fills: it costs the wait's 5 ticks
+    await waitUntil(x.sdk, s => s.bank?.isOpen === true && s.bank.items.length > 0, { maxTicks: 5 });
+    return x.sdk.getBankItems();
 }
 
 /** Back west through the toll gate (10 coins): the thieving stage can end among the Al-Kharid warriors. */
