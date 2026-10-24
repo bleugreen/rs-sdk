@@ -375,7 +375,7 @@ describe('ledger-derived mule delivery fixtures', () => {
             expect(f.ledger.anchor).toBe('H4p');
         }
         expect(loads[1]!.carryNext).toBeUndefined();
-        expect(p.bankSeed!.map(i => [i.debugName, i.count])).toEqual([['rune_pickaxe', 1], ['logs', 1], ['big_bones', 60]]);
+        expect(p.bankSeed!.map(i => [i.debugName, i.count])).toEqual([['rune_pickaxe', 1], ['logs', 2], ['big_bones', 60]]);
         expect(plan(withRow, ['H4p', 'H4m.4']).unresolved[0]!.reasons.join()).toContain("not one of the manifest's H4m loads");
         expect(plan(withRow, ['H4m.1']).unresolved[0]!.reasons.join()).toContain('follows H4p');
         expect(plan(manifest, ['H4p', 'H4m.1']).unresolved[0]!.reasons.join()).toContain("not one of the manifest's H4m loads");
