@@ -185,12 +185,21 @@ describe('every wait keeps asking the page: an out page is relogged, never waite
     test("attempt 3's 01:38:24Z sequence: the page reconnects and ticks, run.ts adopts it, a logout lands 1 tick later: relogged in page within the one recovery, on one budget entry", async () => {
         const budget = new RelogBudget(dir());
         let adoptedAt = -1;
+        let logoutQueued = false;
         const w = world({
             page: true,
             advanced: n => n >= 1,
             backAt: Infinity, // logged out, the session never comes back by itself
-            onAdopt: () => (adoptedAt = w.ticks()),
-            onTick: n => adoptedAt >= 0 && n === adoptedAt + 1 && w.setPage(false),
+            onAdopt: () => {
+                adoptedAt = w.ticks();
+                logoutQueued = true;
+            },
+            // The queued logout lands on the first tick after the adopt.
+            onTick: () => {
+                if (!logoutQueued) return;
+                logoutQueued = false;
+                w.setPage(false);
+            },
         });
         const r = await recoverDrop(budget, w.deps, 'no tick for 40 ticks (gateway outage)', AT);
         expect(r.outcome).toBe('relogged');
@@ -207,34 +216,40 @@ describe('every wait keeps asking the page: an out page is relogged, never waite
 
     test('an adopt that keeps falling out is bounded: MAX_FALLS relogs, then the recover throws', async () => {
         const budget = new RelogBudget(dir());
-        // The page is in game under the lock every time and falls out the tick after each adopt.
-        let adoptedAt = -1;
+        // A flapping page: back in game at the read under the lock after each fall, out again the tick after each adopt.
+        let falling = false;
+        let backUnderLock = false;
         const w = world({
             page: true,
             advanced: n => n >= 1,
             backAt: Infinity,
-            onAdopt: () => {
-                adoptedAt = w.ticks();
-                w.setPage(true);
+            onAdopt: () => (falling = true),
+            onTick: () => {
+                if (!falling) return;
+                falling = false;
+                w.setPage(false);
             },
-            onTick: n => adoptedAt >= 0 && n === adoptedAt + 1 && w.setPage(false),
         });
-        const login = w.deps.login;
         w.deps.login = async () => {
-            throw new Error(`login must not be reached: ${await login()}`);
+            throw new Error('login must not be reached: the page is back in game under the lock');
+        };
+        const pause = w.deps.pauseWatchdog;
+        w.deps.pauseWatchdog = () => {
+            pause();
+            if (w.calls.length > 1) backUnderLock = true;
         };
         const pageInGame = w.deps.pageInGame;
-        let underLock = 0;
+        let adoptsUnderLock = 0;
         w.deps.pageInGame = async () => {
-            // The read under the lock (after a fall) finds the page back in game: adopted again.
-            if (named(w.calls).at(-1) === 'pause watchdog' && w.calls.length > 1) {
-                underLock++;
+            if (backUnderLock) {
+                backUnderLock = false;
+                adoptsUnderLock++;
                 w.setPage(true);
             }
             return pageInGame();
         };
         await expect(recoverDrop(budget, w.deps, 'x', AT)).rejects.toThrow(`fell out of the world ${MAX_FALLS + 1} times`);
-        expect(underLock).toBeGreaterThan(0);
+        expect(adoptsUnderLock).toBe(MAX_FALLS);
         // Every adopt after the first reused the first one's entry.
         expect(budget.used()).toEqual({ planned: 0, unplanned: 1 });
         expect(budget.holder()).toBeNull();
