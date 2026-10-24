@@ -696,6 +696,50 @@ async function main(argv: string[]): Promise<number> {
                 return 3;
             }
         }
+        const agentPort = Number(process.env.AGENT_PORT ?? 8300);
+        const server = env.SERVER || `localhost:${process.env.WEB_PORT ?? '9300'}`;
+        if (needCarriers) {
+            // Banks seeded, each staged on its first row (readyFor: mule.ts's muleCanReady), before SCORED logs in.
+            try {
+                const r = await launchCarriers({ root: ROOT, base: carrierSetup!.base, config: carrierSetup!.config, roles: carrierRoles, muleDir: muleCueDir(cfg), serve: env.BOT_USERNAME, deliveryRun, agentPort, log: l => console.log(`[dress] carriers: ${l}`) }, l => (carrierLauncher = l));
+                console.log(`[dress] carriers ready on their first rows after ${r.secs} s (launcher files in ${carrierSetup!.base})`);
+            } catch (e) {
+                console.error(`[dress] REFUSED: the carriers: ${message(e)}`);
+                return 3;
+            }
+        }
+        if (needS21) {
+            // Logged out awaiting {S21, altar}: runecraft.ts's pre-login opens it and waits for every giver.
+            try {
+                const r = await launchS21Givers({ root: ROOT, givers: s21Givers, cueDir: cfg.cueDir, server, agentPort }, l => (s21Launcher = l));
+                console.log(`[dress] S21 givers awaiting their cue after ${r.secs} s (launcher files in ${r.base})`);
+            } catch (e) {
+                console.error(`[dress] REFUSED: S21's givers: ${message(e)}`);
+                return 3;
+            }
+        }
+        if (needCourier) {
+            try {
+                const r = await launchCourier({ root: ROOT, account: courier!, cueDir: cfg.cueDir, server, agentPort }, l => (courierLauncher = l));
+                console.log(`[dress] S18 courier ${courier} awaiting its cue after ${r.secs} s (launcher files in ${r.base})`);
+            } catch (e) {
+                console.error(`[dress] REFUSED: S18's courier: ${message(e)}`);
+                return 3;
+            }
+        }
+        if (needH12o) {
+            try {
+                const r = await launchH12o({ root: ROOT, h12o: cfg.h12o!, serve: env.BOT_USERNAME, cueDir: cfg.cueDir, server, agentPort }, l => (h12oLauncher = l));
+                console.log(`[dress] H12o helper ${h12oName} parked on H12oM's tile, awaiting its trigger in ${cfg.h12o!.loginDir}, after ${r.secs} s (launcher files in ${r.base})`);
+            } catch (e) {
+                console.error(`[dress] REFUSED: H12o's helper: ${message(e)}`);
+                return 3;
+            }
+        }
+        const lastCarrier = needCarriers ? lab.chain.findLast(s => (s.cue?.family === 'mule' && sliceCarrierRows.includes(s.cue.step)) || (s.kind === 'handoff' && sliceCarrierRows.includes(rowOf(s)))) : undefined;
+        const lastS21 = lab.chain.findLast(s => s.id === 'S21');
+        const lastS18 = lab.chain.findLast(s => s.id === 'S18');
+        const lastS15 = lab.chain.findLast(s => s.id === 'S15');
         const anvilLast = lab.chain.findLast(s => s.id === 'S25a');
         const chain = lab.chain.map(s => {
             if (s.id === 'S04' && needRings) {
@@ -712,6 +756,10 @@ async function main(argv: string[]): Promise<number> {
             if (needBones && s === lastBones) return hooked(s, { done: () => void stopBones() });
             if (s === anvilLast && needAnvil) return hooked(s, { done: () => void stopAnvil() });
             if (s.id === 'H23' && needHolder) return hooked(s, { done: () => void stopHolder() });
+            if (s === lastCarrier) return hooked(s, { done: () => void stopCarrierFleet() });
+            if (s === lastS21 && needS21) return hooked(s, { done: () => void stopS21() });
+            if (s === lastS18 && needCourier) return hooked(s, { done: () => void stopS18() });
+            if (s === lastS15 && needH12o) return hooked(s, { done: () => void stopAtoll() });
             if (s.id === 'S25c' && needWine) {
                 return hooked(s, {
                     start: ctx => {
@@ -752,7 +800,7 @@ async function main(argv: string[]): Promise<number> {
             console.error(`[dress] REFUSED: auto-retaliate still on ${RETALIATE_OFF_TICKS} ticks after login (autoRetaliateEnabled ${s.sdk.getState()?.autoRetaliateEnabled})`);
             return 3;
         }
-        log.append(annotation(log, s.name, 'gate', '(gate) dress rehearsal', { meta: { until: a.until ?? null, from: a.from ?? null, standIns: lab.standIns, staffed: lab.staffed, stubRows: lab.stubRows, cueServed: lab.cueServed, ringGivers: ringNames, altarGivers: altarNames, droppers: needDroppers ? droppers : [], boneGivers: needBones ? boneGivers : [], host: process.env.HOSTNAME ?? null } }));
+        log.append(annotation(log, s.name, 'gate', '(gate) dress rehearsal', { meta: { until: a.until ?? null, from: a.from ?? null, standIns: lab.standIns, staffed: lab.staffed, stubRows: lab.stubRows, cueServed: lab.cueServed, ringGivers: ringNames, altarGivers: altarNames, droppers: needDroppers ? droppers : [], boneGivers: needBones ? boneGivers : [], carriers: needCarriers ? carrierEntries.map(e => ({ account: e.account, role: carrierRoles[e.account], rows: e.options.packages.map(p => p.scope!.step) })) : [], deliveryRun: needCarriers ? deliveryRun : null, s21Givers: needS21 ? s21Givers : [], courier: needCourier ? courier : null, h12o: needH12o ? h12oName : null, host: process.env.HOSTNAME ?? null } }));
         chunkEnd = watchChunkEnd(s, lab.chain, log);
         const ran = await runChainOnSession(s, { log, chain, reservation: new ReservationWatch(reservationPath(a['host-reservation']), { label: 'dress' }), cues: keeper, wholeRun: a.until === undefined, label: 'dress', tabMemory: { chunk: `${a.from ?? 'start'}..${a.until ?? 'end'}`, ...(secureBrowser?.chrome.browser.process()?.pid ? { chromePid: secureBrowser.chrome.browser.process()!.pid! } : {}) }, ...(from !== undefined ? { from } : {}) }).catch(e => {
             // A signal: SCORED is out; the helpers, Chrome and the proxy stop below, then the exit.
@@ -781,6 +829,10 @@ async function main(argv: string[]): Promise<number> {
         await stopBones();
         await stopAnvil();
         await stopHolder();
+        await stopCarrierFleet();
+        await stopS21();
+        await stopS18();
+        await stopAtoll();
         } finally {
             if (secureBrowser) await secureBrowser.close();
             else if (session) await closeSession(session);
