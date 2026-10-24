@@ -14,14 +14,17 @@
 // Where a census sits. A `(census)` row is the pack just before the chain step `before`, whose
 // ledger row is `id` (runner/chain.ts censused). Its walk point is the held set after the ledger row
 // before it, as slot-ledger.ts walks it:
-// - a step's FIRST census (a boundary row): before the step's ledger row; or, when hand-off rows just
-//   before it are traded inside the step (runner/chain.ts INTERNAL, or PLACEMENT `as`: H1 at S01, H3
-//   in S04, H4.x in S07, H21a in S25a), before the first of them, unless the lab supplied that row by
-//   staff commands (the gate row's `staffed`), which happens before the step's census;
+// - a step's rows are its span: its own row, its sub-rows (`S06 entry`, `S07 last load`, `S25d bank`)
+//   and the hand-off rows its module trades inside it (runner/chain.ts INTERNAL, or PLACEMENT `as`:
+//   H1 at S01, H3 in S04, H4.x in S07, H21a in S25a), the contiguous run of them around the row;
+//   a hand-off the lab supplied by staff commands (the gate row's `staffed`) is not in the span, since
+//   the supply comes before the step's census;
+// - a step's FIRST census (a boundary row): before its span;
 // - a split leg's part a: before the leg's row; part b: after the hand-offs PLACEMENT puts inside
 //   that leg (H9 in T11-12, H11r in T14-15);
-// - every later census of the same step, and a census whose id is no ledger row (a cue stop, T07a,
-//   L24a, H4m.k, H12o's login, a -fallback row): a MID-STEP row of the current row.
+// - a census of the step before it again (a retry, a resume into it), every later census inside the
+//   span, and a census whose id is no ledger row (a cue stop, T07a, L24a, H4m.k, H12o's login, a
+//   -fallback row): a MID-STEP row of the current span.
 // So a step's exit census is the next row's boundary census, before the following leg spends its
 // teleport runes (rs/158's rule F).
 //
@@ -145,8 +148,8 @@ export interface Placed {
     census: Census;
     /** The walk point: the held set after ledger row at - 1 (before row `at`). */
     at: number;
-    /** The ledger row the census belongs to: a mid-step row compares against this row's start, `in` and end. */
-    row: number;
+    /** The ledger rows the census's step spans, first and last: a mid-step row compares against their start, `in`s and ends. */
+    span: readonly [number, number];
     phase: Phase;
 }
 
@@ -177,26 +180,31 @@ export function place(census: readonly Census[], rows: readonly LedgerRow[], o: 
     const placedInLeg = o.placedInLeg ?? chainPlacedInLeg;
     const staffed = o.staffed ?? new Set<string>();
     const index = new Map(rows.map((r, i) => [r.row, i]));
+    // A row inside step `id`'s span: a sub-row of it, or a hand-off its module trades (not staff-supplied).
+    const ofStep = (r: string, id: string) => r.startsWith(`${id} `) || (/^H/.test(r) && tradedIn(r) === id && !staffed.has(r));
+    const spanOf = (i: number, id: string): [number, number] => {
+        let a = i;
+        let b = i;
+        while (a > 0 && ofStep(rows[a - 1]!.row, id)) a--;
+        while (b < rows.length - 1 && ofStep(rows[b + 1]!.row, id)) b++;
+        return [a, b];
+    };
     const placed: Placed[] = [];
     const unplaced: Census[] = [];
     let prev: Placed | null = null;
     for (const c of census) {
         if (prev && prev.census.log !== c.log) prev = null;
-        // The same step censused again (a re-run, a resume into it): the same point.
+        // The step censused again (a retry, a resume into it): it has started once, so mid-step.
         if (prev && prev.census.before === c.before) {
-            placed.push({ ...prev, census: c });
+            placed.push({ ...prev, census: c, at: prev.span[0], phase: 'mid' });
             continue;
         }
         let p: Omit<Placed, 'census'> | null = null;
         const i = index.get(c.id);
         const split = SPLIT_LEG.exec(c.id);
         if (i !== undefined) {
-            if (prev && prev.row === i) p = { at: i, row: i, phase: 'mid' };
-            else {
-                let s = i;
-                while (s > 0 && /^H/.test(rows[s - 1]!.row) && tradedIn(rows[s - 1]!.row) === c.id && !staffed.has(rows[s - 1]!.row)) s--;
-                p = { at: s, row: i, phase: 'boundary' };
-            }
+            const span = spanOf(i, c.id);
+            p = prev && prev.span[0] === span[0] ? { at: span[0], span, phase: 'mid' } : { at: span[0], span, phase: 'boundary' };
         } else if (split && index.has(split[1]!)) {
             const leg = index.get(split[1]!)!;
             let s = leg;
@@ -204,8 +212,8 @@ export function place(census: readonly Census[], rows: readonly LedgerRow[], o: 
                 s = leg + 1;
                 while (s < rows.length && placedInLeg(rows[s]!.row) === split[1]) s++;
             }
-            p = { at: s, row: s === leg ? leg : s - 1, phase: 'boundary' };
-        } else if (prev) p = { at: prev.row, row: prev.row, phase: 'mid' };
+            p = { at: s, span: [leg, Math.max(leg, s - 1)], phase: 'boundary' };
+        } else if (prev) p = { at: prev.span[0], span: prev.span, phase: 'mid' };
         if (!p) {
             unplaced.push(c);
             continue;
@@ -282,11 +290,15 @@ const asHeld = (row: LedgerRow): Held[] => row.in.map(e => ({ name: e.name, ...(
 
 /** One census row against the walk. */
 export function compareRow(p: Placed, rows: readonly LedgerRow[], entries: readonly LedgerEntry[], o: CompareOptions = {}): RowResult {
-    const before = p.at > 0 ? entries[p.at - 1]!.stacks : EMPTY;
     const mid = p.phase === 'mid';
-    const inv = mid ? [...before.inv, ...asHeld(rows[p.row]!), ...entries[p.row]!.stacks.inv] : [...before.inv];
-    const worn = mid ? [...before.worn, ...entries[p.row]!.stacks.worn] : [...before.worn];
-    const rowId = rows[p.row]!.row;
+    const start = mid ? p.span[0] : p.at;
+    const before = start > 0 ? entries[start - 1]!.stacks : EMPTY;
+    // The held sets compared: the point's; mid-step, also every `in` of the span and the held set after each of its rows.
+    const sources: { inv: readonly Held[]; worn: readonly Held[] }[] = [before];
+    if (mid) for (let r = p.span[0]; r <= p.span[1]; r++) sources.push({ inv: asHeld(rows[r]!), worn: [] }, entries[r]!.stacks);
+    const inv = sources.flatMap((s, k) => s.inv.map(h => ({ h, k })));
+    const worn = sources.flatMap((s, k) => s.worn.map(h => ({ h, k })));
+    const spanRows = rows.slice(p.span[0], p.span[1] + 1).map(r => r.row);
     const index = new Map(rows.map((r, i) => [r.row, i]));
 
     interface Group { names: Set<string>; where: 'pack' | 'worn'; live: number; inv: number[]; worn: number[] }
@@ -294,8 +306,8 @@ export function compareRow(p: Placed, rows: readonly LedgerRow[], entries: reado
     const usedInv = new Set<number>();
     const usedWorn = new Set<number>();
     const add = (item: { name: string; id?: number }, count: number, where: 'pack' | 'worn') => {
-        const mi = inv.flatMap((h, i) => (matchesHeld(h, item) ? [i] : []));
-        const mw = worn.flatMap((h, i) => (matchesHeld(h, item) ? [i] : []));
+        const mi = inv.flatMap((x, i) => (matchesHeld(x.h, item) ? [i] : []));
+        const mw = worn.flatMap((x, i) => (matchesHeld(x.h, item) ? [i] : []));
         mi.forEach(i => usedInv.add(i));
         mw.forEach(i => usedWorn.add(i));
         const key = `${where}|${mi.length ? `inv:${mi}` : mw.length ? `worn:${mw}` : `none:${baseName(item.name)}`}`;
@@ -308,7 +320,13 @@ export function compareRow(p: Placed, rows: readonly LedgerRow[], entries: reado
     for (const w of p.census.worn) add({ name: w }, 1, 'worn');
 
     const findings: Finding[] = [];
-    const sum = (list: readonly Held[], at: number[]) => (at.some(i => list[i]!.count === null) ? null : at.reduce((a, i) => a + list[i]!.count!, 0));
+    // What the walk holds of the matched stacks: summed within one held set, the most of any set mid-step.
+    const sum = (list: readonly { h: Held; k: number }[], at: number[]): number | null => {
+        if (at.some(i => list[i]!.h.count === null)) return null;
+        const per = new Map<number, number>();
+        for (const i of at) per.set(list[i]!.k, (per.get(list[i]!.k) ?? 0) + list[i]!.h.count!);
+        return Math.max(0, ...per.values());
+    };
     for (const g of groups.values()) {
         const item = [...g.names].join(' / ');
         const name = [...g.names][0]!;
@@ -316,13 +334,14 @@ export function compareRow(p: Placed, rows: readonly LedgerRow[], entries: reado
         if (g.where === 'pack') {
             if (g.inv.length) {
                 const w = sum(inv, g.inv);
-                const unstackable = g.inv.every(i => inv[i]!.kind === 'u');
+                const unstackable = g.inv.every(i => inv[i]!.h.kind === 'u');
                 if (!loose(name) && unstackable && w !== null && g.live > w) f = { walk: w, kind: 'surplus' };
             } else if (g.worn.length) {
-                const ok = (o.wornInPack ?? WORN_IN_PACK_ALLOWED).find(a => baseName(a.item) === baseName(name) && index.has(a.from) && index.has(a.to) && p.row >= index.get(a.from)! && p.row <= index.get(a.to)!);
+                const ok = (o.wornInPack ?? WORN_IN_PACK_ALLOWED).find(a => baseName(a.item) === baseName(name) && index.has(a.from) && index.has(a.to) && p.span[1] >= index.get(a.from)! && p.span[1] <= index.get(a.to)!);
                 f = { walk: sum(worn, g.worn), kind: 'worn in walk', ...(ok ? { rule: 'D' as const, note: ok.cite } : {}) };
             } else {
-                f = { walk: 0, kind: 'not in walk', ...(/bones$/i.test(name) && BONES_INSIDE.includes(rowId) ? { rule: 'A' as const, note: `bones inside ${rowId}` } : {}) };
+                const inside = spanRows.find(r => BONES_INSIDE.includes(r));
+                f = { walk: 0, kind: 'not in walk', ...(/bones$/i.test(name) && inside ? { rule: 'A' as const, note: `bones inside ${inside}` } : {}) };
             }
         } else if (!g.worn.length && !g.inv.length) f = { walk: 0, kind: 'not in walk' };
         if (!f) continue;
@@ -332,8 +351,8 @@ export function compareRow(p: Placed, rows: readonly LedgerRow[], entries: reado
 
     const missing: Missing[] = [];
     if (!mid) {
-        inv.forEach((h, i) => usedInv.has(i) || missing.push({ placed: p, item: itemLabel(h), where: 'pack', walk: h.count }));
-        worn.forEach((h, i) => usedWorn.has(i) || missing.push({ placed: p, item: itemLabel(h), where: 'worn', walk: h.count }));
+        inv.forEach((x, i) => usedInv.has(i) || missing.push({ placed: p, item: itemLabel(x.h), where: 'pack', walk: x.h.count }));
+        worn.forEach((x, i) => usedWorn.has(i) || missing.push({ placed: p, item: itemLabel(x.h), where: 'worn', walk: x.h.count }));
     }
     return { placed: p, findings, missing, liveUsed: p.census.inventory.length, walkUsed: mid ? null : p.at > 0 ? entries[p.at - 1]!.used : 0 };
 }
@@ -417,7 +436,7 @@ export function renderRows(results: readonly RowResult[], rows: readonly LedgerR
         String(r.placed.census.tick),
         rowLabel(r.placed.census),
         r.placed.phase,
-        r.placed.phase === 'mid' ? `in ${rows[r.placed.row]!.row}` : `before ${rows[r.placed.at]?.row ?? '(the end)'}`,
+        r.placed.phase === 'mid' ? `in ${rows[r.placed.span[0]]!.row}${r.placed.span[1] > r.placed.span[0] ? ` .. ${rows[r.placed.span[1]]!.row}` : ''}` : `before ${rows[r.placed.at]?.row ?? '(the end)'}`,
         `${r.liveUsed}/${r.walkUsed ?? '-'}`,
         r.findings.map(f => `${f.verdict === 'FAIL' ? 'FAIL ' : ''}${f.item} x${f.live}${f.kind !== 'not in walk' ? ` (${f.kind}, walk ${f.walk ?? '?'})` : ''}${f.rule ? ` [${f.rule}]` : ''}`).join('; ') || '-',
         r.missing.map(m => `${m.item} x${m.walk ?? '?'}`).join('; ') || '-',
