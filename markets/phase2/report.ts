@@ -173,6 +173,7 @@ if (import.meta.main) {
     for (const l of d.lines) {
         const at = l.at as { x: number; z: number } | undefined;
         console.log(`REPORT death ${l.t} ${l.account} ${l.stage}${l.target ? `/${l.target}` : ''} cause=${l.cause} damage=${JSON.stringify(l.damage)} thieving=${l.thieving} maxHp=${l.maxHp} at=${at ? `${at.x},${at.z}` : '?'} coins=${l.carriedCoins} food=${l.food}${l.missed ? ' (seen from the respawn)' : ''}`);
+    }
     if (r.hp) {
         console.log(`REPORT hp ${JSON.stringify(r.hp)}`);
         for (const l of lines.filter(x => x.kind === 'hp').sort((p, q) => Number(p.minutesFromLogin) - Number(q.minutesFromLogin)))
