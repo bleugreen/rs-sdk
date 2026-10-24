@@ -29,7 +29,8 @@
 // line's "re-entering the interrupted step", priced at the step's expected), averaged. With no failure
 // it is exactly the median over passing runs; a faster but flaky change loses.
 //
-// Output: one line per run, the summary beside RUN-ORDER's expected and best cells, `SCORE <n>`, a
+// Output: one line per run, the summary beside RUN-ORDER's expected and best cells, each counted
+// segment's median and range over the passing runs, `SCORE <n>`, a
 // RESULT json line, and one row per run appended to results.tsv (untracked). Exit 0 the bench ran
 // (the pass rate is in the summary), 2 usage, 3 refused (off a lab, a tick mismatch, a giver gap, or
 // no run reached the step).
@@ -177,6 +178,8 @@ export function resolveTarget(chain: readonly PlanStep[], spec: string): Target 
 export interface RunMetrics {
     /** The counted rows' ticks: the step to its postcondition, or to where it failed. */
     ticks: number;
+    /** The same ticks by counted chain step (a quest's segments, a skill's bands), in chain order. */
+    bySegment: Record<string, number>;
     /** The counted rows logged (0: the run never reached the step). */
     rows: number;
     pass: boolean;
@@ -247,8 +250,14 @@ export function runMetrics(rows: readonly TickRow[], vitals: readonly VitalsLine
         } else if (r.step.startsWith(STAFF_SUPPLY_STEP)) cheats.add(r.step);
         else if (r.step.startsWith(STAND_IN_STEP)) cheats.add(r.step);
     }
+    const bySegment: Record<string, number> = {};
+    for (const name of t.names) {
+        const own = counted.filter(r => stepOf(r.step, t.names) === name);
+        if (own.length) bySegment[name] = own.reduce((x, r) => x + r.ticks, 0);
+    }
     return {
         ticks,
+        bySegment,
         rows: counted.length,
         pass,
         refusal,
@@ -262,6 +271,32 @@ export function runMetrics(rows: readonly TickRow[], vitals: readonly VitalsLine
         food,
         cheats: [...cheats],
     };
+}
+
+export interface SegmentLine {
+    name: string;
+    /** Passing runs that logged the segment. */
+    n: number;
+    median: number;
+    min: number;
+    max: number;
+}
+
+/**
+ * Each counted segment across the passing runs: median and range. A loop judges a segment by its
+ * own spread (a walk or dialogue segment repeats within a few ticks; a fight's rolls spread tens),
+ * which a whole-step median at small K hides.
+ */
+export function segmentTable(names: Iterable<string>, passing: readonly Record<string, number>[]): SegmentLine[] {
+    return [...names].flatMap(name => {
+        const xs = passing.map(p => p[name]).filter((x): x is number => x !== undefined);
+        return xs.length ? [{ name, n: xs.length, median: median(xs), min: Math.min(...xs), max: Math.max(...xs) }] : [];
+    });
+}
+
+export function formatSegments(table: readonly SegmentLine[]): string[] {
+    const w = Math.max(7, ...table.map(s => s.name.length));
+    return [`  ${'segment'.padEnd(w)}  median  min-max  (range)`, ...table.map(s => `  ${s.name.padEnd(w)}  ${String(s.median).padStart(6)}  ${`${s.min}-${s.max}`.padStart(7)}  (${s.max - s.min})${s.n < table[0]!.n ? ` n=${s.n}` : ''}`)];
 }
 
 // ------------------------------------------------------------------ the score
@@ -556,8 +591,10 @@ async function main(argv: string[]): Promise<number> {
     const spread = ticks.length ? `median ${median(ticks)} (min ${Math.min(...ticks)}, max ${Math.max(...ticks)})` : 'no pass';
     const sum = (k: 'late' | 'glued' | 'gaps') => ran.reduce((x, r) => x + r[k], 0);
     console.log(`\nBENCH ${a.target} @${labTick}ms K=${a.k}: ${spread}, pass ${passed.length}/${a.k}${ran.length < a.k ? ` (${a.k - ran.length} never reached the step)` : ''}; score ${score ?? '-'} | ${cells.text}${a.expected ? `; scored against --expected ${a.expected}` : ''} | TICKMON late ${sum('late')} glued ${sum('glued')} gaps ${sum('gaps')} | commit ${commit}`);
+    const segments = segmentTable(target.names, passed.map(r => r.bySegment));
+    if (segments.length) console.log(formatSegments(segments).join('\n'));
     console.log(`SCORE ${score ?? 'none'}`);
-    console.log(`RESULT bench-step ${JSON.stringify({ target: a.target, tickMs: labTick, k: a.k, commit, score, expected, best: cells.best, restart: restart.ticks, runs: results.map(({ run, account, pass, refused, ticks, score, secs, late, glued, gaps, minutes, hpMin, food, cheats, notes, log }) => ({ run, account, pass, refused, ticks, score, secs, late, glued, gaps, minutes, hpMin, food, cheats, notes, log })) })}`);
+    console.log(`RESULT bench-step ${JSON.stringify({ target: a.target, tickMs: labTick, k: a.k, commit, score, expected, best: cells.best, restart: restart.ticks, segments, runs: results.map(({ run, account, pass, refused, ticks, bySegment, score, secs, late, glued, gaps, minutes, hpMin, food, cheats, notes, log }) => ({ run, account, pass, refused, ticks, bySegment, score, secs, late, glued, gaps, minutes, hpMin, food, cheats, notes, log })) })}`);
     console.log(`[bench] results appended to ${a.out}`);
     return ran.length ? 0 : 3;
 }

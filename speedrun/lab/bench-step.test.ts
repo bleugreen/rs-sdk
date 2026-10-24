@@ -5,7 +5,7 @@ import { ROOT } from '../lib/session';
 import type { TickRow } from '../lib/ticks';
 import { buildChain, KIT_PARTNER_ROWS, PLACEMENT } from '../runner/chain';
 import { MANIFEST } from '../tools/slot-ledger';
-import { benchArgs, benchNames, benchScore, failurePrice, helperFlags, labRunConfig, median, resolveTarget, restartTicks, runMetrics, runOrderCells, tsvRow, TSV_COLUMNS, unservedLiteFamilies, type PlanStep } from './bench-step';
+import { benchArgs, benchNames, benchScore, failurePrice, formatSegments, helperFlags, segmentTable, labRunConfig, median, resolveTarget, restartTicks, runMetrics, runOrderCells, tsvRow, TSV_COLUMNS, unservedLiteFamilies, type PlanStep } from './bench-step';
 import { familyNeeds, labChain, rehearsalPlan, STAFF, type FamilyNeeds } from './dress-rehearsal';
 import type { LabWorld } from './stand-ins';
 
@@ -114,6 +114,7 @@ describe('runMetrics', () => {
         const m = runMetrics(rows, vitals, t, 0);
         expect(m).toMatchObject({ ticks: 600, rows: 1, pass: true, refusal: null, late: 1, glued: 3, gaps: 1, minutes: 2, periodMs: 150.5, hpMin: 30, food: 1 });
         expect(m.cheats).toEqual(['stage S07 (1 unstaged)', 'supply: staff H4k']);
+        expect(m.bySegment).toEqual({ 'woodcutting:oak-15-73': 600 });
     });
 
     test("a failed phase is the step's (step.ts failRow `<name>:<phase>`): its ticks count and its error is the refusal", () => {
@@ -164,6 +165,20 @@ describe('the score', () => {
         const oak = runOrderCells(runOrder, resolveTarget(chain, 'woodcutting:oak-15-73'));
         expect(oak.expected).toBeNull();
         expect(oak.text).toContain('prices S07 whole');
+    });
+});
+
+describe('segments', () => {
+    test("each segment's median and range over the passing runs, in chain order; a failed phase row counts toward its step's segment", () => {
+        const t = resolveTarget(chain, 'S07');
+        const m = runMetrics([row('woodcutting:normal-1-15', { ticks: 22 }), row('woodcutting:oak-15-73', { ticks: 600 }), row('woodcutting:willow-73-99:precondition', { ok: false, error: 'x' }), row('woodcutting:willow-73-99', { ticks: 2400 })], [], t, 0);
+        expect(m.bySegment).toEqual({ 'woodcutting:normal-1-15': 22, 'woodcutting:oak-15-73': 600, 'woodcutting:willow-73-99': 2400 });
+        const table = segmentTable(t.names, [{ G: 94, A: 8 }, { G: 134, A: 9 }, { G: 104, A: 8 }].map(x => ({ 'woodcutting:walk-oaks': x.A, 'woodcutting:oak-15-73': x.G })));
+        expect(table).toEqual([
+            { name: 'woodcutting:walk-oaks', n: 3, median: 8, min: 8, max: 9 },
+            { name: 'woodcutting:oak-15-73', n: 3, median: 104, min: 94, max: 134 },
+        ]);
+        expect(formatSegments(table)[2]).toContain('94-134  (40)');
     });
 });
 

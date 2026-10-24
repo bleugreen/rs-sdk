@@ -1326,9 +1326,13 @@ LOCAL_STAFF_LEVEL=4 NODE_TICKRATE=150 LAB_RUNNERS=0 speedrun/lab/lab.sh benchlab
   checkout's commit, ticks, score, wall seconds, TICKMON, HP, food, the cheats used.
 - A build slot's webclient bundle can predate the session's launch echo, and then every
   login refuses (`in-game states with no launch id`): `cd server/webclient && bun run build`.
-- Noise at 150 ms (fedora, 2026-10-24): S12 537 / 606 / 554 (rs/764's chain run 533), the
-  spread all in the three fights' rolls; the S07 oak band 726 / 806 (rs/764: 726), the
-  spread in tree depletion on a near-empty world. Both 0 late, 0 glued, 0 gaps.
+- The summary prints each counted segment's median and range over the passing runs (and
+  `segments` in the RESULT json): a loop judges a segment against its own spread.
+- Noise at 150 ms (2026-10-24): S12 537 / 606 / 554 on fedora and 572 / 525 / 548 / 584 / 539
+  on bbs (rs/764's chain run 533), the walk and dialogue segments within 1-3 ticks and all
+  the spread in the three fights' rolls; the S07 oak band 726 / 806 (rs/764: 726), the spread
+  in tree depletion on a near-empty world. TICKMON 0 glued and 0 gaps throughout, late 0
+  on fedora and 2 over bbs's K=5.
 
 `LOCAL_STAFF_LEVEL` (engine, `Environment.ts`) grants that staff level to
 every login on a world without a login server. Non-production worlds,

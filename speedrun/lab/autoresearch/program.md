@@ -13,12 +13,18 @@ the step module.
 2. Read for context: `docs/speedrun/RUN-ORDER.md` (the step's row: its expected, best
    and risks), the step module you will edit and its tests, `speedrun/README.md`'s
    "The step benchmark", and `speedrun/lab/bench-step.ts`'s header.
-3. Get a lab: `speedrun/lab/lab.sh` with `NODE_TICKRATE=150` on a block nobody else
-   holds, or a standing lab engine the human names (`LAB_EXTERNAL=1` and its ports).
-   Never the demo, never a fleet or scored account: the bench refuses both, and you
-   must not work around it.
-4. Run the baseline: the bench, unchanged code, at the agreed K. That row is the score
-   to beat. `results.tsv` starts with its header row.
+3. Build the bot bundle in the checkout the bench runs from:
+   `cd server/webclient && bun install && bun run build`. The lab's page proxy serves
+   `server/webclient/out/bot/client.js` from that checkout; without it every run refuses
+   within a second (`lab token proxy exited 2`, `no bundle at .../out/bot/client.js`), and a
+   stale bundle refuses at login (`in-game states with no launch id`).
+4. Get a lab: `speedrun/lab/lab.sh` with `NODE_TICKRATE=150` on a block nobody else
+   holds, or a standing lab engine the human names (`LAB_EXTERNAL=1` and its ports; its
+   gateway must sit inside the lab block 8300-8399, which the bench checks). Never the
+   demo, never a fleet or scored account: the bench refuses both, and you must not work
+   around it.
+5. Run the baseline: the bench, unchanged code, at the agreed K. Its score and its
+   segment table are what you beat. `results.tsv` starts with its header row.
 
 ## What you may edit
 
@@ -46,10 +52,18 @@ LOCAL_STAFF_LEVEL=4 NODE_TICKRATE=150 LAB_RUNNERS=0 speedrun/lab/lab.sh benchlab
 - The metric is the `SCORE` line, lower is better. With every run passing it is the
   median ticks; a failed run counts as its ticks + RUN-ORDER's manual restart + the
   step's expected again, so a faster change that sometimes fails loses.
-- Know the noise floor before believing a gain. At 150 ms on the lab, S12's three
-  runs spread 537 to 606 ticks, all in the fights' rolls (segments G and I); the oak
-  band spread 726 to 806, in tree depletion. A gain smaller than the spread of the
-  baseline's own runs is noise: re-run both at a larger K before keeping it.
+- Judge a change segment by segment, from the table the bench prints under `BENCH` (each
+  counted segment's median and range over the passing runs; `segments` in the RESULT
+  json). The whole-step median hides small gains: on S12 at 150 ms (eight runs, fedora
+  and bbs) the walk and dialogue segments A-F, J and K repeat within 1-3 ticks and carry
+  ~286 ticks, while the three fights (G ogre, H scorpion, I bouncer) carry ~266 in 5-tick
+  attack cycles and hold all of the step's 59-81-tick spread. So a change to a
+  non-fight segment is judged against that segment's own range (a saving larger than
+  its range across both sides' runs is real); a change to a fight is judged by its
+  median at a larger K (10 or more), or by its attack count. The oak band's spread
+  (726 to 806) is tree depletion on a near-empty world.
+- The bench's `SCORE` is still the gate: a segment gain that costs a failure, or moves
+  ticks into another segment, is not a gain.
 - The tick rate is part of the evaluation. 150 ms is a lab speed, not the demo's 400:
   a change that relies on reacting within a tick (a re-send after one tick, an in-page
   timing) must also be checked at 400 ms before it is kept, and the note says so.
@@ -68,11 +82,13 @@ Loop until the human stops you:
 3. Commit it on the branch with a one-line description of the idea.
 4. Run the evaluation. Read the `BENCH` and `SCORE` lines, and each run's refusal if any.
 5. Keep or discard:
-   - **Keep** when the score is lower than the best kept score by more than the noise
-     floor, every run passed, and no new cheat appears in the cheats column. The branch
-     advances.
-   - **Discard** otherwise (`git reset --hard HEAD~1`). A run that crashed, refused or
-     never reached the step is a discard; fix an obvious slip and retry once at most.
+   - **Keep** when every run passed, the segment the idea targets is better by more than
+     its noise (above), the score is no worse, and no new cheat appears in the cheats
+     column. The branch advances.
+   - **Discard** otherwise, by `git revert` of the experiment's commit (or a fresh branch
+     per idea): never a reset or a force-push, since the branch history is shared. A run
+     that crashed, refused or never reached the step is a discard; fix an obvious slip and
+     retry once at most.
    - A simpler module at an equal score is a keep: removing code is worth it.
 6. The bench has already appended the K rows to `results.tsv`. Add nothing to git
    from it: the file is untracked by design.
