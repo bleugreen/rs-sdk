@@ -377,13 +377,23 @@ export interface TabClose {
 /**
  * Close this bot's tabs once the account is out of the world. Call it only after a confirmed
  * logout: a closed tab is a dropped client, which the server keeps in the world. It refuses to
- * close Chrome's last window, because Chrome quits with it: stage the next window first.
+ * close Chrome's last window, because Chrome quits with it: stage the next window first, or pass
+ * `blankIfLast` to have a blank page opened first.
+ *
+ * The exception is drop-relog's close-first recovery: a page silent for its whole hold window is
+ * closed with the account still in, because its socket closing is what lets the server remove the
+ * body (the host's runs D and E: gone within ~10 s). Once the target has left the list, its page and
+ * the page's sockets are gone.
  */
-export async function closeBotTabs(cdpOrigin: string, botName: string, waitMs = 5_000): Promise<TabClose> {
+export async function closeBotTabs(cdpOrigin: string, botName: string, waitMs = 5_000, opts: { blankIfLast?: boolean } = {}): Promise<TabClose> {
     const base = cdpOrigin.replace(/\/+$/, '');
     const pages = await listPages(base);
     const mine = botTabs(pages, botName);
-    if (mine.length > 0 && mine.length === pages.length) throw new Error(`${botName}'s window is Chrome's last, and Chrome quits with its last window: stage the next one first`);
+    if (mine.length > 0 && mine.length === pages.length) {
+        if (!opts.blankIfLast) throw new Error(`${botName}'s window is Chrome's last, and Chrome quits with its last window: stage the next one first`);
+        const res = await fetch(`${base}/json/new?about:blank`, { method: 'PUT' });
+        if (!res.ok) throw new Error(`CDP /json/new: HTTP ${res.status}`);
+    }
     for (const t of mine) {
         const res = await fetch(`${base}/json/close/${t.id}`);
         if (!res.ok) throw new Error(`CDP /json/close: HTTP ${res.status}`);
