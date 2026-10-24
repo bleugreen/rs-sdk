@@ -50,7 +50,7 @@ export type Check<C> = (s: BotWorldState, c: C) => true | string;
  * times a login-armed deadline reads (skills/cooking.ts); `launchId` tells a step row spanning an
  * in-page relog (one count) from one spanning a relaunch (lib/ticks.ts tickCounter).
  */
-export type RunnerSession = Pick<Session, 'sdk' | 'bot' | 'name' | 'sessionId'> & Partial<Pick<Session, 'tickBase' | 'launchId'>>;
+export type RunnerSession = Pick<Session, 'sdk' | 'bot' | 'name' | 'sessionId'> & Partial<Pick<Session, 'tickBase' | 'launchId' | 'died'>>;
 
 /**
  * What the resume walk (runner/resume.ts) knows about the game: the published
