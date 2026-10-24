@@ -759,13 +759,13 @@ describe("H4m's loads: one fallback row, N ordered packages after H4p on its car
             return c;
         };
         const run = (c: string) => {
-            const out = join(c, 'carriers.json');
+            const out = join(mkdtempSync(join(tmpdir(), 'h4m-carriers-out-')), 'carriers.json');
             const r = Bun.spawnSync([process.execPath, join(root, 'docs/speedrun/scripts/carriers-gen.ts'), '/run/rc-cue', out], { env: { ...process.env, CHECKOUT: c, SCORED_NAME: 'lab_scored' }, stdout: 'pipe', stderr: 'pipe' });
             expect(r.stderr.toString()).toBe('');
             expect(r.exitCode).toBe(0);
             return readFileSync(out, 'utf8');
         };
-        const today = run(root.endsWith('/') ? root : root);
+        const today = run(root);
         const absent = run(checkout(live));
         const present = run(checkout(withRow()));
         expect(absent).toBe(today);
