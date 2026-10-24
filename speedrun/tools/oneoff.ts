@@ -222,12 +222,21 @@ export async function runWrapper(argv: readonly string[], io: WrapperIO, o: Wrap
     };
 
     say(io.now().toISOString());
-    if (!toolArg) {
+    let tool: string;
+    let adhoc: AdhocTool | null = null;
+    if (adhocArg !== undefined) {
+        const a = resolveAdhoc(adhocArg, runDir);
+        if (typeof a === 'string') return refuse(a);
+        adhoc = a;
+        tool = a.path;
+    } else if (!toolArg) {
         say(USAGE);
         return EXIT.usage;
+    } else {
+        const t = resolveTool(toolArg, root);
+        if (!t) return refuse(`no one-off tool ${toolArg} in speedrun/tools/oneoff/`);
+        tool = t;
     }
-    const tool = resolveTool(toolArg, root);
-    if (!tool) return refuse(`no one-off tool ${toolArg} in speedrun/tools/oneoff/`);
     let acct: string;
     try {
         acct = readScoredAccount(scoredFile);
@@ -242,6 +251,13 @@ export async function runWrapper(argv: readonly string[], io: WrapperIO, o: Wrap
     if (await io.listening(ONEOFF_PORT)) return refuse(`${ONEOFF_PORT} is taken`);
     if (existsSync(aliasDir)) return refuse(`${aliasDir} is left from an earlier one-off; check nothing uses it, then remove it`);
     if (!existsSync(runLog)) return refuse(`no run gateway log at ${runLog}, so the isolation check would have nothing to compare (--run-gateway-log=FILE)`);
+
+    if (adhoc) {
+        const v = { path: join(ADHOC_DIR, adhoc.rel), sha256: adhoc.sha256, warning: 'uncommitted tool, not on RUN_COMMIT' };
+        say(redact.apply(`ADHOC: running the uncommitted tool ${v.path} (sha256 ${adhoc.sha256.slice(0, 12)}), not on RUN_COMMIT`));
+        mkdirSync(runDir, { recursive: true });
+        appendFileSync(ledgerFile, redact.apply(JSON.stringify({ t: io.now().toISOString(), one_off: 'adhoc', k: 'ADHOC', v })) + '\n');
+    }
 
     let interrupted: NodeJS.Signals | null = null;
     let killTool: ((sig: NodeJS.Signals) => void) | null = null;
@@ -329,6 +345,7 @@ export async function runWrapper(argv: readonly string[], io: WrapperIO, o: Wrap
         k: 'wrapper',
         v: {
             tool: basename(tool),
+            adhoc: adhoc ? { path: join(ADHOC_DIR, adhoc.rel), sha256: adhoc.sha256 } : null,
             go: toolArgs.includes('--go'),
             toolExit,
             exit: code,
