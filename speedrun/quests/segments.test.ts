@@ -382,10 +382,15 @@ describe('poison: the published evidence, the shared dose record and the entry c
         const held = [potion(4, 'Antipoison(3)')];
         const fresh = (tick: number, o: Partial<BotWorldState> = {}) => baseState({ tick, inventory: held, ...o });
         /** The server's side of a drink: one dose fewer on the next state, a vial after the last. */
-        const drinks = (sdk: FakeSdk) => {
+        const sip = (name: string) => {
+            const m = /^(.*)\((\d)\)$/.exec(name);
+            return !m ? name : Number(m[2]) > 1 ? `${m[1]}(${Number(m[2]) - 1})` : 'Vial';
+        };
+        const drinks = (sdk: FakeSdk, onDrink: () => void = () => {}) => {
             sdk.onSend = (a, f) => {
                 if (a.method !== 'sendUseItem') return;
-                f.state = { ...f.state!, inventory: f.state!.inventory.map(i => (i.slot === a.args[0] ? { ...i, name: i.name.replace(/\((\d)\)$/, (_, d) => (Number(d) > 1 ? `(${Number(d) - 1})` : '')) || 'Vial' } : i)) };
+                onDrink();
+                f.state = { ...f.state!, inventory: f.state!.inventory.map(i => (i.slot === a.args[0] ? { ...i, name: sip(i.name) } : i)) };
             };
         };
 
@@ -463,8 +468,7 @@ describe('poison: the published evidence, the shared dose record and the entry c
             await drive(sdkC, c!.run(ctxOf(sdkC)), 10);
             expect(sdkC.sent).toEqual([]);
             const sdkB = new FakeSdk(fresh(4, { inventory: [potion(3, 'Superantipoison(4)')] }));
-            drinks(sdkB);
-            sdkB.onSend = ((inner) => (a, f) => { if (a.method === 'sendUseItem') order.push('drink'); inner!(a, f); })(sdkB.onSend);
+            drinks(sdkB, () => order.push('drink'));
             await drive(sdkB, b!.run(ctxOf(sdkB)), 10);
             expect(order).toEqual(['C', 'drink', 'B']);
             expect(() => entryCured('S16', ['C'], [seg('B', 'kolodion'), seg('C', 'fight')], { fresh: ['B'] })).toThrow(/fresh-session letters B are not entry-cured/);
