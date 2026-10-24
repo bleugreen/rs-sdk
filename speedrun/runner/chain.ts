@@ -104,6 +104,12 @@ export interface RunConfig {
     rings: { giver: string; loads?: magic.MagicOptions['loads'] };
     /** S07's bone giver (H4.x). */
     bones: woodcutting.BonesOptions;
+    /**
+     * S07's close target, the Prayer level its last band closes at and its early last load fires at
+     * (an integer from 1 to 99; absent: S07_PRAYER_TO). Below 99 only when a later step buries the
+     * rest: the chain's Prayer-99 check (S25b's fallback) stays where it is.
+     */
+    s07PrayerTo?: number;
     /** S18's courier (H14.x) and the food count below which it tops up. */
     courier: { giver: string; below: number };
     /** S25a's anvil helper (H21a). */
@@ -193,13 +199,24 @@ export interface ChainOptions {
 /** S07's bone cue session for an attempt. */
 export const boneSession = (attempt: string): string => `${attempt}.S07.bone`;
 
+/** S07's close target when the run config names none: Prayer 99 inside S07 (fold-in 23). */
+export const S07_PRAYER_TO = 99;
+
+/** The run config's S07 close target (`s07PrayerTo`), validated; S07_PRAYER_TO when absent. */
+export function s07PrayerTo(cfg: Pick<RunConfig, 's07PrayerTo'>): number {
+    const v = cfg.s07PrayerTo;
+    if (v === undefined) return S07_PRAYER_TO;
+    if (typeof v !== 'number' || !Number.isInteger(v) || v < 1 || v > 99) throw new Error(`run config: s07PrayerTo must be an integer from 1 to 99, got ${JSON.stringify(v)}`);
+    return v;
+}
+
 /**
  * S07's woodcutting options: burying from the oaks to 99 (so the oak and willow bands run the knife,
- * woodcutting.ts bandTechnique), Prayer 99, the axe dropped at the end, and the attempt's bone cue
- * session for a giver group.
+ * woodcutting.ts bandTechnique), Prayer to the run config's s07PrayerTo (99 unless it says), the axe
+ * dropped at the end, and the attempt's bone cue session for a giver group.
  */
-export function s07Woodcutting(cfg: Pick<RunConfig, 'bones'>, attempt?: string): woodcutting.WoodcuttingOptions {
-    return { bury: true, bones: cfg.bones, dropAxe: true, prayerTo: 99, ...(attempt && cfg.bones.group ? { boneSession: boneSession(attempt) } : {}) };
+export function s07Woodcutting(cfg: Pick<RunConfig, 'bones' | 's07PrayerTo'>, attempt?: string): woodcutting.WoodcuttingOptions {
+    return { bury: true, bones: cfg.bones, dropAxe: true, prayerTo: s07PrayerTo(cfg), ...(attempt && cfg.bones.group ? { boneSession: boneSession(attempt) } : {}) };
 }
 
 // ------------------------------------------------------------------ hand-off placement
