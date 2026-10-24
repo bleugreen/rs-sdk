@@ -262,8 +262,8 @@ S25e (STEP-MANIFEST.md entry 27) is `speedrun/skills/herblore.ts`. It runs on th
 through `speedrun/lib/item-cycle.ts` (`runItemCycle`, `planRoute`, `stockFrom`). The same
 program serves Crafting S25d (tool mode, with `keep` for the thread and `stow` on the last
 visit) and Cooking S25c's wine windows (`held`, `bank: false`, `mixed`), and will serve the
-Fletching fallback (entry 32, stack mode). Every one of those settings is opt-in, so pair mode
-runs as Herblore built it. The lab acceptance is `speedrun/lab/herblore-accept.ts`.
+Fletching fallback (entry 32, stack mode). Every one of those settings is opt-in; Herblore
+turns on `stow` alone, for its close. The lab acceptance is `speedrun/lab/herblore-accept.ts`.
 
 ### Why the cycle runs in the page
 
@@ -295,8 +295,11 @@ below reported `overBudget` 0.
 - **Refill check.** On the first tick after the close, the layout must be canonical (A in
   0..n-1, B in 14..13+n). If it isn't, that is a `drift` and the next visit is a reset; a
   second drift in a row faults rather than mixing the wrong slots.
-- **Ending.** Done at `untilLevel`; faults `out of supplies` (with the counts) when no recipe
-  is fillable short of the target, `no booth` when the booth leaves view, or on a stall.
+- **Ending.** At `untilLevel`, one more visit (the `stow`) deposits every stack held, the last
+  load's unused halves and its potions, and closes, so S25c starts at the booth with 28 free. A
+  run started past the target only stows, and with nothing held it ends at once without a
+  visit. Faults `out of supplies` (with the counts) when no recipe is fillable short of the
+  target, `no booth` when the booth leaves view, or on a stall.
 
 The H21e notes need no special case: the first visit is a reset visit, and its deposit-All of
 every stack banks the notes unnoted. SCORED needs no vials.
@@ -344,9 +347,14 @@ preconditions are reason strings, never throws:
   notes held). Otherwise it refuses with `supplies short: N base xp (they reach Herblore L;
   M mixes: ...)`. Stock banked out of sight is judged by the program's first visit instead.
 
-`done` is Herblore at the target; `inProgress` is any xp past the post-ritual 6,250 short of it,
-so after a mid-band logout the resume walk resumes the step and its first visit is a reset
-visit. `handOff` is H21e as data. The stock comes from seven helpers (rs/117's giver gathers
+`done` is Herblore at the target with none of the cycle's own items held (any recipe's inputs,
+their notes, its potions); `inProgress` is any xp past the post-ritual 6,250 short of it, or the
+target reached with those items still held. So after a mid-band logout the resume walk resumes
+the step and its first visit is a reset visit, and after a logout between the target and the
+stow it resumes into the stow alone. The postcondition names whatever the stow left held. Once
+the attempt's step record has S25e (its postconditions passed), `done` holds whatever a later step
+carries: the run drinks herb potions after S25e (H23's superantipoison(4) is obj 181, a 3-dose
+product, after one dose), and a live read alone would walk a resume back to the booth. `handOff` is H21e as data. The stock comes from seven helpers (rs/117's giver gathers
 it, rs/331 stages it), and the module assumes nothing about who gave it: it plays whatever is
 banked or held.
 

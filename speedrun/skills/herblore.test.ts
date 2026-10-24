@@ -156,28 +156,56 @@ describe('preconditions', () => {
     });
 });
 
+/** The close as rs/764's run 1 census found it (the last strength load's 4 + 4 and its 10 potions), with eye of newt and snape grass. */
+const LEFTOVERS = [item(0, 95, 4, 'Unfinished potion'), item(1, 225, 4, 'Limpwurt root'), item(2, 221, 3, 'Eye of newt'), item(3, 231, 2, 'Snape grass'), ...Array.from({ length: 10 }, (_, i) => item(4 + i, 115, 1, 'Strength potion(3)'))];
+
 describe('steps', () => {
-    test('one logout-safe step, S25e, with done and inProgress', () => {
+    test('one logout-safe step, S25e; done is the target reached AND nothing of the cycle held', () => {
         const [s, ...rest] = steps({ to: 70 });
         expect(rest).toEqual([]);
         expect(s!.name).toBe(STEP_NAME);
         expect(s!.logoutSafe).toBe(true);
-        const obs = (level: number, xp = xpForLevel(level)) => new Observation(world({ level, xp }));
+        const obs = (level: number, inventory: InventoryItem[] = [], xp = xpForLevel(level)) => new Observation(world({ level, xp, inventory }));
         expect(s!.done!(obs(70), {})).toBe(true);
         expect(s!.done!(obs(69), {})).toBe(false);
-        expect(s!.inProgress!(obs(28, POST_RITUAL_XP), {})).toBe(false);
-        expect(s!.inProgress!(obs(50), {})).toBe(true);
-        expect(s!.postconditions(world({ level: 69 }), {})).toBe('Herblore 69 < 70');
+        expect(s!.inProgress!(obs(28, H21E, POST_RITUAL_XP), {})).toBe(false);
+        expect(s!.inProgress!(obs(50, LEFTOVERS), {})).toBe(true);
+        expect(s!.inProgress!(obs(70), {})).toBe(false);
+        // the target reached before the stow (a logout between them): not done, in progress
+        expect(s!.done!(obs(70, LEFTOVERS), {})).toBe(false);
+        expect(s!.inProgress!(obs(70, LEFTOVERS), {})).toBe(true);
+        for (const one of LEFTOVERS.slice(0, 5)) expect({ held: one.name, done: s!.done!(obs(70, [one]), {}) }).toEqual({ held: one.name, done: false });
+        // a potion outside opts.recipes still holds the step: the stow deposits it too
+        expect(steps({ to: 70, recipes: ['attack'] })[0]!.done!(obs(70, [item(0, 115, 1, 'Strength potion(3)')]), {})).toBe(false);
+        // an item that is not the cycle's does not
+        expect(s!.done!(obs(70, [item(0, 2347, 1, 'Hammer')]), {})).toBe(true);
+        // the step record has S25e: done for the rest of the attempt, whatever herb potion a later step holds
+        const marked = { has: (n: string) => n === STEP_NAME };
+        const superantipoison3 = [item(0, 181, 1, 'Superantipoison(3)')];
+        const recordedObs = new Observation(world({ level: 70, inventory: superantipoison3 }), {}, undefined, marked);
+        expect(s!.done!(recordedObs, {})).toBe(true);
+        expect(s!.inProgress!(recordedObs, {})).toBe(false);
+        // not recorded (the stop reached, the close not yet passed): the leftovers keep it in progress
+        const unmarked = new Observation(world({ level: 70, inventory: LEFTOVERS }), {}, undefined, { has: () => false });
+        expect(s!.done!(unmarked, {})).toBe(false);
+        expect(s!.inProgress!(unmarked, {})).toBe(true);
+        expect(s!.postconditions(world({ level: 69, inventory: [] }), {})).toBe('Herblore 69 < 70');
+        expect(s!.postconditions(world({ level: 70, inventory: LEFTOVERS }), {})).toBe('the stow left Unfinished potion, Limpwurt root, Eye of newt, Snape grass, Strength potion(3) in the inventory');
+        expect(s!.postconditions(world({ level: 70, inventory: [] }), {})).toBe(true);
     });
 
-    test('resume: a mid-band logout resumes the step; 28 starts it; 99 finishes', async () => {
-        const walk = async (level: number, xp?: number) => {
-            const p = await resolveResume(steps(), new Observation(world({ level, ...(xp === undefined ? {} : { xp }) })), {});
+    test('resume: a mid-band logout resumes the step; 28 starts it; 99 stowed finishes; 99 unstowed resumes into the stow', async () => {
+        const walk = async (level: number, o: { xp?: number; inventory?: InventoryItem[] } = {}) => {
+            const p = await resolveResume(steps(), new Observation(world({ level, ...o })), {});
             return [p.step, p.mode];
         };
-        expect(await walk(28, POST_RITUAL_XP)).toEqual([STEP_NAME, 'run']);
+        expect(await walk(28, { xp: POST_RITUAL_XP })).toEqual([STEP_NAME, 'run']);
         expect(await walk(61)).toEqual([STEP_NAME, 'resume']);
-        expect((await resolveResume(steps(), new Observation(world({ level: 99 })), {})).mode).toBe('finished');
+        expect((await resolveResume(steps(), new Observation(world({ level: 99, inventory: [] })), {})).mode).toBe('finished');
+        expect(await walk(99, { inventory: LEFTOVERS })).toEqual([STEP_NAME, 'resume']);
+        // recorded: a later state holding a 3-dose herb potion walks past S25e
+        const later = new Observation(world({ level: 99, inventory: [item(0, 181, 1, 'Superantipoison(3)')] }), {}, undefined, { has: (n: string) => n === STEP_NAME });
+        expect((await resolveResume(steps(), later, {})).mode).toBe('finished');
     });
 });
 
@@ -199,31 +227,72 @@ function status(p: Partial<ProgramStatus>): ProgramStatus {
     return { runId: 3, name: 'item-cycle', phase: 'running', params: {}, startedTick: 100, tick: 100, progressTick: 100, counters: {}, gauges: {}, marks: {}, packets: 0, deferred: 0, skippedTicks: 0, maxTickMs: 0, frames, publish: frames, react: { n: 0, p50: 0, p90: 0, max: 0 }, loops: { last: 0, p10Last10s: 0, min: 0 }, ...p };
 }
 
-describe('runSteps over steps()', () => {
-    test('S25e starts the program in pair mode at the quick-bank op and passes once Herblore reaches the target', async () => {
-        const sdk = new PageSdk(world());
-        const session = { sdk, bot: {}, name: 'lab_h1', sessionId: 1 } as unknown as RunnerSession;
-        const log = TickLog.memory('t');
-        const run = runSteps(session, steps({ to: 40 }), { log, c: {}, shouldStop: () => false, logout: async () => {}, tickMonitor: false });
-        let settled = false;
-        void run.finally(() => (settled = true));
-        for (let i = 0; i < 60 && !settled; i++) {
-            await flush();
-            if (!sdk.starts.length) {
-                sdk.tick();
-                continue;
-            }
-            const done = i > 6;
-            sdk.tick(s => ({
-                ...(done ? { skills: [{ name: 'Herblore', level: 40, baseLevel: 40, experience: xpForLevel(40) }] } : {}),
-                program: status({ tick: s.tick + 1, ...(done ? { phase: 'done', endedTick: s.tick + 1, result: { ended: 'target', actions: 56, sent: 56, visits: 4, resets: 1, drift: 0, levelups: 9, byRecipe: { attack: 56 }, ticks: 18, cycleGaps: [], sendsPerTick: {}, xpDropsPerTick: {} } } : {}) })
-            }) as Partial<BotWorldState>);
+/**
+ * runSteps over steps({ to: 40 }) from `start`, the page scripted: the run reaches Herblore 40 with
+ * the last load's leftovers held, then ends (phase done) holding `end` (what its stow left).
+ */
+async function scripted(start: BotWorldState, end: InventoryItem[], run: { startMode?: 'resume' } = {}) {
+    const sdk = new PageSdk(start);
+    const session = { sdk, bot: {}, name: 'lab_h1', sessionId: 1 } as unknown as RunnerSession;
+    const log = TickLog.memory('t');
+    const at40 = { skills: [{ name: 'Herblore', level: 40, baseLevel: 40, experience: xpForLevel(40) }] };
+    const p = runSteps(session, steps({ to: 40 }), { log, c: {}, shouldStop: () => false, logout: async () => {}, tickMonitor: false, ...(run.startMode ? { startMode: run.startMode, observed: new Observation(start) } : {}) });
+    let settled = false;
+    let outcome: unknown;
+    p.then(
+        r => (outcome = r),
+        e => (outcome = e)
+    ).finally(() => (settled = true));
+    for (let i = 0; i < 60 && !settled; i++) {
+        await flush();
+        if (!sdk.starts.length) {
+            sdk.tick();
+            continue;
         }
-        expect(await run).toEqual({ completed: 1 });
+        // ticks 4-6: the target shows and the stow visit is under way; tick 7 on: the run has ended
+        const stopped = i > 3;
+        const done = i > 6;
+        sdk.tick(s => ({
+            ...(stopped ? { ...at40, inventory: done ? end : LEFTOVERS } : {}),
+            program: status({ tick: s.tick + 1, ...(done ? { phase: 'done', endedTick: s.tick + 1, result: { ended: 'target', actions: 56, sent: 56, visits: 5, resets: 1, drift: 0, levelups: 9, byRecipe: { strength: 56 }, ticks: 20, cycleGaps: [], sendsPerTick: {}, xpDropsPerTick: {}, stowed: end.length === 0 } } : {}) })
+        }) as Partial<BotWorldState>);
+    }
+    return { outcome, sdk, log };
+}
+
+describe('runSteps over steps()', () => {
+    test('S25e starts the program in pair mode at the quick-bank op with stow, and passes once the target is reached and the close deposited the leftovers', async () => {
+        const { outcome, sdk, log } = await scripted(world(), []);
+        expect(outcome).toEqual({ completed: 1 });
         expect(sdk.starts).toHaveLength(1);
-        expect(sdk.starts[0]).toMatchObject({ mode: 'pair', skill: 'herblore', untilLevel: 40, booth: { ...VARROCK_WEST, option: 2, stand: { x: 3185, z: 3436 } } });
+        expect(sdk.starts[0]).toMatchObject({ mode: 'pair', skill: 'herblore', untilLevel: 40, stow: true, booth: { ...VARROCK_WEST, option: 2, stand: { x: 3185, z: 3436 } } });
         expect((sdk.starts[0]!.recipes as unknown[]).length).toBe(HERB_RECIPES.length);
-        expect(log.rows.find(r => r.kind === 'program')).toMatchObject({ step: STEP_NAME, ok: true });
+        expect(log.rows.find(r => r.kind === 'program')).toMatchObject({ step: STEP_NAME, ok: true, meta: { result: { stowed: true } } });
         expect(log.rows.find(r => !r.kind && r.step === STEP_NAME)).toMatchObject({ ok: true });
+        // the step itself sends nothing: the page's program makes every click, the stow's deposits too
+        expect(sdk.sent).toEqual([]);
+        expect(sdk.state!.inventory).toEqual([]);
+    });
+
+    test('a close that leaves leftovers held fails the postcondition, naming them', async () => {
+        const { outcome } = await scripted(world(), LEFTOVERS.slice(0, 2));
+        expect(outcome).toBeInstanceOf(Error);
+        expect((outcome as Error).message).toContain('the stow left Unfinished potion, Limpwurt root in the inventory');
+    });
+
+    test('the target reached with the leftovers held (a logout before the close): the resume starts the program only to stow', async () => {
+        const start = world({ level: 40, inventory: LEFTOVERS });
+        const point = await resolveResume(steps({ to: 40 }), new Observation(start), {});
+        expect([point.step, point.mode]).toEqual([STEP_NAME, 'resume']);
+        const { outcome, sdk } = await scripted(start, [], { startMode: 'resume' });
+        expect(outcome).toEqual({ completed: 1 });
+        expect(sdk.starts).toHaveLength(1);
+        expect(sdk.starts[0]).toMatchObject({ untilLevel: 40, stow: true });
+        expect(sdk.state!.inventory).toEqual([]);
+    });
+
+    test('the target reached with nothing held: the step is finished, nothing starts', async () => {
+        const point = await resolveResume(steps({ to: 40 }), new Observation(world({ level: 40, inventory: [] })), {});
+        expect(point.mode).toBe('finished');
     });
 });
