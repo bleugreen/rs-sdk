@@ -35,6 +35,8 @@
 //   --session=<id> the S07 cue session (the module's boneSession), and --counted=<giver>:<n>,... the loads
 //   already given in it (cairn_b04=1,cairn_b01=1): the cue and those givers' statuses are written before the launcher starts, so the
 //   givers resume their counts (bone-giver.ts onCue) as after a stopped attempt.
+//   --lead=S (with --givers): the givers stand in the world S seconds before the steps start, as on the run,
+//   where they log in long before S07; their statuses (phase, detail, tile) print when the steps start.
 // --oak-logs=N oak logs in the kit (attempt 3's willow census carries one).
 // Every segment row and load row prints as it is written, with its UTC time.
 // --route=rimmington runs every case on the module's `rimmington` stands (the Rimmington oaks and
@@ -54,6 +56,7 @@ import { formatReport, report, TickLog } from '../lib/ticks';
 import { give as giveTrade } from '../lib/trade';
 import { runSteps, type Step } from '../runner/step';
 import { writeJsonAtomicSync } from '../helpers/altar-cue';
+import { readBoneStatuses } from '../helpers/bone-giver';
 import { BANDS, BoneCue, ROUTES, type RouteName, S07_BONE_CUE, steps, type SubBandRow, type TechniqueFigures, type Tree, wcLevel, type WoodcuttingOptions } from '../skills/woodcutting';
 import { give, leaveTutorial, setstat, tele } from './setup';
 
@@ -372,6 +375,14 @@ await runScript(async ({ bot: actions, sdk }) => {
           }
         : undefined;
     if (nGivers) givers = await startGroup(nGivers, final, tree as 'oak' | 'willow', bot, bone, prestage);
+    const lead = Number(flag('lead', '0'));
+    if (givers && lead > 0) {
+        console.log(`  givers lead: ${lead} s before the steps start`);
+        await Bun.sleep(lead * 1000);
+    }
+    if (givers) {
+        for (const st of readBoneStatuses(givers.cueDir)) console.log(`  [${new Date().toISOString().slice(11, 19)}Z] giver ${st.account} at the start: ${st.phase} ${st.detail ?? ''} at ${st.tile ? `${st.tile.x},${st.tile.z}` : '-'}, held ${st.held}`);
+    }
 
     const s0 = sdk.getState()!;
     console.log(`measure-woodcutting ${which}: Woodcutting ${wcLevel(s0)} at ${s0.player?.worldX},${s0.player?.worldZ}; ${where()}`);
