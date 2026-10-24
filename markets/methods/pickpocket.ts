@@ -20,7 +20,8 @@
 
 import type { BotWorldState, InventoryItem, NearbyNpc } from '../../sdk/types';
 import { depositAll, withdrawMany } from '../../speedrun/lib/bank';
-import { walkTo } from '../../speedrun/lib/act';
+import { findLongPath } from '../../sdk/pathfinding';
+import { clickWalk, walkTo } from '../../speedrun/lib/act';
 import { nextTick, waitTicks } from '../../speedrun/lib/wait';
 import { runStandalone, type Role, type RoleContext } from '../../speedrun/helpers/role';
 
@@ -93,16 +94,36 @@ export const unroutable = (message: string): boolean => UNROUTABLE.test(message)
 export class WalkFailed extends Error {}
 
 export interface DoorWalk {
+    /** speedrun/lib/act.ts `walkTo`: bot.walkTo, planned on the SDK's precomputed long-path map. */
     walk(t: Tile): Promise<{ ok: boolean; message: string }>;
+    /** Open the nearest shut door. */
     openDoor(): Promise<{ success: boolean; message: string; reason?: string }>;
+    /** act.ts `clickWalk`: the client's own router, over the live collision (an opened door is open to it). */
+    clickWalk(t: Tile): Promise<{ ok: boolean; message: string; at: Tile }>;
     wait(ticks: number): Promise<void>;
     log(message: string, data?: Record<string, unknown>): void;
 }
 
+/** Furthest a recovery click aims: well inside the client's 104-tile build area from the player. */
+export const CLICK_REACH = 30;
+
+/** The tile `reach` tiles (Chebyshev) from `from` on the way to `to`, or `to` when it is nearer. */
+export function toward(from: Tile, to: Tile, reach = CLICK_REACH): Tile {
+    const dx = to.x - from.x;
+    const dz = to.z - from.z;
+    const d = Math.max(Math.abs(dx), Math.abs(dz));
+    if (d <= reach) return to;
+    return { x: from.x + Math.round((dx * reach) / d), z: from.z + Math.round((dz * reach) / d) };
+}
+
 /**
- * Walk to `t`. A walk that fails as unroutable opens the nearest door and walks again, then once more after `waitTicks`
- * (another player may have shut the door again). Throws WalkFailed when the walk still fails, so nothing that needs
- * the destination (the bank booth) runs from the wrong place.
+ * Walk to `t`. A walk that fails as unroutable opens the nearest shut door, clicks a walk through it toward `t` and
+ * walks again; then all of that once more after `waitTicks` (another player may have shut the door again). Throws
+ * WalkFailed when the walk still fails, so nothing that needs the destination (the bank booth) runs from the wrong place.
+ *
+ * The click is what gets out. bot.walkTo plans on the SDK's long-path map, where a door it does not index (the
+ * diagonal door of the East Ardougne market building, docs/markets/phase2.md 'Stuck behind a door') is a solid tile
+ * open or shut, so it fails from inside however often the door is opened; the client's router sees the door open.
  */
 export async function walkThroughDoors(d: DoorWalk, t: Tile, waitTicks = 5): Promise<void> {
     let r = await d.walk(t);
@@ -112,7 +133,8 @@ export async function walkThroughDoors(d: DoorWalk, t: Tile, waitTicks = 5): Pro
         for (let attempt = 1; attempt <= 2 && !r.ok; attempt++) {
             if (attempt > 1) await d.wait(waitTicks);
             const door = await d.openDoor();
-            d.log('opening a door: walk unroutable', { to: t, attempt, walk: r.message, door: door.reason ?? (door.success ? 'opened' : 'failed'), doorMessage: door.message });
+            const click = await d.clickWalk(t);
+            d.log('walk unroutable: opened a door and clicked through', { to: t, attempt, walk: r.message, door: door.reason ?? (door.success ? 'opened' : 'failed'), doorMessage: door.message, click: click.ok ? 'arrived' : click.message, clickAt: click.at });
             r = await d.walk(t);
         }
         if (r.ok) {
@@ -121,6 +143,26 @@ export async function walkThroughDoors(d: DoorWalk, t: Tile, waitTicks = 5): Pro
         }
     }
     throw new WalkFailed(`walk to (${t.x},${t.z}) failed: ${r.message}`);
+}
+
+type PathFinder = (from: Tile, to: Tile) => readonly Tile[];
+const longPath: PathFinder = (a, b) => findLongPath(0, a.x, a.z, b.x, b.z, 500);
+const routableCache = new Map<string, boolean>();
+
+/**
+ * Whether the SDK's long-path map routes from `from` to exactly `to`: whether bot.walkTo could bring the player back
+ * from a target there. The map is static, so the answer is cached for the process.
+ */
+export function routable(from: Tile, to: Tile, find: PathFinder = longPath, cache: Map<string, boolean> = routableCache): boolean {
+    if (from.x === to.x && from.z === to.z) return true;
+    const key = `${from.x},${from.z}>${to.x},${to.z}`;
+    let v = cache.get(key);
+    if (v === undefined) {
+        const end = find(from, to).at(-1);
+        v = !!end && end.x === to.x && end.z === to.z;
+        cache.set(key, v);
+    }
+    return v;
 }
 
 /** Consecutive errand failures; `fail` says when they reach `max`, after which the role gives up. */
@@ -229,7 +271,13 @@ export class Pickpocketer {
         const { bot, sdk, log } = this.ctx;
         // the nearest shut one: bot.openDoor() alone takes the nearest door by name, which may be an open one
         const shut = () => sdk.getNearbyLocs().filter(l => /door|gate/i.test(l.name) && l.optionsWithIndex.some(o => /^open$/i.test(o.text))).sort((a, b) => a.distance - b.distance)[0];
-        return walkThroughDoors({ walk: to => walkTo(bot, sdk, to.x, to.z, 2), openDoor: () => bot.openDoor(shut()), wait: async n => void (await waitTicks(sdk, n)), log }, t);
+        const clickThrough = async (to: Tile) => {
+            const p = this.s.player!;
+            const dest = toward({ x: p.worldX, z: p.worldZ }, to);
+            const r = await clickWalk(sdk, dest.x, dest.z, { tol: 2, maxTicks: 60 });
+            return { ok: r.ok, message: r.reason ?? '', at: r.at };
+        };
+        return walkThroughDoors({ walk: to => walkTo(bot, sdk, to.x, to.z, 2), openDoor: () => bot.openDoor(shut()), clickWalk: clickThrough, wait: async n => void (await waitTicks(sdk, n)), log }, t);
     }
 
     private async bank(): Promise<void> {
@@ -302,12 +350,17 @@ export class Pickpocketer {
                 target = undefined;
                 lastProgress = t;
             }
-            if (!target || !s.nearbyNpcs.some(n => n.index === target!.index)) {
+            // a target the long-path map cannot reach from the anchor (inside a building) is not followed: its door
+            // can shut behind the player, and bot.walkTo has no way back out
+            const routes = (n: NearbyNpc) => routable(this.spot.anchor, { x: n.tileX ?? n.x, z: n.tileZ ?? n.z });
+            if (target) target = s.nearbyNpcs.find(n => n.index === target!.index && routes(n));
+            if (!target) {
                 target = s.nearbyNpcs
                     .filter(n => this.spot.npc.test(n.name) && n.reachable !== false && (skip.get(n.index) ?? 0) < t)
                     .filter(n => Math.max(Math.abs((n.tileX ?? n.x) - this.spot.anchor.x), Math.abs((n.tileZ ?? n.z) - this.spot.anchor.z)) <= this.spot.radius)
+                    .filter(routes)
                     .sort((a, b) => a.distance - b.distance)[0];
-            } else target = s.nearbyNpcs.find(n => n.index === target!.index);
+            }
             if (target) {
                 unseenSince = t;
                 tried.clear();
