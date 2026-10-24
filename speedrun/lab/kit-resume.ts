@@ -265,14 +265,14 @@ try {
         await lowAndPoisoned();
         const a = await runA('resume');
         const cueAfterResume = readCue(options.cueDir);
-        const login = a.rows.filter(r => r.step.startsWith('(run) upkeep'));
+        const loginRows = a.rows.filter(r => r.step.startsWith('(run) upkeep'));
         const aRow = a.rows.find(r => r.step === KIT_SEGMENTS.H12 && r.kind === undefined);
         const checks = {
             alive: !a.died,
             noNewCue: JSON.stringify(cueAfterResume) === JSON.stringify(cueAfterServe),
             skippedRow: a.rows.some(r => r.step === '(cue) H12 skipped' && r.why === 'H12 served this attempt: no cue, no wait'),
-            loginAte: login.some(r => r.step.endsWith(': eat')),
-            loginCured: login.some(r => r.step.endsWith(': cure')),
+            loginAte: loginRows.some(r => r.step.endsWith(': eat')),
+            loginCured: loginRows.some(r => r.step.endsWith(': cure')),
             aBodyRan: !!aRow,
         };
         Object.assign(summary, { checks, interimExtra: extra || null, aOk: aRow?.ok ?? null, result: a.res, died: a.died, end: vitals() });
