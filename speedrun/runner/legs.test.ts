@@ -1138,20 +1138,26 @@ describe("the leg upkeep under poison (attempt 4: T14-15b reached hpMin 1 with 3
         expect([u.eats, u.cures]).toEqual([1, 1]);
     });
 
-    test('a poisoned leg drinks one antipoison dose, once, and the poison stops', async () => {
+    test('a poison carried into the leg (a hitmark before it) is cured once before the first hop, whose click waits for the drink to land', async () => {
         const b = T14_15B();
         const landing = SPELLS.ardougne.landing;
         // A tick base past every other test's: segments.ts keeps the run's last dose for the process.
         const base = 300_000;
-        const sdk = new FakeSdk(at(landing.x, landing.z, 35, { tick: base, inventory: [shark(3), shark(4), superAnti(5)], nearbyLocs: [YOUNG_TREE] }));
+        const carried = { tick: base - 5, type: 'damage_taken', damage: 6, sourceType: 'npc', sourceIndex: -1, targetType: 'player', targetIndex: -1, hitmark: 2 } as unknown as CombatEvent;
+        const sdk = new FakeSdk(at(landing.x, landing.z, 35, { tick: base, inventory: [shark(3), shark(4), superAnti(5)], nearbyLocs: [YOUNG_TREE], combatEvents: [carried] }));
         const walk = simulateWalking(sdk);
-        const { sim, each } = poisonWorld(sdk, walk, { severity: 27, firstAt: base + 2 });
+        const { sim, each } = poisonWorld(sdk, walk, { severity: 26, firstAt: base + 25 });
+        const firstMove: number[] = [];
+        const prev = sdk.onSend;
+        sdk.onSend = (a, f) => {
+            prev(a, f);
+            if (a.method !== 'sendUseItem' && !firstMove.length) firstMove.push(f.state!.tick);
+        };
         const ctx = ctxFor(sdk);
         await drive(sdk, b.run(ctx), 400, each);
         expect(arrived(b.def, sdk.state!)).toBe(true);
-        expect(sim.drinks).toHaveLength(1);
-        // On the frame the first poison hit shows.
-        expect(sim.drinks[0]!).toBe(base + 2);
+        expect(sim.drinks).toEqual([base]);
+        expect(firstMove[0]!).toBeGreaterThan(base);
         expect(sdk.state!.inventory.map(i => i.name)).toContain('Superantipoison(3)');
         expect(travelRow(ctx).cured).toBe(1);
         expect(sim.hpMin).toBeGreaterThanOrEqual(HP_FLOOR);
