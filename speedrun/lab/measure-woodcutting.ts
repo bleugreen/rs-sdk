@@ -38,6 +38,10 @@
 //   --lead=S (with --givers): the givers stand in the world S seconds before the steps start, as on the run,
 //   where they log in long before S07; their statuses (phase, detail, tile) print when the steps start.
 // --oak-logs=N oak logs in the kit (attempt 3's willow census carries one).
+// --hold-ticks=N (with --hold): the forced slip rides only the runs started in a band's first N ticks, so a
+//   burying band's on-time switch (rs/643) can be watched going to plain + bury and back. Each switch prints
+//   as it is written, and each band's printout carries per-technique buries a tick, base Prayer xp a tick
+//   (72 a dragon bone, --bone-xp=N for others) and the Burys judged on time.
 // Every segment row and load row prints as it is written, with its UTC time.
 // --route=rimmington runs every case on the module's `rimmington` stands (the Rimmington oaks and
 // the Draynor-west willows); the default is the scored run's `taverley`.
@@ -85,13 +89,32 @@ const f2 = (n: number | undefined) => (n === undefined || !Number.isFinite(n) ? 
 function techCols(t: TechniqueFigures | undefined): string {
     return t ? `${t.ticks} t, ${t.logs} logs, ${f2(t.ticksPerExpectedRoll)}/roll, ${f2(t.ticksPerLog)}/log (lattice ${f2(t.latticeTicksPerLog)}), success fit ${f2(t.fittedSuccess)} vs ${f2(t.formulaSuccess)}` : '-';
 }
+const BONE_XP = Number(flag('bone-xp', '72'));
 function printBand(step: string, meta: Record<string, unknown>): void {
-    const { subBands, segments, histogram, gate, counters, ...rest } = meta as unknown as { subBands: SubBandRow[]; segments: unknown[]; histogram: unknown; gate?: { history: unknown[]; switches: string }; counters: unknown } & SubBandRow;
+    const { subBands, segments, histogram, gate, counters, bury, onTimeSwitch, ...rest } = meta as unknown as {
+        subBands: SubBandRow[]; segments: unknown[]; histogram: unknown; gate?: { history: unknown[]; switches: string }; counters: unknown;
+        bury?: Partial<Record<'knife' | 'plain', { buried: number; onTime: number; late: number }>>; onTimeSwitch?: { finalTechnique: string; windows: Array<{ tick: number; technique: string; onTime: number; judged: number; to: string | null }> };
+    } & SubBandRow;
     console.log(`${step}: ${rest.ticks} ticks (probes ${rest.probeTicks}, bones ${rest.bonesTicks}), knife share ${f2(rest.knifeShare)}; ended ${(meta as { ended: string }).ended}`);
     for (const r of [...subBands, { ...rest, from: 0, to: 0 }]) {
         const label = r.from ? `${r.from}-${r.to}` : 'band';
         console.log(`  ${label.padEnd(6)} knife: ${techCols(r.knife)}`);
         console.log(`  ${''.padEnd(6)} plain: ${techCols(r.plain)}; share ${f2(r.knifeShare)}; probes ${r.probeTicks}, bones ${r.bonesTicks}`);
+    }
+    for (const t of ['knife', 'plain'] as const) {
+        const b = bury?.[t];
+        const ticks = rest[t]?.ticks ?? 0;
+        if (!b) continue;
+        const judged = b.onTime + b.late;
+        console.log(
+            `  bury ${t}: ${b.buried} buried in ${ticks} t = ${f2(b.buried / ticks)} a tick, ${f2((b.buried * BONE_XP) / ticks)} base Prayer xp a tick; ` +
+                `on time ${b.onTime}/${judged} (${judged ? ((20 * b.onTime) / judged).toFixed(1) : '-'}/20); ${f2(rest[t]?.ticksPerExpectedRoll)} t per landed roll`
+        );
+    }
+    if (onTimeSwitch) {
+        const sw = onTimeSwitch.windows.filter(w => w.to);
+        console.log(`  on-time switch: ${sw.length} switches, final ${onTimeSwitch.finalTechnique}; ${sw.map(w => `T${w.tick} ${w.technique}->${w.to} (${w.onTime}/${w.judged})`).join(', ') || 'none'}`);
+        console.log(`  windows: ${onTimeSwitch.windows.map(w => `${w.technique[0]}${w.onTime}/${w.judged}${w.to ? `>${w.to[0]}` : ''}`).join(' ')}`);
     }
     console.log(`  counters ${JSON.stringify(counters)}; histogram ${JSON.stringify(histogram)}`);
     for (const seg of segments) console.log(`  segment ${JSON.stringify(seg)}`);
@@ -393,7 +416,9 @@ await runScript(async ({ bot: actions, sdk }) => {
     log.append = (row => {
         append(row);
         const m = (row.meta ?? {}) as Record<string, unknown>;
-        if (m.kind === 'wc-bones-load') {
+        if (m.kind === 'wc-switch') {
+            console.log(`[${utc()}] T${row.endTick} SWITCH ${m.from} + bury -> ${m.to} + bury: ${m.onTime}/${m.judged} on time; WC ${m.level}, Prayer ${m.prayer}`);
+        } else if (m.kind === 'wc-bones-load') {
             console.log(`[${utc()}] T${row.endTick} load ${m.load} from ${m.giver ?? '-'} ${row.ok ? 'ok' : `FAILED (${m.reason})`}: click to bones ${m.ticks} t, step ${m.stepTicks} t (server wait ${m.serverWait ?? '-'}, re-picks ${m.repicks ?? '-'}), received ${m.received}; Prayer ${sdk.getState()?.skills.find(k => k.name === 'Prayer')?.baseLevel}, WC ${wcLevel(sdk.getState())}`);
         } else if (m.kind === 'wc-segment') {
             const c = (m.counters ?? {}) as Record<string, number>;
@@ -404,7 +429,7 @@ await runScript(async ({ bot: actions, sdk }) => {
             const lattice = gaps.filter(([g]) => g % 3 === 0).reduce((a, [, n]) => a + n, 0);
             console.log(
                 `[${utc()}] T${row.startTick}-${row.endTick} segment run ${m.runId} ${m.technique} ended ${m.reason} at WC ${m.level}: ${row.endTick - row.startTick} t, ${c.successes ?? 0} logs, ` +
-                    `${f2(r.ticksPerExpectedRoll)} t/expected roll, ${f2(r.ticksPerSuccess)} t/log, gaps on the 3-lattice ${lattice}/${all}; buried ${c.buried ?? 0} of ${c.burySent ?? 0} sent, ` +
+                    `${f2(r.ticksPerExpectedRoll)} t/expected roll, ${f2(r.ticksPerSuccess)} t/log, gaps on the 3-lattice ${lattice}/${all}; buried ${c.buried ?? 0} of ${c.burySent ?? 0} sent (on time ${c.buryOnTime ?? 0}, late ${c.buryLate ?? 0}, held ${c.held ?? 0}), ` +
                     `no-bone cycles ${c.noBoneCycles ?? 0}; late clicks ${c.lateClicks ?? 0}, phase resyncs ${c.phaseResyncs ?? 0}, slips ${c.slips ?? 0}, resyncs ${c.resyncs ?? 0}, respawn waits ${c.respawnWaits ?? 0}; ` +
                     `frames ${f.n ?? '-'}, over 7/6 T ${f.overSevenSixthsT ?? '-'} (on time ${f.n ? ((1 - (f.overSevenSixthsT ?? 0) / f.n) * 100).toFixed(1) : '-'}%), catch-ups ${f.catchUps ?? '-'}`
             );
@@ -415,6 +440,7 @@ await runScript(async ({ bot: actions, sdk }) => {
         technique: flag('technique', 'auto') as 'auto' | 'knife' | 'plain',
         ...(flag('plain-per-roll') ? { plainTicksPerRoll: flag('plain-per-roll') } : {}),
         ...(flag('hold') ? { hold: flag('hold') } : {}),
+        ...(flag('hold-ticks') ? { holdTicks: flag('hold-ticks') } : {}),
         ...(has('bad-probe') ? { gate: { direct: { trials: 20, pass: 21, floor: 21 } } } : {}),
         ...(bury ? { bury: true, prayerTo: flag('prayer-to', '0') } : {}),
         ...(bury && helperName ? { bones: { giver: helper!.name, load } } : {}),
