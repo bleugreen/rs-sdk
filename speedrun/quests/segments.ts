@@ -15,13 +15,16 @@
 // Names are `<stepId>:<letter>-<label>` (S15:A-narnode): run.ts keys on the
 // step id, and `runSteps({from})` starts at any segment by its full name.
 
+import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState } from '../../sdk/types';
 import type { QuestKey, StageName } from '../data/quest-stages';
+import { prayerDoses } from '../lib/combat';
 import type { ConverseOptions } from '../lib/converse';
 import { matchesItem, type ItemPattern } from '../lib/items';
 import { requireQuestStage, type QuestView } from '../lib/quests';
 import { receiveFrom, type WantSpec } from '../lib/trade';
-import type { Check, ObservedCheck, Step, StepContext } from '../runner/step';
+import { waitUntil, type StateSource } from '../lib/wait';
+import type { Check, Observed, ObservedCheck, Step, StepContext } from '../runner/step';
 
 export type DialogueMode = 'burst' | 'fixed';
 
@@ -64,6 +67,13 @@ export interface Segment<C = any> {
     probes?: readonly string[];
     /** Its run picks up a fight already on (runner/step.ts Step.startsInCombat). */
     startsInCombat?: true;
+    /**
+     * `done` also holds once the attempt's step record has this segment (`recorded`). Only for a milestone
+     * the game keeps no mark of after the step; `done` stays the live check, the only evidence during the
+     * step and outside a run. A clause that must still hold on top of the record is written out with
+     * `recorded` in `done` instead.
+     */
+    recorded?: true;
 }
 
 const LETTER = /^[A-Z][0-9]?$/;
@@ -71,6 +81,16 @@ const LABEL = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 export function segmentName(stepId: string, letter: string, label: string): string {
     return `${stepId}:${letter}-${label}`;
+}
+
+/**
+ * Whether the attempt's step record has `stepName`: runner/step.ts `Observed.record`, which runSteps marks
+ * when a step's postconditions pass (fresh and resume paths alike), keyed by the attempt and kept on disk
+ * so a resumed process sees an earlier one's marks. Absent outside a run (unit tests, lab stand-ins): false.
+ * Prefer a game fact (a quest stage, items kept, a level) wherever one exists.
+ */
+export function recorded(o: Observed, stepName: string): boolean {
+    return !!o.record?.has(stepName);
 }
 
 const pass = () => true as const;
@@ -88,14 +108,19 @@ export function questSteps<C = any>(stepId: string, segments: readonly Segment<C
         if (!LABEL.test(seg.label)) throw new Error(`questSteps: ${stepId}:${seg.letter} has a bad label "${seg.label}" (kebab-case)`);
         if (seen.has(seg.letter)) throw new Error(`questSteps: ${stepId} repeats segment ${seg.letter}`);
         seen.add(seg.letter);
+        const name = segmentName(stepId, seg.letter, seg.label);
+        if (seg.recorded && !seg.done) throw new Error(`questSteps: ${name} is recorded but has no done`);
         const step: Step<C> = {
-            name: segmentName(stepId, seg.letter, seg.label),
+            name,
             logoutSafe: seg.logoutSafe,
             preconditions: seg.preconditions ?? pass,
             run: ctx => seg.run(ctx),
             postconditions: seg.postconditions ?? pass,
         };
-        if (seg.done) step.done = seg.done;
+        if (seg.done) {
+            const live = seg.done;
+            step.done = seg.recorded ? (o, c) => live(o, c) || recorded(o, name) : live;
+        }
         if (seg.inProgress) step.inProgress = seg.inProgress;
         if (seg.resume) step.resume = ctx => seg.resume!(ctx);
         if (seg.probes) step.probes = seg.probes;
@@ -155,6 +180,83 @@ export function inBox(s: BotWorldState, b: Box): boolean {
 /** The player inside `b`, judged by coordinates (never by nearby locs or NPCs: after a reconnect the first state has none). */
 export function within(b: Box, what = 'the area'): Check<any> {
     return s => (inBox(s, b) ? true : `not in ${what} (${b.x0},${b.z0})-(${b.x1},${b.z1}) L${b.level ?? 0}: at ${s.player ? `${s.player.worldX},${s.player.worldZ} L${s.player.level}` : 'unknown'}`);
+}
+
+// ---------------------------------------------------------------- prayer points
+//
+// Prayer points are a consumable on the route: S07's bones leave the pool at the level (99), and
+// nothing but a carried potion or an altar refills it (rs/687's budget: S10b and S11b alone spend
+// 95). Each protect fight's first segment checks the pool against the stretch's measured drain, so a
+// short pool is named at the step boundary rather than found mid-fight.
+
+/** A Prayer potion dose restores 7 + 25% of the Prayer level (consume_effects.dbrow, prayer_potion_effect). */
+export function doseRestore(prayerLevel: number): number {
+    return 7 + Math.floor(prayerLevel / 4);
+}
+
+export function prayerLevelOf(s: BotWorldState): number {
+    return s.prayers?.prayerLevel || s.skills.find(k => k.name.toLowerCase() === 'prayer')?.baseLevel || 0;
+}
+
+export function prayerPointsOf(s: BotWorldState): number {
+    return s.prayers?.prayerPoints ?? 0;
+}
+
+/** Prayer points the pool can draw: the points now plus every held dose at its restore. */
+export function prayerReserve(s: BotWorldState): number {
+    return prayerPointsOf(s) + prayerDoses(s) * doseRestore(prayerLevelOf(s));
+}
+
+/** A precondition: the pool, counting held doses, covers `need` points for `what` (e.g. 'S12:G ... for G-J'). */
+export function prayerCovers(what: string, need: number): Check<any> {
+    return s => {
+        const reserve = prayerReserve(s);
+        if (reserve >= need) return true;
+        const doses = prayerDoses(s);
+        return `${what} needs ~${need} prayer points, has ${prayerPointsOf(s)}${doses ? ` and ${doses} potion doses (${reserve} in all)` : ' and no prayer potion'}`;
+    };
+}
+
+export type DrinkSdk = StateSource & Pick<BotSDK, 'sendUseItem'>;
+
+/** A drink clicked during a scene's delay is dropped without a reply: re-sent after this many ticks. */
+export const DRINK_RESEND_TICKS = 3;
+
+/**
+ * Drink held Prayer potion doses one at a time until the points reach `target` (at most the level)
+ * or no dose is left; each drink is confirmed by the points rising or a dose going before the next,
+ * and re-sent every DRINK_RESEND_TICKS while it does not land (a cutscene's delay drops item clicks).
+ * Never clicks while a chat page is open: an inventory click closes the chat, so a page in a talk or
+ * a scene would be lost (rs/688's S15 race). It waits up to `maxTicks` for the chat to close, then
+ * returns what it drank so the caller's conversation can go on. Returns the doses drunk; throws when
+ * a drink does not land within `maxTicks`.
+ */
+export async function drinkPrayerTo(sdk: DrinkSdk, target: number, maxTicks = 9): Promise<number> {
+    let drunk = 0;
+    for (;;) {
+        const s = sdk.getState();
+        if (!s) throw new Error('drinkPrayerTo: no state');
+        const pts = prayerPointsOf(s);
+        if (pts >= Math.min(target, prayerLevelOf(s))) return drunk;
+        const pot = s.inventory.find(i => /^Prayer potion\(\d\)$/i.test(i.name));
+        if (!pot) return drunk;
+        if (s.dialog?.isOpen && !(await waitUntil(sdk, st => !st.dialog?.isOpen, { maxTicks })).ok) return drunk;
+        const doses = prayerDoses(s);
+        const landed = (st: BotWorldState) => prayerPointsOf(st) > pts || prayerDoses(st) < doses;
+        let ok = false;
+        for (let waited = 0; waited < maxTicks && !ok; waited += DRINK_RESEND_TICKS) {
+            const cur = sdk.getState()!;
+            if (cur.dialog?.isOpen) break;
+            const p = cur.inventory.find(i => /^Prayer potion\(\d\)$/i.test(i.name)) ?? pot;
+            void sdk.sendUseItem(p.slot, p.optionsWithIndex.find(o => /^drink$/i.test(o.text))?.opIndex ?? 1);
+            ok = (await waitUntil(sdk, landed, { maxTicks: Math.min(DRINK_RESEND_TICKS, maxTicks - waited) })).ok;
+        }
+        if (!ok) {
+            if (sdk.getState()?.dialog?.isOpen) return drunk;
+            throw new Error(`a Prayer potion drink did not land in ${maxTicks} ticks (${pts} points, ${doses} doses)`);
+        }
+        drunk++;
+    }
 }
 
 // ---------------------------------------------------------------- inventory need

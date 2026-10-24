@@ -56,6 +56,7 @@ import { crossingsBetween } from '../lib/passages';
 import { crossForDelivery } from './delivery-cross';
 import { travelTo } from '../lib/toll-gate';
 import { inArea, runTo } from '../lib/travel';
+import { deliveryVia } from './mule-route';
 import { deliverySession, muleCanReady, muleHealthy, mulePreparationPath, PRE_REQUEST_TILES, readMulePreparation, sameWorldTile, worldTile, writeMuleReady, type MuleHold, type WorldTile } from './mule-readiness';
 import { ANY_OFFER, clickBack, decideTradeClick, DROPPED_TICKS, give, newClickCtx, offerSatisfies, openTrade, sameName, sendTradeClick, type ClickCtx } from '../lib/trade';
 import { tickMs, waitUntil, type StateSource } from '../lib/wait';
@@ -1426,6 +1427,7 @@ class Mule {
         let tiles = 0;
         let ok = false;
         let reason: string | undefined;
+        let via: WorldTile[] = [];
         const stopReason = (s = this.ctx.sdk.getState()): string | null =>
             this.ctx.signal.aborted || this.deliveryFault || this.deliveryPaused || !this.controlAllowsDelivery() ? 'delivery aborted'
                 : !s?.player || s.player.isDead || s.player.hp <= 0 ? 'delivery helper died' : null;
@@ -1447,6 +1449,13 @@ class Mule {
                 }, crossing);
                 tiles += Math.max(Math.abs(crossing.to.x - crossing.from.x), Math.abs(crossing.to.z - crossing.from.z));
             }
+            // One waypoint at a time, so each stretch is the pathfinder's own route between them.
+            via = player.level === 0 && to.level === 0 && !crossings.length ? deliveryVia(from, to) : [];
+            for (const waypoint of via) {
+                await walk(waypoint).catch((e: unknown) => {
+                    throw new Error(`waypoint ${waypoint.x},${waypoint.z}: ${e instanceof Error ? e.message : String(e)}`);
+                });
+            }
             await walk(to);
             ok = true;
             return true;
@@ -1454,7 +1463,7 @@ class Mule {
             reason = e instanceof Error ? e.message : String(e);
             return false;
         } finally {
-            this.ctx.log('delivery travel', { row: this.pending?.scope?.step, purpose, to, ok, ticks: tick(this.ctx.sdk) - started, tiles, reason });
+            this.ctx.log('delivery travel', { row: this.pending?.scope?.step, purpose, to, ...(via.length ? { via } : {}), ok, ticks: tick(this.ctx.sdk) - started, tiles, reason });
             this.travelling = false;
             this.settledAfterTick = this.observedTick;
             this.touch();

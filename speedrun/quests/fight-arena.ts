@@ -43,7 +43,7 @@ import { FOOD, inArea, missingRunes, runTo, spellUse, SPELLS as TELEPORTS, sumUs
 import { currentTick, waitUntil, type Pred, type StateSource } from '../lib/wait';
 import { configId, findLoc, findNpc, invCount, opIndex, pos, worn, type NamePattern } from '../lib/world';
 import type { Check, Observed, StepContext } from '../runner/step';
-import { allOf, baseLevels, inBox, questSteps, slotsCover, talkShape, within, type Box, type QuestItem, type QuestOptions, type Segment } from './segments';
+import { allOf, baseLevels, drinkPrayerTo, inBox, prayerCovers, questSteps, slotsCover, talkShape, within, type Box, type QuestItem, type QuestOptions, type Segment } from './segments';
 
 export const quest = 'arena' as const;
 export const stepId = 'S12';
@@ -367,11 +367,21 @@ async function watchHp<T>(sdk: StateSource, run: () => Promise<T>): Promise<{ va
     }
 }
 
+/**
+ * Prayer points G needs for the whole arena stretch, G to J, counting held doses: 32-38 measured
+ * (rs/379 lite, rs/401 browser) with margin (rs/687's budget). From G to J SCORED is in the sealed
+ * cell or the arena (quest_arena.rs2:62-64), so nothing can be brought in once G starts.
+ */
+export const ARENA_PRAYER = 45;
+
+/** The fights drink a dose below this; each arena segment drinks up to it first, so its prayer can go on. */
+export const ARENA_DRINK_BELOW = 8;
+
 export function fightOptions(opts: Options | undefined): FightOptions {
     return {
         spell: FIRE_BLAST.component,
         prayer: 'protect_from_melee',
-        drinkBelow: 8,
+        drinkBelow: ARENA_DRINK_BELOW,
         eatBelow: opts?.eatBelow ?? 15,
         food: opts?.food ?? FOOD,
         maxTicks: 1500,
@@ -380,6 +390,60 @@ export function fightOptions(opts: Options | undefined): FightOptions {
 }
 
 const deathRunes = (s: BotWorldState | null) => (s ? invCount(s, ITEM.death) : 0);
+
+/**
+ * A scorpion or Bouncer still in its cage: its tile east of the gate line, the edge between x 2606 and
+ * 2607 (the arena_inactivegate pairs at (2606,3159-3160) and (2606,3162-3163) wall that edge). The
+ * release (quest_arena.rs2 @arena_release_scorp / _bouncer) opens the gates for 6 ticks and teleports
+ * it a tile west; a release whose script never resumed (a session lost with the round's mesbox
+ * open) leaves it there, and nothing can reach it: the live S12:H of 10-24 (rs/693).
+ */
+export const caged = (n: { x: number; tileX?: number }) => (n.tileX ?? n.x) > ARENA.x1;
+
+/** Re-releases tried per fight: the arena door from inside runs the release again. */
+export const MAX_RERELEASES = 2;
+
+/**
+ * Wait (bounded) for `target` to be out of its cage; still caged or not there, run the release again:
+ * the arena door from inside at sent_jail (or defeated_scorpion) gives the guard's line, forcemoves
+ * SCORED 2 tiles in and calls the release (quest_arena.rs2:110-116), which for a caged monster opens
+ * the gates again. Never for one already out: in combat within 8 ticks the release adds a second.
+ * True when it ran the door.
+ */
+export async function released(ctx: Ctx, target: RegExp, what: string, waitTicks = 12): Promise<boolean> {
+    const sdk = sdkOf(ctx);
+    const out = (s: BotWorldState) => {
+        const n = findNpc(s, target);
+        return !!n && !caged(n);
+    };
+    // The pages still open are the release's own way in (the round's mesbox, the scorpion's death
+    // hook before Bouncer's): answered, and the wait counts from the last one closing. Bouncer is
+    // spawned caged before his hook's pages, so I can arrive here with the General's first page up.
+    let quietFrom = currentTick(sdk);
+    for (let rounds = 0; rounds < 6; rounds++) {
+        const s = sdk.getState()!;
+        if (out(s)) return false;
+        if (s.dialog.isOpen) {
+            await converse(sdk, [], { openTicks: 1, idle: 1, maxTicks: 40, interrupts: interrupts() });
+            quietFrom = currentTick(sdk);
+            continue;
+        }
+        const left = waitTicks - (currentTick(sdk) - quietFrom);
+        if (left <= 0) break;
+        const w = await waitUntil(sdk, st => out(st) || st.dialog.isOpen, { maxTicks: left });
+        if (w.ok && out(w.state)) return false;
+        if (!w.ok) break;
+    }
+    if (out(sdk.getState()!)) return false;
+    const n = findNpc(sdk, target);
+    const t0 = currentTick(sdk);
+    await go(ctx, TILES.arenaDoorInside, 'to the arena door (the release again)');
+    const l = await findLoc(sdk, { x: TILES.arenaDoor.x, z: TILES.arenaDoor.z, id: LOC.arenaDoor(), radius: 10 });
+    if (!l) throw new Error(`${what}: no arena door to run the release again near ${JSON.stringify(pos(sdk))}`);
+    const r = await actConverse(sdk, () => sdk.sendInteractLoc(l.x, l.z, l.id, opIndex(l, /^open$/i) ?? 1), [], { done: out, idle: 1, maxTicks: 40, interrupts: interrupts() });
+    note(ctx, `${stepId}:release`, { what, caged: n ? { x: n.tileX ?? n.x, z: n.tileZ ?? n.z } : null, ticks: currentTick(sdk) - t0, ok: r.ok });
+    return true;
+}
 
 /** The first page of each monster's death hook (khazard_ogre.rs2 via justin_servil_saved, general_khazard.rs2). */
 export const DEATH_HOOK = {
@@ -393,14 +457,24 @@ export const DEATH_HOOK = {
  * level-up; the death hook's own first page (`hook`) is the kill, any other page (a cutscene's
  * last line still on its way) is answered and the fight goes on, at most 3 times.
  */
-async function arenaFight(ctx: Ctx, opts: Options | undefined, target: RegExp, hook: RegExp, what: string): Promise<void> {
+async function arenaFight(ctx: Ctx, opts: Options | undefined, target: RegExp, hook: RegExp, what: string, caged = false): Promise<void> {
     const sdk = sdkOf(ctx);
     const runes0 = deathRunes(sdk.getState());
     const fights: FightResult[] = [];
     let stray = 0;
+    let rereleases = 0;
+    if (caged && (await released(ctx, target, what))) rereleases++;
     for (;;) {
-        const r = await fight(sdk, target, fightOptions(opts));
+        // Only the caged rounds (H, I) watch for a target nothing can reach; the ogre's fight (G) is the plain loop.
+        const r = await fight(sdk, target, { ...fightOptions(opts), ...(caged ? { unreachable: { approach: { bot: ctx.bot, interrupts: interrupts() } } } : {}) });
         fights.push(r);
+        // A target nothing can reach: still caged, so the release runs again (bounded).
+        if (r.end === 'unreachable' && caged && rereleases < MAX_RERELEASES) {
+            if (await released(ctx, target, what, 0)) {
+                rereleases++;
+                continue;
+            }
+        }
         if (!r.ok) break;
         if (r.end !== 'dialog' || hook.test(pageText(sdk.getState()!.dialog))) break;
         if (++stray > 3) break;
@@ -411,6 +485,8 @@ async function arenaFight(ctx: Ctx, opts: Options | undefined, target: RegExp, h
     note(ctx, `${stepId}:fight`, {
         what, end: last.end, ticks: sum('ticks'), engaged: fights[0]!.engaged, casts: runes0 - deathRunes(sdk.getState()), clicks: sum('attacks'), dealt: sum('dealt'),
         taken: sum('taken'), minHp: Math.min(...fights.map(f => f.minHp)), levelUps: sum('levelUps'), eats: sum('eats'), prayerUsed: sum('prayerUsed'), strayPages: stray,
+        ...(rereleases ? { rereleases } : {}), ...(fights.some(f => f.approaches) ? { approaches: fights.reduce((a, f) => a + f.approaches, 0) } : {}),
+        ...(last.reason ? { reason: last.reason } : {}),
     });
     const hooked = last.end === 'dialog' && hook.test(pageText(sdk.getState()!.dialog));
     if (!last.ok || (last.end !== 'killed' && !hooked)) throw new Error(`${what}: the fight ended '${last.end}' (${JSON.stringify(last)})`);
@@ -485,6 +561,9 @@ async function keys(ctx: Ctx, opts: Options | undefined): Promise<void> {
 /** F: Jeremy with the keys, the walk into the arena (stage 6) and his plea; the ogre's cutscene follows. */
 async function jeremy(ctx: Ctx, opts: Options | undefined): Promise<void> {
     const sdk = sdkOf(ctx);
+    // The stretch's prayer drunk here, in the corridor: from Jeremy's plea on, the walk in and the
+    // ogre's entry scene drop item clicks, and a drink on one of its pages would close it.
+    await drinkPrayerTo(sdk, ARENA_PRAYER);
     await go(ctx, TILES.jeremy, 'to Jeremy', CORRIDOR_NORTH);
     const latch = pageSeen(sdk, PAGE.quick);
     try {
@@ -504,6 +583,7 @@ async function ogre(ctx: Ctx, opts: Options | undefined): Promise<void> {
 /** H: Hengrad, the escort into the arena, the scorpion (stage 10). The prayer goes on in the cell. */
 async function scorpion(ctx: Ctx, opts: Options | undefined): Promise<void> {
     const sdk = sdkOf(ctx);
+    await drinkPrayerTo(sdk, ARENA_DRINK_BELOW);
     const s = sdk.getState()!;
     if (inCell(s)) {
         if (!prayerActive(s, 'protect_from_melee')) note(ctx, seg('H'), { prayerOnTicks: await pray(sdk, true) });
@@ -514,14 +594,15 @@ async function scorpion(ctx: Ctx, opts: Options | undefined): Promise<void> {
             latch.stop();
         }
     }
-    await arenaFight(ctx, opts, NPC.scorpion, DEATH_HOOK.scorpion, 'Khazard scorpion');
+    await arenaFight(ctx, opts, NPC.scorpion, DEATH_HOOK.scorpion, 'Khazard scorpion', true);
 }
 
 /** I: the General summons Bouncer, Bouncer under the prayer, the General's pages (stage 12, he attacks). */
 async function bouncer(ctx: Ctx, opts: Options | undefined): Promise<void> {
     const sdk = sdkOf(ctx);
     if (!findNpc(sdk, NPC.bouncer)) await pages(ctx, opts, SHAPES.scorpionDead, 'the scorpion\'s death', s => findNpc(s, NPC.bouncer) !== null, PAGE.bouncer, 60);
-    await arenaFight(ctx, opts, NPC.bouncer, DEATH_HOOK.bouncer, 'Bouncer');
+    await drinkPrayerTo(sdk, ARENA_DRINK_BELOW);
+    await arenaFight(ctx, opts, NPC.bouncer, DEATH_HOOK.bouncer, 'Bouncer', true);
     await pages(ctx, opts, SHAPES.bouncerDead, 'Bouncer\'s death', () => true, PAGE.killMyself, 60);
 }
 
@@ -677,7 +758,7 @@ export function steps(opts?: Options) {
         {
             // G, H and I: arenaFight attacks the form fighting SCORED, so a takeover mid-fight re-enters through run.
             letter: 'G', label: 'ogre', logoutSafe: false, startsInCombat: true,
-            preconditions: allOf(started, inArenaCheck),
+            preconditions: allOf(started, inArenaCheck, prayerCovers('S12:G for G-J', ARENA_PRAYER)),
             run: ctx => ogre(ctx, opts),
             postconditions: within(CELL, 'the cell'),
             done: o => complete(o) || atLeast(o, 'sent_jail'),
