@@ -1,6 +1,6 @@
 /**
  * Summarise a phase-2 ledger (run.ts): each account's rate on its method, the per-method medians, the knights
- * ramp's decisions, redirects, Exchange errands and the logouts.
+ * ramp's decisions, redirects, Exchange errands, the deaths (by account, cause and pickpocket target) and the logouts.
  *
  *   bun markets/phase2/report.ts <ledger.jsonl> [--tick-ms 400]
  *
@@ -19,8 +19,35 @@ export interface Report {
     ramp: Record<string, unknown>[];
     redirects: Record<string, unknown>[];
     errands: Record<string, unknown>[];
+    deaths: Deaths;
     end: Record<string, unknown> | null;
     lastTotals: Record<string, unknown> | null;
+}
+
+export interface Deaths {
+    total: number;
+    byAccount: Record<string, number>;
+    /** By cause (deaths.ts): 'pickpocket', 'npc:<name>', 'kebab', 'player' or 'unknown'. */
+    byCause: Record<string, number>;
+    /** By stage, and by pickpocket target within a stage: 'method/guard'. */
+    byWhere: Record<string, number>;
+    lines: Record<string, unknown>[];
+}
+
+export function deathsOf(lines: readonly Record<string, unknown>[]): Deaths {
+    const deaths = lines.filter(l => l.kind === 'death');
+    const count = (key: (l: Record<string, unknown>) => string) => {
+        const out: Record<string, number> = {};
+        for (const l of deaths) out[key(l)] = (out[key(l)] ?? 0) + 1;
+        return out;
+    };
+    return {
+        total: deaths.length,
+        byAccount: count(l => String(l.account)),
+        byCause: count(l => String(l.cause ?? 'unknown')),
+        byWhere: count(l => (l.target ? `${l.stage}/${l.target}` : String(l.stage))),
+        lines: deaths
+    };
 }
 
 export function report(lines: readonly Record<string, unknown>[], tickMs: number): Report {
@@ -38,6 +65,7 @@ export function report(lines: readonly Record<string, unknown>[], tickMs: number
         ramp: lines.filter(l => l.kind === 'ramp' || l.kind === 'ramp-hold'),
         redirects: lines.filter(l => l.kind === 'redirect'),
         errands: lines.filter(l => l.kind === 'buy' || l.kind === 'sale'),
+        deaths: deathsOf(lines),
         end: lines.findLast(l => l.kind === 'end') ?? null,
         lastTotals: lines.findLast(l => l.kind === 'totals') ?? null
     };
@@ -59,6 +87,12 @@ if (import.meta.main) {
     for (const l of r.ramp) console.log(`REPORT ${l.kind} ${JSON.stringify(l)}`);
     for (const l of r.redirects) console.log(`REPORT redirect ${JSON.stringify(l)}`);
     for (const l of r.errands) console.log(`REPORT ${l.kind} ${JSON.stringify(l)}`);
+    const d = r.deaths;
+    console.log(`REPORT deaths ${d.total} ${JSON.stringify({ byAccount: d.byAccount, byCause: d.byCause, byWhere: d.byWhere })}`);
+    for (const l of d.lines) {
+        const at = l.at as { x: number; z: number } | undefined;
+        console.log(`REPORT death ${l.t} ${l.account} ${l.stage}${l.target ? `/${l.target}` : ''} cause=${l.cause} damage=${JSON.stringify(l.damage)} thieving=${l.thieving} maxHp=${l.maxHp} at=${at ? `${at.x},${at.z}` : '?'} coins=${l.carriedCoins} food=${l.food}${l.missed ? ' (seen from the respawn)' : ''}`);
+    }
     console.log(`REPORT totals ${JSON.stringify(r.lastTotals)}`);
     console.log(`REPORT end ${JSON.stringify(r.end)}`);
 }

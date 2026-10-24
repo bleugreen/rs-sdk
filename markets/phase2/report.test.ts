@@ -25,6 +25,9 @@ describe('report', () => {
             { kind: 'ramp', step: 1, action: 'next' },
             { kind: 'redirect', account: 'a04', to: 'guards' },
             { kind: 'sale', result: 'filled' },
+            { kind: 'death', account: 'a01', stage: 'method', target: 'man', cause: 'pickpocket' },
+            { kind: 'death', account: 'a01', stage: 'method', target: 'guard', cause: 'pickpocket' },
+            { kind: 'death', account: 'a03', stage: 'mining', target: null, cause: 'npc:Dark wizard' },
             { kind: 'totals', final: true },
             { kind: 'end', clean: true }
         ];
@@ -36,6 +39,12 @@ describe('report', () => {
         expect(r.ramp).toHaveLength(1);
         expect(r.redirects).toHaveLength(1);
         expect(r.errands).toHaveLength(1);
+        expect(r.deaths).toMatchObject({
+            total: 3,
+            byAccount: { a01: 2, a03: 1 },
+            byCause: { pickpocket: 2, 'npc:Dark wizard': 1 },
+            byWhere: { 'method/man': 1, 'method/guard': 1, mining: 1 }
+        });
         expect(r.end).toEqual({ kind: 'end', clean: true });
     });
 });
