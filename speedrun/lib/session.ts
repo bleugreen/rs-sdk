@@ -819,7 +819,7 @@ export function cdpUrl(env: BotEnv): string | undefined {
  */
 export type LogoutSignal = 'state' | 'child' | 'page' | 'gateway' | 'world';
 
-/** LogoutResult.reason when the server refused both clicks for combat (logout.rs2's "You can't log out until 10 seconds after the end of combat."). */
+/** LogoutResult.reason when the server refused both clicks for combat (its "can't log out" message, CANT_LOGOUT). */
 export const LOGOUT_REFUSED_COMBAT = 'logout refused (combat)';
 
 export interface LogoutResult {
