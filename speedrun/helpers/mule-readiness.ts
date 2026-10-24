@@ -172,6 +172,13 @@ export function muleHealthy(state: BotWorldState | null | undefined): state is B
         && !!state.player && state.player.isDead !== true && state.player.hp > 0;
 }
 
+/**
+ * Tiles from its stand within which a carrier treats the receiver as arrived: it pre-requests there
+ * (mule.ts decidePreRequest), and the run's hand-off for its row may start there (runner/chain.ts
+ * muleMeeting), so the receiving area is one number on both sides.
+ */
+export const PRE_REQUEST_TILES = 12;
+
 /** The sender must establish exact inventory staging separately; proximity alone is never ready. */
 export function muleCanReady(state: BotWorldState | null, at: WorldTile, staged: boolean, travelling: boolean): boolean {
     return staged === true && travelling === false && muleHealthy(state)
