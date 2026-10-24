@@ -47,7 +47,7 @@ import { tickMs } from '../../speedrun/lib/wait';
 import { writerExclusion } from '../lib/accounts.ts';
 import { Gentle } from '../lib/demo.ts';
 import { DemoMarket, type MarketQuote } from '../lib/market.ts';
-import { role as coinsRole } from '../../speedrun/helpers/coins';
+import { role as coinsRole } from '../methods/coins-driver.ts';
 import { chooseSite } from '../methods/hp-model.ts';
 import { TargetClaims, type SiteId } from '../methods/hp-train.ts';
 import { numberFlag, parseArgs } from '../methods/probe-sampler.ts';
@@ -573,7 +573,8 @@ export class Runner {
             this.ledger({ kind: 'hp-queue', account: w.alias, occupancy: this.hpSites.occupancy(), capacity: this.hpSites.capacity() });
             this.event(w, 'every Hitpoints site is full: earning until one has room', {}, true);
         }
-        await runRoleUntil(x, coinsRole, { target: 'auto', guardLevel: 40 }, () => (this.hpSites.hasRoom() ? 'a Hitpoints site has room' : null));
+        // the driver, not coins.ts directly: a queued account still has its fresh 10 Hitpoints, and coins.ts on the men has no exit but death
+        await runRoleUntil(x, coinsRole, { target: 'auto' }, () => (this.hpSites.hasRoom() ? 'a Hitpoints site has room' : null));
     }
 
     // ------------------------------------------------------------ redirects
