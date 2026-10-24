@@ -1,56 +1,128 @@
 /**
- * The runner's stall watchdog (docs/markets/phase2.md 'Running'): an account in its method stage whose ledger coin total
- * (carried plus banked) has not moved for `ms` has its method aborted, so its stages run again from wherever it stands.
- * At most `retries` aborts while the coins stay put; after that it is flagged once and left alone. Pure: the runner
- * feeds it each account's ledger readings and asks it on its pump.
+ * The runner's stall watchdog (docs/markets/phase2.md 'Stalls'), for every stage. Pure: the runner feeds it each
+ * account's readings and asks it on its pump.
+ *
+ * Progress is per stage (`stageReading`): in the method, the ledger's coin total (carried plus banked), read at the
+ * ledger's cadence; in any other stage, the stage's skill XP (`STAGE_SKILL`), the coins carried, or a move of more than
+ * MOVE_TILES from where the clock last restarted, read on every state. A change of stage restarts the clock too. A
+ * stage with no progress for its policy's `ms` is aborted, so the runner runs its stages again from where the account
+ * stands (through travel, stages.ts `reach`), at most `retries` times while it makes no progress; then the verdict is
+ * 'leave', once. Retries are counted per stage and reset only by progress in that stage, so a method aborted, sent
+ * round its stages and back without earning still runs out of retries.
  */
+import type { BotWorldState } from '../../sdk/types';
 
 export interface StallPolicy {
-    /** How long the coins may stay put in the method stage; 0 turns the watchdog off. */
+    /** How long a stage may make no progress; 0 turns the watchdog off. */
     ms: number;
-    /** Aborts before an account is left alone. */
+    /** Aborts before the account is left alone (the method) or parked (any other stage). */
     retries: number;
 }
 
 export const DEFAULT_STALL: StallPolicy = { ms: 10 * 60_000, retries: 3 };
 
-export type StallVerdict = { action: 'abort' | 'leave'; retry: number; stalledMs: number; coins: number };
+export interface Tile {
+    x: number;
+    z: number;
+}
+
+export interface StallReading {
+    stage: string;
+    /** Numbers any change in which is progress. */
+    marks: readonly number[];
+    /** Where the account stands; null where position is no progress (the method, which works in one place). */
+    at: Tile | null;
+}
+
+/** A move further than this many tiles (Chebyshev) from where the clock last restarted is progress. */
+export const MOVE_TILES = 5;
+
+/** The skill whose XP is a stage's progress (its own when it trains one; Thieving where it earns on coins.ts). */
+export const STAGE_SKILL: Readonly<Record<string, string>> = {
+    hp: 'Hitpoints',
+    thieving: 'Thieving',
+    coins: 'Thieving',
+    admission: 'Thieving',
+    'hp-queue': 'Thieving',
+    mining: 'Mining'
+};
+
+const carried = (s: Pick<BotWorldState, 'inventory'>) => s.inventory.filter(i => /^coins$/i.test(i.name)).reduce((n, i) => n + i.count, 0);
+
+/** A reading in a stage other than the method: its skill's XP (0 when it has none) and the coins carried, and where it stands. */
+export function stageReading(stage: string, s: Pick<BotWorldState, 'skills' | 'inventory' | 'player'>): StallReading {
+    const skill = STAGE_SKILL[stage];
+    const xp = skill ? (s.skills.find(k => k.name === skill)?.experience ?? 0) : 0;
+    return { stage, marks: [xp, carried(s)], at: s.player ? { x: s.player.worldX, z: s.player.worldZ } : null };
+}
+
+/** A reading in the method: the ledger's coin total. */
+export const methodReading = (coins: number): StallReading => ({ stage: 'method', marks: [coins], at: null });
+
+/**
+ * The policy for `stage`: the method's, or the stages' with `graceMinutes` added where a stage stands still by design
+ * (an Exchange offer's fill wait in the shark purchase and the sale).
+ */
+export function policyFor(stage: string, method: StallPolicy, stages: StallPolicy, graceMinutes: Readonly<Record<string, number>> = {}): StallPolicy {
+    if (stage === 'method') return method;
+    if (stages.ms <= 0) return stages;
+    return { ...stages, ms: stages.ms + (graceMinutes[stage] ?? 0) * 60_000 };
+}
+
+export type StallVerdict = { action: 'abort' | 'leave'; stage: string; retry: number; stalledMs: number; marks: readonly number[]; at: Tile | null };
+
+const cheb = (a: Tile, b: Tile) => Math.max(Math.abs(a.x - b.x), Math.abs(a.z - b.z));
+
+function progressed(a: StallReading, b: StallReading): boolean {
+    if (a.marks.length !== b.marks.length || a.marks.some((m, i) => m !== b.marks[i])) return true;
+    return !!a.at && !!b.at && cheb(a.at, b.at) > MOVE_TILES;
+}
 
 export class StallWatch {
-    private coins: number | null = null;
+    /** The reading when the clock last restarted; null between sessions. */
+    private anchor: StallReading | null = null;
     private since = 0;
-    /** Aborts since the coins last moved. */
-    retries = 0;
-    private left = false;
+    private readonly aborts = new Map<string, number>();
+    private readonly left = new Set<string>();
 
-    /** A ledger reading. Off the method stage the clock stops; it restarts at the next reading in it. */
-    observe(inMethod: boolean, coins: number, now: number): void {
-        if (!inMethod) return this.pause();
-        if (this.coins !== null && coins === this.coins) return;
-        if (this.coins !== null) {
-            this.retries = 0;
-            this.left = false;
+    /** Aborts in `stage` since it last made progress. */
+    retries(stage: string): number {
+        return this.aborts.get(stage) ?? 0;
+    }
+
+    observe(r: StallReading, now: number): void {
+        const a = this.anchor;
+        if (a && a.stage === r.stage && !progressed(a, r)) return;
+        if (a && a.stage === r.stage) {
+            this.aborts.delete(r.stage);
+            this.left.delete(r.stage);
         }
-        this.coins = coins;
+        this.anchor = r;
         this.since = now;
     }
 
-    /** Out of the method stage or between sessions: no clock until the next reading. The retries are kept. */
+    /** Between sessions: no clock until the next reading. The retries are kept. */
     pause(): void {
-        this.coins = null;
+        this.anchor = null;
     }
 
-    /** Whether to abort the method now, or (once, after the retries) to flag it and leave it. */
-    check(now: number, p: StallPolicy): StallVerdict | null {
-        if (p.ms <= 0 || this.coins === null || this.left) return null;
+    /**
+     * Whether to abort `stage` now or (once, after the retries) to leave it. Null while the last reading is of another
+     * stage: the clock is the reading's, and a stage just entered has its first reading still to come.
+     */
+    check(now: number, stage: string, p: StallPolicy): StallVerdict | null {
+        const a = this.anchor;
+        if (p.ms <= 0 || !a || a.stage !== stage || this.left.has(stage)) return null;
         const stalledMs = now - this.since;
         if (stalledMs < p.ms) return null;
-        if (this.retries >= p.retries) {
-            this.left = true;
-            return { action: 'leave', retry: this.retries, stalledMs, coins: this.coins };
+        const n = this.retries(stage);
+        const base = { stage, stalledMs, marks: a.marks, at: a.at };
+        if (n >= p.retries) {
+            this.left.add(stage);
+            return { action: 'leave', retry: n, ...base };
         }
-        this.retries++;
+        this.aborts.set(stage, n + 1);
         this.since = now;
-        return { action: 'abort', retry: this.retries, stalledMs, coins: this.coins };
+        return { action: 'abort', retry: n + 1, ...base };
     }
 }
