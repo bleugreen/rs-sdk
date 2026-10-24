@@ -241,7 +241,7 @@ export function parsePlan(raw: unknown): Plan {
         fillMinutes: num('sharks.fillMinutes', s.fillMinutes, DEFAULTS.sharks.fillMinutes, { min: 0, max: 30 }),
         rebuyMinSharks: num('sharks.rebuyMinSharks', s.rebuyMinSharks, perAccount, { min: 1, max: perAccount, integer: true })
     };
-    if (sharks.rebuyMinSharks < sharks.minimum) problems.push(`sharks.rebuyMinSharks ${sharks.rebuyMinSharks} is below sharks.minimum ${sharks.minimum}: a rebuy that small sends the account straight back to the food fallback`);
+    if (sharks.source === 'buy' && sharks.rebuyMinSharks < sharks.minimum) problems.push(`sharks.rebuyMinSharks ${sharks.rebuyMinSharks} is below sharks.minimum ${sharks.minimum}: a rebuy that small sends the account straight back to the food fallback`);
 
     // ramp: null turns it off (every knights login is admitted at once)
     let ramp: RampPlan | null = null;

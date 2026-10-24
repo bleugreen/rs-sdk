@@ -102,16 +102,10 @@ describe('sequenceFor', () => {
         const one = accounts(1, 'knights');
         expect(parsePlan({ accounts: one, sharks: { source: 'buy', perAccount: 160 } }).sharks.rebuyMinSharks).toBe(160);
         expect(parsePlan({ accounts: one, sharks: { source: 'buy', perAccount: 160, rebuyMinSharks: 60 } }).sharks.rebuyMinSharks).toBe(60);
-        const problems = (sharks: Record<string, unknown>) => {
-            try {
-                parsePlan({ accounts: one, sharks });
-                return [];
-            } catch (e) {
-                return (e as PlanError).problems;
-            }
-        };
-        expect(problems({ perAccount: 160, rebuyMinSharks: 200 })).toContain('sharks.rebuyMinSharks must be at most 160');
-        expect(problems({ perAccount: 160, rebuyMinSharks: 10 })[0]).toMatch(/rebuyMinSharks 10 is below sharks.minimum 28/);
+        expect(problems({ accounts: one, sharks: { source: 'buy', perAccount: 160, rebuyMinSharks: 200 } })).toContain('sharks.rebuyMinSharks must be at most 160');
+        expect(problems({ accounts: one, sharks: { source: 'buy', perAccount: 160, rebuyMinSharks: 10 } })[0]).toMatch(/rebuyMinSharks 10 is below sharks.minimum 28/);
+        // banked sharks never rebuy
+        expect(problems({ accounts: one, sharks: { source: 'bank', perAccount: 10 } })).toEqual([]);
     });
     test('a bought shark supply adds the purchase before the voyage', () => {
         const buy = parsePlan({ accounts: accounts(1, 'knights'), sharks: { source: 'buy' }, ramp: null });
