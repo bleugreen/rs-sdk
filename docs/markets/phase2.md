@@ -415,10 +415,19 @@ code (16: 16 s, 5: 15 s, 7: 60 s for the whole address); five refusals in a row 
 **The knights ramp** (`ramp.ts`, rs/495's condition on allocation A): knights logins are admitted in steps (default
 8, 20, 43). The ramp opens when the first knight reaches admission; a step holds `holdMinutes` (15) once every
 admitted login is pickpocketing at Thieving 99 (the rate climbs with the level, so a hold mid-climb would set a low
-reference), or `admitTimeoutMinutes` (30) after it opened, then takes the median gp a tick
-per login over the hold. A step more than `dropPct` (10%) below the first stops the ramp: the knights not yet
+reference) and has been on the method `warmupMinutes` (5), or `admitTimeoutMinutes` (30) after it opened, then
+takes the median gp a tick per login at the knights over the hold: from the end of each login's warm-up, coins over
+the ticks spent in `pickpocket.ts`'s thieve errand (`ramp.ts` `holdRates`). Both guards keep out what is not
+crowding: a login's arrival (the walk to the bank for its first food and back) and its deposit trips, which come
+about every 21 minutes, longer than a hold, so a wall-clock rate depends on whose trip falls inside it (section
+'Knights crowding at 8, 16 and 24': live, those two stopped the ramp at 16 on a 0.848 ratio with no crowding
+behind it). A step more than `dropPct` (10%) below the first stops the ramp: the knights not yet
 admitted go to `ramp.fallbackMix` (plan B's 12 iron, 8 heroes, 23 guards, split in proportion), and the ledger
-says why. A hold with no login measured waits for the step again.
+says why. The decision line also carries every login's rate by alias, the incumbents' median ratio to their own
+first-step rates, and the gross rate over wall time (bank trips in), the income figure. A hold with no login
+measured waits for the step again. Each account line carries the login's tile, its knight and that knight's tile
+(`pos`, `target`), and its ticks at the knights (`workTicks`); `bun markets/phase2/crowding.ts <run dir>` reads
+them.
 
 **Sharks and the food fallback.** `sharks.source: 'bank'` (default): markets puts the sharks in each account's
 bank. `'buy'`: each shark eater buys `perAccount` at the Exchange during admission, a limit offer at the `ceiling`
