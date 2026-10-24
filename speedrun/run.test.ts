@@ -577,12 +577,13 @@ describe('a death while the logout after a refused step holds (rs/709, attempt 3
             preconditions: () => ((refused = true), 'Attack 1, not 40 (the scimitar)'),
         };
         const handlers = { on: () => {}, off: () => {}, exit: () => {}, log: () => {} };
-        let ran;
+        let out: Awaited<ReturnType<typeof runChainOnSession>> | undefined;
         try {
-            ran = await runChainOnSession(session, { log, chain: [s14], reservation: { boundary: () => null, path: '' } as unknown as ReservationWatch, from: 0, signals: handlers });
+            out = await runChainOnSession(session, { log, chain: [s14], reservation: { boundary: () => null, path: '' } as unknown as ReservationWatch, from: 0, signals: handlers });
         } finally {
             clearInterval(timer);
         }
+        const ran = out!;
         expect(ran.result.code).toBe(EXIT_DIED);
         expect(ran.result.outcome).toMatch(/^DIED: SCORED died before the logout landed: \(3288,3810,0\) on tick \d+ to \(3222,3218,0\) on tick \d+ \(dead, respawned, message, respawn-tile; .*\(the chain had ended: FAILED: step "S14 ranged" precondition failed: Attack 1/);
         expect(ran.lastLogout).toMatchObject({ ok: true, death: { signs: ['dead', 'respawned', 'message', 'respawn-tile'] } });
