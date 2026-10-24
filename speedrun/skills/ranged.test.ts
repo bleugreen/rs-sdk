@@ -580,7 +580,7 @@ describe('runSession on the fake SDK', () => {
         // Firing went on behind it: top-ups on the new cannon, counted with the old one's.
         const lastBuilt = srv.built[1]!;
         expect(sdk.sent.some(a => a.method === 'sendUseItemOnLoc' && a.args[0] === 4)).toBe(true);
-        expect(res.reloads).toBeGreaterThan(Math.floor(lastBuilt - srv.built[0]!) / 20 - 2);
+        expect(res.reloads).toBeGreaterThan(100);
         expect(res.endTick - lastBuilt).toBeGreaterThan(90);
     });
 
