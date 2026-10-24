@@ -885,8 +885,8 @@ describe('bones on the stay2 lap (`bury`, H4m)', () => {
         expect(28 - at(64, 20).inventory.length).toBe(m.FREE_SLOTS);
         expect(load.preconditions(at(64, 20), {})).toBe(true);
         expect(load.preconditions(at(64, 21), {})).toBe('25 other items: need 4 free slots (ore, a gem, a stray fletch)');
-        // a load taken on 1 held bone: 21, the same refusal
-        expect(stepOf('mining.iron-63').preconditions(at(64, 20), {})).toBe(true);
+        // a load taken on 1 held bone: 21, the same refusal; 20 riding the band past Prayer 99 still leave its 4
+        expect(stepOf('mining.iron-63').preconditions(at(64, 20, 99), {})).toBe(true);
     });
 
     test('a load buries on the lap with knife-mine `bury` and the band stops on the last bone', async () => {
