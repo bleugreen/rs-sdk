@@ -72,7 +72,7 @@ describe("the run config's bones", () => {
         expect(() => woodcutting({ bury: true, bones: withBoneGivers(GIVERS), dropAxe: true, prayerTo: 99 })).not.toThrow();
         // The module's own contract: a group of one is no group, and a lastLoad above the load refuses.
         expect(() => woodcutting({ bury: true, bones: withBoneGivers(['cairn_lb1']) })).toThrow(/at least two/);
-        const partners = Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS].map(id => [id, 'STAFF']));
+        const partners = Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS, 'H4m'].map(id => [id, 'STAFF']));
         const cfg = { partners, firemakingTiles: '3240,3296', rings: { giver: 'r' }, bones: withBoneGivers(GIVERS), courier: { giver: 'c', below: 3 }, anvil: { giver: 'a' }, cueDir: '/tmp/x' };
         const chain = buildChain(cfg, { cues: { open: async () => {}, stop: () => {} } });
         expect(chain.filter(s => s.id === 'S07').map(s => s.name)).toContain('woodcutting:oak-15-73');

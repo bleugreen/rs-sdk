@@ -11,7 +11,7 @@ import type { LabWorld } from './stand-ins';
 
 const manifest = readFileSync(MANIFEST, 'utf8');
 const world = (): LabWorld => ({ staffLevel: '4', server: 'localhost', gateway: 'ws://localhost:8300' });
-const partners = (name: string) => Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS].map(id => [id, name]));
+const partners = (name: string) => Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS, 'H4m'].map(id => [id, name]));
 const cfg = (name: string) => ({ partners: partners(name), firemakingTiles: '3240,3296', rings: { giver: 'r' }, bones: { giver: 'b' }, courier: { giver: 'c', below: 3 }, anvil: { giver: 'a' }, cueDir: '/tmp/x' });
 const cues = { open: async () => {}, stop: () => {} };
 const tileOf = (lab: ReturnType<typeof labChain>, row: string) => lab.stubRows.find(r => r.row === row)!.tile;

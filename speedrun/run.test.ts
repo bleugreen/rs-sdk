@@ -31,7 +31,7 @@ const feed400: FeedRead & { ok: true } = { ok: true, url: 'wss://rs-sdk-demo.fly
 import { buildChain, CENSUS_STEP, KIT_PARTNER_ROWS, ledgerRows, PLACEMENT, resolveFrom, sliceUntil, tag } from './runner/chain';
 
 const cues = { open: async () => {}, stop: () => {} };
-const partners = Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS].map(id => [id, `p_${id}`]));
+const partners = Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS, 'H4m'].map(id => [id, `p_${id}`]));
 /** The castle lap's entry and next tile (rehearsals/firemaking.md), where T02-03 ends. */
 const cfg = { partners, firemakingTiles: '3222,3219;3221,3219', rings: { giver: 'r' }, bones: { giver: 'b' }, courier: { giver: 'c', below: 3 }, anvil: { giver: 'a' }, cueDir: '/tmp/x' };
 const full = buildChain(cfg, { cues });
