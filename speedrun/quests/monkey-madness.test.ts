@@ -1357,7 +1357,8 @@ describe("the Grand Tree swap's hand-back (GT_HANDBACK) against the ledger's H12
         const kept = h12.beforeInventory.filter(i => !give.some(p => p.test(i.name)));
         // A received stack joins a held one of the same object (the runes) and takes no new slot.
         const added = h12.receive.filter(r => r.kind === 'u' || !kept.some(k => k.id === r.id));
-        expect(slots(h12.beforeInventory)).toBe(19);
+        // 21 since H10's shark top-up to 10 (fold-in 43a): 2 more sharks held at H12 than at to 8
+        expect(slots(h12.beforeInventory)).toBe(21);
         expect(slots(kept) + slots(added)).toBeLessThanOrEqual(28);
     });
 });
