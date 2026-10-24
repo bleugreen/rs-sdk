@@ -81,6 +81,60 @@ export function roamTo(spawns: readonly Tile[], from: Tile, tried: ReadonlySet<n
     return order.find(i => !tried.has(i)) ?? order[0]!;
 }
 
+/**
+ * `bot.walkTo` failures a shut door can cause: the router found no way from where the player stands (sdk/actions.ts
+ * `_walkToRoute`). Neither it nor speedrun/lib/act.ts `walkTo` gives these a structured reason, so this matches the
+ * message; a death en route, a timeout or a blocked destination tile is not a door's doing.
+ */
+export const UNROUTABLE = /stops \d+ tiles short|: no waypoints$|^Stuck at \(|^Could not reach \(/;
+
+export const unroutable = (message: string): boolean => UNROUTABLE.test(message);
+
+export class WalkFailed extends Error {}
+
+export interface DoorWalk {
+    walk(t: Tile): Promise<{ ok: boolean; message: string }>;
+    openDoor(): Promise<{ success: boolean; message: string; reason?: string }>;
+    wait(ticks: number): Promise<void>;
+    log(message: string, data?: Record<string, unknown>): void;
+}
+
+/**
+ * Walk to `t`. A walk that fails as unroutable opens the nearest door and walks again, then once more after `waitTicks`
+ * (another player may have shut the door again). Throws WalkFailed when the walk still fails, so nothing that needs
+ * the destination (the bank booth) runs from the wrong place.
+ */
+export async function walkThroughDoors(d: DoorWalk, t: Tile, waitTicks = 5): Promise<void> {
+    let r = await d.walk(t);
+    if (r.ok) return;
+    const first = r.message;
+    if (unroutable(first)) {
+        for (let attempt = 1; attempt <= 2 && !r.ok; attempt++) {
+            if (attempt > 1) await d.wait(waitTicks);
+            const door = await d.openDoor();
+            d.log('opening a door: walk unroutable', { to: t, attempt, walk: r.message, door: door.reason ?? (door.success ? 'opened' : 'failed'), doorMessage: door.message });
+            r = await d.walk(t);
+        }
+        if (r.ok) {
+            d.log('through the door', { to: t, walk: first });
+            return;
+        }
+    }
+    throw new WalkFailed(`walk to (${t.x},${t.z}) failed: ${r.message}`);
+}
+
+/** Consecutive errand failures; `fail` says when they reach `max`, after which the role gives up. */
+export class FailureRun {
+    n = 0;
+    constructor(readonly max: number) {}
+    ok(): void {
+        this.n = 0;
+    }
+    fail(): boolean {
+        return ++this.n >= this.max;
+    }
+}
+
 export type Errand = 'bank' | 'go' | 'thieve';
 
 /** The next errand from a snapshot: bank when out of food or carrying `bankAt` coins, else thieve at the station. */
@@ -98,13 +152,15 @@ interface Options {
     /** Carried coins that end a trip early (bounds what a death costs). */
     bankAt: number;
     reportTicks: number;
+    /** Errands failing this many times in a row end the role with an error (the runner's stage retries take over). */
+    maxErrandFailures: number;
 }
 
 function readOptions(raw: Record<string, unknown>): Options {
     const target = String(raw.target ?? 'knight') as Options['target'];
     if (!(target in SPOTS)) throw new Error(`pickpocket: unknown target ${target}`);
     const num = (k: string, d: number) => (typeof raw[k] === 'number' ? (raw[k] as number) : d);
-    return { target, food: String(raw.food ?? 'Shark'), foodPerTrip: num('foodPerTrip', 0), bankAt: num('bankAt', 50_000), reportTicks: num('reportTicks', 1000) };
+    return { target, food: String(raw.food ?? 'Shark'), foodPerTrip: num('foodPerTrip', 0), bankAt: num('bankAt', 50_000), reportTicks: num('reportTicks', 1000), maxErrandFailures: num('maxErrandFailures', 10) };
 }
 
 const coinsIn = (s: BotWorldState) => s.inventory.filter(i => i.name === 'Coins').reduce((a, i) => a + i.count, 0);
@@ -143,6 +199,7 @@ export class Pickpocketer {
     async run(): Promise<void> {
         this.startTick = this.lastReport = this.s.tick;
         this.ctx.log('start', { options: this.o, thieving: this.s.skills.find(k => k.name === 'Thieving')?.baseLevel, hp: this.s.player!.maxHp });
+        const failures = new FailureRun(this.o.maxErrandFailures);
         while (!this.ctx.signal.aborted) {
             const s = this.s;
             if (s.dialog.isOpen) await this.ctx.sdk.sendClickDialog(0);
@@ -151,17 +208,26 @@ export class Pickpocketer {
                 if (e === 'bank') await this.bank();
                 else if (e === 'go') await this.walk(this.spot.anchor);
                 else await this.thieve();
+                failures.ok();
             } catch (err) {
-                this.ctx.log('errand error', { errand: e, error: String(err) });
+                if (this.ctx.signal.aborted) break;
+                this.ctx.log('errand error', { errand: e, error: String(err), inARow: failures.n + 1 });
+                if (failures.fail()) {
+                    const p = this.s.player!;
+                    this.ctx.log('errands keep failing: ending the role', { errand: e, inARow: failures.n, at: { x: p.worldX, z: p.worldZ }, error: String(err) });
+                    this.report('stop');
+                    throw new Error(`pickpocket: ${failures.n} errands failed in a row at (${p.worldX},${p.worldZ}), last: ${String(err)}`);
+                }
                 await waitTicks(this.ctx.sdk, 5);
             }
         }
         this.report('stop');
     }
 
-    private async walk(t: Tile): Promise<void> {
-        const r = await walkTo(this.ctx.bot, this.ctx.sdk, t.x, t.z, 2);
-        if (!r.ok) this.ctx.log('walk failed', { to: t, message: r.message });
+    /** Throws WalkFailed when the walk fails, after a door retry if it was unroutable. */
+    private walk(t: Tile): Promise<void> {
+        const { bot, sdk, log } = this.ctx;
+        return walkThroughDoors({ walk: to => walkTo(bot, sdk, to.x, to.z, 2), openDoor: () => bot.openDoor(), wait: n => waitTicks(sdk, n), log }, t);
     }
 
     private async bank(): Promise<void> {
