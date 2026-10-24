@@ -840,7 +840,7 @@ export function elvargPrayerList(s: BotWorldState, opts: Options): PrayerName[] 
 }
 
 /** L's prayer precondition: none once the quest is complete (a resume for the key drop) or with no protect prayer in use. */
-function elvargPrayerCheck(opts: Options): (s: BotWorldState) => true | string {
+export function elvargPrayerCheck(opts: Options): (s: BotWorldState) => true | string {
     return s => (questStatus(s, quest) === 'complete' || !usablePrayers(s, opts).includes('protect_from_melee') ? true : prayerCovers('S26:L for Elvarg', ELVARG_PROTECT_PRAYER)(s, {}));
 }
 
