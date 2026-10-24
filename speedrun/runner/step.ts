@@ -113,6 +113,12 @@ export interface Step<C = Record<string, never>> {
      * marker only where the step before it finished or the step after it can start (runner/resume.ts).
      */
     marker?: true;
+    /**
+     * Its `run` starts safely with the account in combat (S14 and S27 set the cannon up among
+     * aggressive spiders). Without it, the resume walk holds a logoutSafe:false step it would enter
+     * through `run` while the account is in combat (runner/resume.ts MidStepError).
+     */
+    startsInCombat?: true;
 }
 
 export class StepError extends Error {

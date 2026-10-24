@@ -62,6 +62,8 @@ export interface Segment<C = any> {
     inProgress?: ObservedCheck<C>;
     resume?(ctx: StepContext<C>): Promise<void>;
     probes?: readonly string[];
+    /** Its run picks up a fight already on (runner/step.ts Step.startsInCombat). */
+    startsInCombat?: true;
 }
 
 const LETTER = /^[A-Z][0-9]?$/;
@@ -97,6 +99,7 @@ export function questSteps<C = any>(stepId: string, segments: readonly Segment<C
         if (seg.inProgress) step.inProgress = seg.inProgress;
         if (seg.resume) step.resume = ctx => seg.resume!(ctx);
         if (seg.probes) step.probes = seg.probes;
+        if (seg.startsInCombat) step.startsInCombat = true;
         return step;
     });
 }

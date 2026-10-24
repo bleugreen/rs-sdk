@@ -26,7 +26,8 @@ import { BotActions } from '../../sdk/actions';
 import { BotSDK } from '../../sdk/index';
 import type { ActionResult, BotAction, BotWorldState } from '../../sdk/types';
 import type { ProbeSdk, ProbeState } from './hostgate';
-import { COMBAT_LOGOUT_TICKS, LOGOUT_BUTTON } from './session';
+import { LOGOUT_BUTTON } from './session';
+import { COMBAT_LOGOUT_TICKS } from './world';
 import { tickMs } from './wait';
 
 /** The LiteClient members the probe adapter uses. */

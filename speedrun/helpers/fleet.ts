@@ -38,7 +38,8 @@ import { abortable, executionContext } from '../../sdk/execution-context';
 import { BotSDK } from '../../sdk/index';
 import { initPathfinding } from '../../sdk/pathfinding';
 import { createAccountEnv, listAccounts, nextAccountName, parseBotEnv, parseRange } from './accounts';
-import { COMBAT_LOGOUT_TICKS, LOGOUT_BUTTON } from '../lib/session';
+import { LOGOUT_BUTTON } from '../lib/session';
+import { COMBAT_LOGOUT_TICKS } from '../lib/world';
 import { Backoff, LoginLimiter, loginFailurePolicy } from './backoff';
 import { EventLog, parseEvents, summariseEvents, type FleetEventType } from './events';
 import {
