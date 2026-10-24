@@ -136,6 +136,9 @@ Again on 2026-10-23 for attempt 3 (cairn://p/rs/630), h80 at Crafting 80, Mining
 with gems handed over at the rocks during its gold trips: 53 bars in 5 trips, 20:13-21:06 UTC
 (14, 12, 9, 12 and 5 ore; 6-15 players in view, so **about 75 bars per hour**), then all 60
 gems cut and the 60 rings crafted in 5 minutes (Crafting 80 to 88).
+And on 2026-10-24 for attempt 4 (cairn://p/rs/678): 60 bars in 7 trips, 03:26-04:35 UTC (13, 8, 7, 11,
+11, 7 and 3 ore; 12-18 players in view), so **about 52 bars per hour** when the rocks are
+busy. Plan on 50-75 bars per hour, not the upper figure alone.
 
 So a fresh account with the gems in hand takes about 2 h 30 min, nearly all of it
 Smithing and Mining training (about 75 minutes) and gold (about 60 minutes). An account
