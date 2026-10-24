@@ -215,6 +215,49 @@ come from the staff. Whatever helpers hand over is free
 5. Fight with spells, not melee, while Strength is 1. Melee only wins at the
    warlord, and only if Waterfall has already given Strength.
 
+## 6. Defensive casting (O43a): measured, then ruled off
+
+O43a cast the warlord, demon and Fight Arena spells with the staff's defensive "Focus"
+style selected, to take Defence from 1 to ~37 at no training ticks before Monkey Madness.
+**Main ruled it off (2026-10-22): Monkey Madness's damage in K, M, P and R is direct trap and
+roof damage that Defence does not reduce.** These figures are for the record (rs/425,
+lite client on a loaded host, so xp is reliable and ticks are indicative only).
+
+- **xp rule (r):** `give_combat_experience` (`combat.rs2`) pays `style_magic_normal` 2 Magic
+  per damage and `style_magic_defensive` 1.33 Magic + 1 Defence. `pvm_spell_success`
+  (`player_magic.rs2`) picks the defensive branch when `%damagestyle` is
+  `style_melee_defensive`. Hitpoints is 1.33 per damage either way.
+- **Measured Defence xp per fight (m, finished runs, one Defence per damage):** warlord 172
+  (HP 170), demon 158 / 158 (157), ogre + scorpion + Bouncer 218 / 216 / 217 / 218 (216).
+  The 1-2 over each NPC's HP is most likely regeneration during the longer fights. **Total
+  546-548 base = Defence 38**, 2-4 base over 38's floor (544). Capped strictly at NPC HP it
+  would be 543 = Defence 37.
+- **Magic (m, 4/4 arena runs):** 1.32-1.33 Magic per damage plus 34.5 base per Fire Blast
+  cast. The cost is 0.67 x ~547 = **~365 base**, so rs/158's S16 arrival of 9,117.5 becomes
+  ~8,752.5. That is **Magic 77 kept, ~77 base spare** (77's floor is 8,675.5).
+- **Ticks (indicative):** warlord 218 and 145 (the 145 run started ~50 HP down, left damaged by
+  an earlier failed run); demon 268 / 248; ogre / scorpion / Bouncer 74 / 86 / 92 mean against
+  one normal-style control run at 60 / 81 / 67.
+
+**`set_attackstyle` silently drops a style click unless the player is free**
+(`player_attackstyles.rs2`, `[proc,set_attackstyle]`). It sets `%com_mode` only when
+`p_finduid(uid)` succeeds; otherwise it resyncs the old value and says nothing. The first
+version sent one click on the tick of the first cast. It lost the demon's Defence entirely
+(0 of 157), and of the arena fights only Bouncer's 116 counted. Anyone reviving this must
+wait for the published `combatStyle.currentStyle` before the first cast and re-send the
+click if it drops back.
+
+**The style persists.** No weapon swap resets `%com_mode` (`update_weapon_category` resets
+autocast only; `player_combat_stat` clamps the mode to each weapon's style count). After
+S12, Monkey Madness's bow would inherit slot 2 as **Longrange** (2 Ranged + 2 Defence per
+damage instead of 4 Ranged). Kolodion's S16 fight would cast defensively again. A revival
+must set style 0 after S12's last fight.
+
+The code (a shared `castingStyle` option in `speedrun/lib/combat.ts`, confirmed-style
+`fight()` handling, the three fights' hooks and a lab `--casting` flag, with tests) is on
+branch `agent/rs-425-builder-2`, commits `cd6dd10f`..`ff542683` (`7f127382`..`6334bb53`
+before a replay), and was not merged.
+
 ## Risks and gotchas
 
 - **Prayer is the whole defence.** At Defence 1 every unprotected hit lands.
