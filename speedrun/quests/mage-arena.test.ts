@@ -627,10 +627,12 @@ describe('exit drops (the ledger T16-18 row, done in F)', () => {
         expect(end.inventory.length).toBe(t1618.used);
         expect([...new Set(end.inventory.map(i => i.name.toLowerCase()))].sort()).toEqual(t1618.stacks.inv.map(h => h.name).sort());
         expect(end.equipment.map(i => i.name.toLowerCase()).sort()).toEqual(t1618.stacks.worn.map(h => h.name).sort());
-        // H14 swaps the knife out before its check: 28 - (6 - 1) = 23 free against its 22.
+        // H14's swap outs (the knife, and the Superantipoison since rs/755) leave before its check: 23 free against its 22.
         const h14 = row('H14');
         expect([h14.free, h14.need]).toEqual([23, 22]);
-        expect(28 - (end.inventory.length - 1)).toBe(h14.free);
+        const outs = h14.row.out.filter(o => o.reason === 'swap').map(o => o.name.toLowerCase());
+        const swapped = (n: string) => outs.some(o => (o.endsWith('(*)') ? n.startsWith(o.slice(0, -3)) && /\(\d\)$/.test(n) : n === o));
+        expect(28 - end.inventory.filter(i => !swapped(i.name.toLowerCase())).length).toBe(h14.free);
     });
 
     test('a second F attempt of the same steps() does not pass on the first one\'s staff: with none seen it goes to the guardian', async () => {
